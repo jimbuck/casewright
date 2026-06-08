@@ -1,10 +1,12 @@
+import { customAlphabet } from 'nanoid';
 import type { Run } from '@/types';
 
 const ALPHABET = '0123456789abcdefghijklmnopqrstuvwxyz';
+const gen11 = customAlphabet(ALPHABET, 11);
 
-/** A 10-char lowercase-alphanumeric id (stands in for a content hash). */
-export function randomId(len = 10): string {
-  return Array.from({ length: len }, () => ALPHABET[Math.floor(Math.random() * 36)]).join('');
+/** A stable lowercase-alphanumeric case id (~11 chars, `[a-z0-9]`; PRD §5.2). */
+export function randomId(len = 11): string {
+  return len === 11 ? gen11() : customAlphabet(ALPHABET, len)();
 }
 
 /** Filename-safe slug from a title. */
@@ -16,11 +18,9 @@ export function slug(s: string): string {
     .slice(0, 48);
 }
 
-/** A deterministic-ish "now" stamp for the prototype's fixed demo date. */
+/** A `YYYY-MM-DD HH:MM` timestamp for the current moment (run `executed_at`). */
 export function nowStamp(): string {
-  const d = new Date(2026, 5, 1, 11, 0 + Math.floor(Math.random() * 59));
-  const p = (n: number) => String(n).padStart(2, '0');
-  return `2026-06-01 ${p(d.getHours())}:${p(d.getMinutes())}`;
+  return new Date().toISOString().slice(0, 16).replace('T', ' ');
 }
 
 /** Index of the first not-yet-run row, or 0. */

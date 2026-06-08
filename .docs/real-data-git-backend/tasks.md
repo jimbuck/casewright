@@ -49,7 +49,7 @@ from the Vite bundle so they're `require`d at runtime instead of bundled.
 
 ---
 
-### [ ] 0200 - Zod schemas + serialize/parse format layer
+### [x] 0200 - Zod schemas + serialize/parse format layer
 
 **Overview:** Define Zod schemas for the on-disk shapes and the pure functions that serialize/parse
 case markdown, run CSV, and suite metadata — reusing the existing serialization helpers and keeping
@@ -61,17 +61,17 @@ the minimal-diff guarantees.
 - `apps/desktop/src/utils/steps.ts`, `ids.ts`, `markdown.tsx` - Reused (`stepText`/`numberSteps`/`listText`, `slug`, `sanitizeInline`/`hasBlockConstructs`).
 
 **Sub-Tasks:**
-- [ ] 0201 `schemas/`: `RootConfigSchema` (`casewright.json`), `WorkspaceYamlSchema` (`displayIdPrefix`, `runsDir` default `'runs'`, `name`, `description?`), `CaseFrontMatterSchema` (`id`, `displayId`, `title`, `status`, `tags`), `SuiteFrontMatterSchema` (`_suite.md`), `RunRowSchema` + `RunSidecarSchema`; `index.ts` re-exports + `LintWarning` type.
-- [ ] 0202 `services/format/filename.ts`: `caseFileName(c) = `${displayId}-${slug(title)}.md`` (fixes the current `slug(title)`-only path); `runFileName(name, date)`.
-- [ ] 0203 `services/format/case.ts` → `serializeCase(Case): string`: gray-matter front matter with stable key order; body = 4 reserved `##` sections in fixed order even when empty; steps via `stepText` (2-space indent) with per-level ordinals; Systems/Expected via `- `; single trailing newline; re-append captured out-of-schema content.
-- [ ] 0204 `services/format/case.ts` → `parseCase(text)`: gray-matter + `safeParse`; split on the reserved headings; step depth = `floor(leadingSpaces/2)` (ordinals ignored); collect `extraContent` + `LintWarning[]`; return domain `Case` minus `suite`/`modified`.
-- [ ] 0205 `services/format/run.ts`: `serializeRunCsv`/`parseRunCsv` (papaparse, 7 PRD columns, `RunRowSchema`); run sidecar `.md` parse/serialize.
-- [ ] 0206 `services/format/suite.ts`: `_suite.md` parse/serialize.
-- [ ] 0207 De-demo `src/utils/ids.ts`: `randomId`→`nanoid` (lowercase, len ~10–12; keep the name/signature); `nowStamp`→real `new Date()`-derived stamp.
+- [x] 0201 `schemas/{config,workspace,case,suite,run,index}.ts`: all schemas (Zod v4) with tolerant `.catch()`/`.default()`; `index.ts` re-exports + `LintWarning`, `RUN_CSV_COLUMNS`.
+- [x] 0202 `services/format/filename.ts`: `caseFileName(c) = `<displayId>-<slug(title)>.md`` + `runFileStem(name, date)`.
+- [x] 0203 `services/format/case.ts` → `serializeCase`: **manual** front matter (stable key order, inline `tags`, YAML-safe scalars) + 4 reserved sections in fixed order even when empty; steps = 2-space indent + per-level ordinal; `- ` bullets; single trailing newline; re-appends captured `extra`.
+- [x] 0204 `services/format/case.ts` → `parseCase`: gray-matter (via the node bridge) + `safeParse`; split on reserved headings; step depth = `floor(leadingSpaces/2)`, ordinals stripped; collects `extra` + `LintWarning[]`; generates `id` if missing; returns `Case` minus `suite`/`modified`.
+- [x] 0205 `services/format/run.ts`: `serializeRunCsv`/`parseRunCsv` (papaparse, 7 columns, `RunRowSchema`) + run sidecar parse/serialize.
+- [x] 0206 `services/format/suite.ts`: `_suite.md` parse/serialize.
+- [x] 0207 De-demoed `src/utils/ids.ts`: `randomId`→nanoid `customAlphabet` (`[a-z0-9]`, 11 chars); `nowStamp`→`new Date()` `YYYY-MM-DD HH:MM`.
 
 **Notes:**
 - Validation is non-blocking (`safeParse` → defaults + `LintWarning`) per PRD §5.2.
-- Inline text stays raw markdown (rendered via `renderInline`) — no remark/AST parsing.
+- Serialize is pure (no bridge); parse uses `node.matter()`/`node.papa()`. Round-trip + golden tests land in 0300 (need the Vitest alias + require-inject setup). Canonical Steps use 2-space indent per the PRD rule (parser tolerates the example's 3-space form).
 
 ---
 
