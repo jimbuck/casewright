@@ -48,7 +48,7 @@ duplicating them.
 
 ---
 
-### [ ] 0200 - Initialize shadcn/ui + rebuild `components/ui`
+### [x] 0200 - Initialize shadcn/ui + rebuild `components/ui`
 
 **Overview:** Initialize shadcn/ui (Tailwind v4 / React 19 path), add the base Radix components, and
 re-implement the `@/components/ui` barrel over shadcn while **keeping the exact same export surface**
@@ -61,16 +61,16 @@ so existing consumers compile unchanged.
 - `apps/desktop/tsconfig.json` - Confirm the `@/*` path alias resolves for shadcn.
 
 **Sub-Tasks:**
-- [ ] 0201 Run `shadcn init` (choose the Tailwind v4 path); it creates `components.json` + `lib/utils.ts`. Confirm `@/` alias resolution works (paths in `tsconfig.json`; note TS6 dropped `baseUrl`).
-- [ ] 0202 Add shadcn components: `button`, `input`, `textarea`, `select`, `dialog`, `dropdown-menu`, `badge`, `tooltip`, `scroll-area`.
-- [ ] 0203 Re-implement the `@/components/ui` barrel over shadcn, preserving export names + prop API: `Button` (map variants `primary→default`, `ghost`, `danger→destructive`, `sm`, `icon`), `Input`, `Textarea`, `Select`, `Field`, `Kbd`.
-- [ ] 0204 Re-implement `Tag`, `StatusPill`, `ResultSwatch` as thin wrappers over `Badge` with status/result variants — keep the glyph+color pairing (colorblind safety, PRD §8).
-- [ ] 0205 Re-implement `Modal`/`ModalHeader`/`ModalBody`/`ModalFooter` over Radix `Dialog`, preserving the API used by `CommitModal`/`CreateRunModal`.
-- [ ] 0206 `pnpm --filter @casewright/desktop run typecheck` — ensure all current ui consumers still compile against the new barrel.
+- [x] 0201 Create shadcn config manually (`components.json` + `src/lib/utils.ts` `cn()`) — the interactive `shadcn init` CLI can't run non-interactively/offline here. `@/` alias resolves via `tsconfig.json` paths (no `baseUrl`).
+- [x] 0202 Install the shadcn foundation (`class-variance-authority`, `clsx`, `tailwind-merge`) + Radix primitives actually used (`@radix-ui/react-dialog`, `@radix-ui/react-dropdown-menu` for 0300, `@radix-ui/react-slot`). Scoped out unused `tooltip`/`scroll-area`; kept native `<select>` for parity.
+- [x] 0203 Re-implement the `@/components/ui` barrel over shadcn/CVA, preserving export names + prop API: `Button` (CVA variants `default/primary/ghost/danger` + `sm`/`icon`), `Input`/`Textarea`/`Select` (shared `controlBase`), `Field`, `Kbd`.
+- [x] 0204 Re-implement `Tag`, `StatusPill`, `ResultSwatch` as Tailwind utility wrappers with status/result variants — kept the glyph+color pairing (colorblind safety, PRD §8).
+- [x] 0205 Re-implement `Modal`/`ModalHeader`/`ModalBody`/`ModalFooter` over Radix `Dialog` (Portal-less so it stays under the z-50 titlebar), preserving the `CommitModal`/`CreateRunModal` API. Added `@keyframes fade/pop` to `app.css`.
+- [x] 0206 `typecheck` + `build` green; Playwright-verified launcher, workbench, and the Commit modal (Radix Dialog) render with full parity + titlebar-above-scrim behavior.
 
 **Notes:**
-- Keeping barrel export names identical avoids touching the ~15 consumers. Use CVA for variants.
-- shadcn writes components into `src/components/ui/` — overwrite the hand-rolled ones.
+- Keeping barrel export names identical avoids touching the ~15 consumers. CVA used for Button.
+- Implemented shadcn-equivalent component source by hand (overwriting `src/components/ui/*`) rather than via the CLI, which needs interactivity + network.
 
 ---
 

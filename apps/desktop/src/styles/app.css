@@ -118,3 +118,16 @@
     background: transparent;
   }
 }
+
+/* Modal / scrim entrance animations (referenced via animate-[fade…] / animate-[pop…]). */
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes pop {
+  from {
+    transform: translateY(6px) scale(0.99);
+    opacity: 0;
+  }
+}
