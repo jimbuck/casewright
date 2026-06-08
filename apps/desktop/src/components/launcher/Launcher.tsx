@@ -31,7 +31,7 @@ export function Launcher() {
       </div>
 
       <div className="flex min-h-0 flex-col px-[42px] py-10">
-        <h2 className="m-0 mb-1 text-[13px] uppercase tracking-[0.06em] text-ink-3">Open a repository</h2>
+        <h2 className="m-0 mb-1 text-[13px] font-semibold uppercase tracking-[0.06em] text-ink-3">Open a repository</h2>
         <div className="mb-[26px] mt-4 flex gap-2.5">
           <Button variant="primary" onClick={openRepo}>
             {I.folderOpen({ size: 15 })} Open repository…

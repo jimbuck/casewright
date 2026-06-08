@@ -26,15 +26,15 @@ function Workbench() {
   const { screen, modal } = useApp();
 
   return (
-    <div className="app">
+    <div className="flex h-full flex-col overflow-hidden bg-panel">
       <TitleBar />
       {screen === 'launcher' ? (
         <Launcher />
       ) : (
         <>
           <TopBar />
-          <div className="shell">
-            <div className="workspace">
+          <div className="flex min-h-0 flex-1">
+            <div className="flex min-h-0 flex-1">
               <Sidebar />
               <Center />
             </div>

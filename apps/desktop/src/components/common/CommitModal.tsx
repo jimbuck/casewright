@@ -1,10 +1,13 @@
 import { useState } from 'react';
 import { I } from '@/components/icons';
 import { Button, Field, Modal, ModalBody, ModalFooter, ModalHeader, Tag, Textarea } from '@/components/ui';
+import { cn } from '@/lib/utils';
 import { useApp } from '@/store/app-store';
 import type { Change } from '@/types';
 
 const keyOf = (c: Change) => c.kind + ':' + c.refId;
+
+const STAT_COLOR: Record<string, string> = { M: 'text-blocked', A: 'text-pass', D: 'text-fail' };
 
 export function CommitModal() {
   const { changes, doCommit, setModal } = useApp();
@@ -20,30 +23,41 @@ export function CommitModal() {
   return (
     <Modal onClose={close}>
       <ModalHeader>
-        <span className="ricon2" style={{ color: 'var(--accent)' }}>
-          {I.commit({ size: 18 })}
-        </span>
+        <span className="grid place-items-center text-accent">{I.commit({ size: 18 })}</span>
         <h3>Commit changes</h3>
-        <Tag style={{ marginLeft: 'auto' }}>
+        <Tag className="ml-auto">
           {n} of {changes.length} staged
         </Tag>
       </ModalHeader>
       <ModalBody style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
         {changes.length === 0 ? (
-          <div className="lint-note">
+          <div className="flex items-center gap-[7px] rounded-md border border-dashed border-border-2 bg-panel-2 px-3 py-[9px] text-[12px] text-ink-3">
             {I.check({ size: 14 })} Working tree clean — nothing to commit.
           </div>
         ) : (
           <>
-            <div className="commit-files">
+            <div className="flex flex-col overflow-hidden rounded-md border border-border">
               {changes.map((c) => {
                 const k = keyOf(c);
                 return (
-                  <div key={k} className="cf-row" onClick={() => toggle(k)}>
-                    <span className={'cf-check' + (sel[k] ? ' on' : '')}>{I.check({ size: 12 })}</span>
-                    <span className={'cf-stat ' + c.status}>{c.status}</span>
-                    <span className="cf-path">
-                      <span className="dir">{c.path.replace(/\/[^/]+$/, '/')}</span>
+                  <div
+                    key={k}
+                    className="flex cursor-pointer items-center gap-2.5 border-b border-border px-[11px] py-2 last:border-b-0 hover:bg-panel-2"
+                    onClick={() => toggle(k)}
+                  >
+                    <span
+                      className={cn(
+                        'grid size-4 shrink-0 place-items-center rounded-sm border-[1.5px] border-border-2 text-transparent',
+                        sel[k] && 'border-accent bg-accent text-white',
+                      )}
+                    >
+                      {I.check({ size: 12 })}
+                    </span>
+                    <span className={cn('w-[14px] shrink-0 text-center font-mono text-[11px] font-bold', STAT_COLOR[c.status])}>
+                      {c.status}
+                    </span>
+                    <span className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap font-mono text-[12px] text-ink-2">
+                      <span className="text-ink-faint">{c.path.replace(/\/[^/]+$/, '/')}</span>
                       {c.path.split('/').pop()}
                     </span>
                   </div>
@@ -56,16 +70,14 @@ export function CommitModal() {
                 placeholder="Describe what changed…"
                 value={msg}
                 onChange={(ev) => setMsg(ev.target.value)}
-                style={{ fontFamily: 'var(--font-mono)', fontSize: 12.5 }}
+                className="font-mono text-[12.5px]"
               />
             </Field>
           </>
         )}
       </ModalBody>
       <ModalFooter>
-        <span className="muted" style={{ marginRight: 'auto', fontSize: 12 }}>
-          {I.branch({ size: 13 })} main
-        </span>
+        <span className="mr-auto flex items-center gap-1.5 text-[12px] text-ink-3">{I.branch({ size: 13 })} main</span>
         <Button variant="ghost" onClick={close}>
           Cancel
         </Button>

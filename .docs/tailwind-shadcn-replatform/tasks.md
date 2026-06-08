@@ -147,7 +147,7 @@ behavior byte-identical.
 
 ---
 
-### [ ] 0600 - Convert the merge resolver (showpiece) + delete legacy CSS
+### [x] 0600 - Convert the merge resolver (showpiece) + delete legacy CSS
 
 **Overview:** Convert the structured 3-way merge resolver — the product's showpiece — to Tailwind,
 then remove the now-empty legacy stylesheets. Done last so the resolver renders fully against
@@ -158,14 +158,14 @@ then remove the now-empty legacy stylesheets. Done last so the resolver renders 
 - `apps/desktop/src/styles/base.css`, `apps/desktop/src/styles/components.css` - To be deleted at the end.
 
 **Sub-Tasks:**
-- [ ] 0601 Convert `MergeResolver` shell (head, progress bar, conflicted-files list, footer).
-- [ ] 0602 Convert `FileDetail` + `AutoElement` (auto-merged green chips + reasons).
-- [ ] 0603 Convert `ConflictElement` (ours/theirs sides, take buttons, base reference, edit textarea, merged preview).
-- [ ] 0604 Convert `CsvRowConflict` + `diffs` — add/del highlight colors from the diff tokens.
-- [ ] 0605 Delete `styles/base.css` + `styles/components.css`; remove their imports from `main.tsx`; verify nothing references them.
+- [x] 0601 Convert `MergeResolver` shell (now built on the Radix `Modal`; head, progress bar, conflicted-files list, footer; `dismissable={false}` to match the non-closable backdrop).
+- [x] 0602 Convert `FileDetail` + `AutoElement` (auto-merged green chips + reasons); shared element class strings in `merge/styles.ts`.
+- [x] 0603 Convert `ConflictElement` (ours/theirs sides, take buttons, base reference, edit textarea, merged preview).
+- [x] 0604 Convert `CsvRowConflict` + `diffs` — add/del highlight colors from the diff tokens.
+- [x] 0605 Also converted the remaining stragglers so the stylesheets could go: `EmptyCenter`, `CommitModal`, `App.tsx` shell (`.app/.shell/.workspace`), `utils/markdown.tsx` (`.md-code/.md-link`), and added explicit heading weights (Tailwind preflight zeroes them). Deleted `styles/base.css` + `styles/components.css`; `main.tsx` imports only `app.css`. Grep-verified no bespoke class references remain.
 
 **Notes:**
-- Keep `sample.conflict` available (Workstream B removes it); the resolver must visually match the prior design.
+- Verified via Playwright: merge resolver + Commit modal render with parity; whole app intact after CSS deletion (body/scrollbars now from `app.css @layer base`).
 
 ---
 
