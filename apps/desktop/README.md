@@ -38,13 +38,14 @@ src/
 ├── utils/                    # markdown render, word diff, step numbering, ids, cx
 ├── store/app-context.tsx     # the app store — typed React context + useApp() hook
 │                             #   (replaces the prototype's window.CW globals)
+├── lib/nwjs.ts               # typed NW.js window helpers (frameless titlebar controls)
 ├── styles/                   # base.css + components.css (tokens come from @casewright/brand)
 └── components/
-    ├── App.tsx               # provider + window chrome + view routing + modals
+    ├── App.tsx               # provider + view routing + modals
     ├── icons.tsx             # the line-icon set
     ├── ui/                   # shadcn-style base components: Button, Input, Select,
     │                         #   Textarea, Tag, StatusPill, ResultSwatch, Field, Modal, Kbd
-    ├── chrome/               # TitleBar, TopBar, Toasts
+    ├── chrome/               # TitleBar (custom frameless), TopBar, Toasts
     ├── launcher/             # Launcher
     ├── sidebar/              # Sidebar (tree DnD + filters) + ContextMenu
     ├── editor/               # CaseEditor + Objective / List / Steps / Tag controls
@@ -59,16 +60,19 @@ The **`ui/` primitives** are shadcn-style components (typed prop variants like
 design is unchanged, only the component API is added. Shared design tokens live in
 [`@casewright/brand`](../../packages/brand).
 
+The window is **frameless** (`window.frame: false`) with a custom VS Code–style **titlebar**
+(`chrome/TitleBar.tsx`): an app-region drag bar with a File/View/Go/Help menu bar (wired to app
+actions, reusing the `ContextMenu`) and Windows-style minimize / maximize / close controls backed
+by `lib/nwjs.ts`. Outside NW.js (dev preview / tests) the controls no-op gracefully.
+
 ## Status & next steps
 
 The full prototype has been ported to a typed, modular React app (verified: `tsc` clean, `vite`
 build, and a browser smoke test through the launcher → editor → merge resolver). Intentional
 follow-ups:
 
-- **Wire NW.js native APIs.** The context-menu actions (Reveal in File Explorer, Open in default
-  editor, …) are still mocked toasts; back them with `nw.Shell` / `nw.Menu`.
+- **Wire NW.js native shell APIs.** The right-click actions (Reveal in File Explorer, Open in
+  default editor, …) are still mocked toasts; back them with `nw.Shell`.
 - **Back the data layer with the filesystem + Git** instead of the in-memory `data/sample.ts`.
-- **Window chrome.** The app still draws the prototype's own titlebar; to use it, set the manifest
-  `window.frame` to `false` and add drag regions.
 - **Packaging.** A GitHub release workflow producing a single Windows `.exe` (via `nw-builder`) is
   the agreed next deliverable — it will package this `dist/` output.

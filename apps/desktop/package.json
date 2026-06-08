@@ -13,7 +13,8 @@
     "height": 940,
     "min_width": 1024,
     "min_height": 640,
-    "frame": true,
+    "frame": false,
+    "resizable": true,
     "show": true
   },
   "scripts": {

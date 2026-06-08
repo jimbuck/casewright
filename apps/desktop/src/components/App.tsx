@@ -23,35 +23,28 @@ function Center() {
 }
 
 function Workbench() {
-  const { screen, workspace, branch, modal } = useApp();
-
-  if (screen === 'launcher') {
-    return (
-      <div className="desk">
-        <div className="window">
-          <TitleBar subtitle="Open a repository" />
-          <Launcher />
-        </div>
-      </div>
-    );
-  }
+  const { screen, modal } = useApp();
 
   return (
-    <div className="desk">
-      <div className="window">
-        <TitleBar subtitle={`${workspace.name} · ${branch}`} />
-        <TopBar />
-        <div className="shell">
-          <div className="workspace">
-            <Sidebar />
-            <Center />
+    <div className="app">
+      <TitleBar />
+      {screen === 'launcher' ? (
+        <Launcher />
+      ) : (
+        <>
+          <TopBar />
+          <div className="shell">
+            <div className="workspace">
+              <Sidebar />
+              <Center />
+            </div>
           </div>
-        </div>
-        {modal === 'commit' && <CommitModal />}
-        {modal === 'createRun' && <CreateRunModal />}
-        {modal === 'merge' && <MergeResolver />}
-        <Toasts />
-      </div>
+          {modal === 'commit' && <CommitModal />}
+          {modal === 'createRun' && <CreateRunModal />}
+          {modal === 'merge' && <MergeResolver />}
+          <Toasts />
+        </>
+      )}
     </div>
   );
 }
