@@ -8,10 +8,14 @@ import {
 } from '@/components/ui';
 import { useApp } from '@/store/app-store';
 
+const baseName = (p: string): string => p.replace(/[/\\]+$/, '').split(/[/\\]/).pop() || 'repository';
+
 export function TopBar() {
-  const { workspace, workspaces, branch, ahead, behind, changes, setWorkspace, goHome, doPush, doPull, setModal, toast } =
+  const { workspace, workspaces, repoPath, branch, ahead, behind, changes, setWorkspace, goHome, doPush, doPull, setModal, toast } =
     useApp();
   const dirty = changes.length;
+  if (!workspace) return null;
+  const repoName = baseName(repoPath);
 
   return (
     <div className="flex h-[46px] flex-none items-center gap-2.5 border-b border-border bg-panel-2 px-3">
@@ -29,7 +33,7 @@ export function TopBar() {
                   <path d="M15 5v5h5" />
                 </svg>
               </span>
-              <span className="whitespace-nowrap font-mono text-[12px] text-ink-3">qa-testcases /</span>
+              <span className="whitespace-nowrap font-mono text-[12px] text-ink-3">{repoName} /</span>
               <span className="whitespace-nowrap font-semibold">{workspace.name}</span>
               {I.chevronDown({ size: 13 })}
             </button>

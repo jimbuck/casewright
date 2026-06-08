@@ -27,7 +27,7 @@ export function CaseEditor() {
   );
   const idConflict = clashes.length > 0;
   const nextFreeId = () => {
-    const prefix = c.displayId.split('-')[0] || ctx.workspace.prefix;
+    const prefix = c.displayId.split('-')[0] || ctx.workspace?.prefix || 'CW';
     const used = new Set(ctx.cases.map((x) => x.displayId));
     const pad = (s: number) => `${prefix}-${String(s).padStart(4, '0')}`;
     let n = 1;

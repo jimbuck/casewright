@@ -23,12 +23,12 @@ function Center() {
 }
 
 function Workbench() {
-  const { screen, modal } = useApp();
+  const { screen, modal, workspace } = useApp();
 
   return (
     <div className="flex h-full flex-col overflow-hidden bg-panel">
       <TitleBar />
-      {screen === 'launcher' ? (
+      {screen === 'launcher' || !workspace ? (
         <Launcher />
       ) : (
         <>

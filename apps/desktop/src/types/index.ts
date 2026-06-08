@@ -51,14 +51,14 @@ export interface Workspace {
 }
 
 export interface Recent {
-  name: string;
   path: string;
+  name: string;
   branch: string;
   remote: string;
+  /** ISO timestamp of when this repo was last opened. */
   lastOpened: string;
   workspaces: number;
-  lastWorkspace: string | null;
-  current?: boolean;
+  lastWorkspaceId: string | null;
 }
 
 /* ---- runs (CSV-backed) ---- */

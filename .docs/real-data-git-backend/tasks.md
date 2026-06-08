@@ -101,7 +101,7 @@ serialize/parse functions (the riskiest logic), runnable in plain Node.
 
 ---
 
-### [ ] 0400 - Filesystem repo service: read path (open → render)
+### [x] 0400 - Filesystem repo service: read path (open → render)
 
 **Overview:** Implement opening a repository and loading a workspace from disk, store recents in the
 OS data dir, and rewire the store + launcher so the app renders a real repo. No writes yet.
@@ -116,18 +116,18 @@ OS data dir, and rewire the store + launcher so the app renders a real repo. No 
 - `apps/desktop/src/types/index.ts` - Reshape `Recent` (ISO `lastOpened`, `lastWorkspaceId`).
 
 **Sub-Tasks:**
-- [ ] 0401 `repo.ts` `openRepo(path)`: validate a git worktree; read+validate `casewright.json` (fallback: offer init / single implicit workspace); resolve workspace globs (`qa/*`, explicit paths — tiny custom matcher, no glob dep); read each `workspace.yaml` → `Workspace` (map `displayIdPrefix`→`prefix`); return workspaces + warnings.
-- [ ] 0402 `repo.ts` `loadWorkspace(repoPath, ws)`: walk folders → `TreeNode[]` (suite id = `slug(relPath)`, real folder `path`); parse every `*.md` (skip `_suite.md` + runs dir) → `Case[]` (assign `suite`, `modified:false`); read `_suite.md` names; read `runsDir/*.csv` + sidecars → `Run[]`; collect `LintWarning[]`.
-- [ ] 0403 `recents.ts`: read/write `recents.json` in `nw.App.dataPath`; `addRecent`/`listRecents`/`removeRecent`; reshape `Recent` to `{ path, name, lastOpened: ISO, lastWorkspaceId?, branch?, remote? }`.
-- [ ] 0404 Store: remove `import * as sample` + seeding; initial `cases/runs/tree = []`, `workspace = null`, add `repoPath`, `loading`, `error`, `warnings`, `conflict: null`; make `openRepo`/`setWorkspace` async (load from disk, `addRecent`); `casePath` returns the real path/filename.
-- [ ] 0405 `Launcher`: recents from store; "Open repository…" → `pickDirectory()` → `openRepo`; spinner while `loading`; compute relative "x ago".
-- [ ] 0406 `App`: loading/error gate before `screen === 'main'`; `MergeResolver` reads `conflict` from the store (nullable) instead of `sample.conflict`.
-- [ ] 0407 Guard `workspace == null` in `TopBar`/`Sidebar`/`CaseEditor`/etc. (launcher screen).
-- [ ] 0408 Verify: `pnpm dev:desktop` against `.fixture/` → tree/cases/runs render identically to the old sample.
+- [x] 0401 `repo.ts` `openRepo(path)`: `simple-git` worktree check; read+validate `casewright.json` (fallback: single implicit workspace + warning); resolve globs (`qa/*` + explicit, custom matcher); each `workspace.yaml` → `Workspace` (`displayIdPrefix`→`prefix`); returns workspaces + branch + warnings.
+- [x] 0402 `repo.ts` `loadWorkspace`: walks folders → `TreeNode[]` (suite id = `slug(relPath)`, `_suite.md` display name); parses every `*.md` (skips `_suite.md` + runs dir) → `Case[]`; reads `runsDir/*.csv` + sidecars → `Run[]`; collects `LintWarning[]`.
+- [x] 0403 `recents.ts`: `listRecents`/`addRecent`/`removeRecent` in `nw.App.dataPath` (no-ops to `[]` outside NW.js); `Recent` reshaped to ISO `lastOpened` + `lastWorkspaceId`.
+- [x] 0404 Store: removed sample seeding; initial `cases/runs/tree = []`, `workspace = null`; added `repoPath/loading/error/warnings/recents/conflict:null`; async `openRepo(path?)` (pickDirectory fallback + `addRecent`) / `setWorkspace`; `casePath` uses `caseFileName`.
+- [x] 0405 `Launcher`: store recents + `timeAgo`; "Open repository…" → async `openRepo()`; spinner ("Opening…"); empty-state.
+- [x] 0406 `App`: renders the workbench only when a `workspace` is loaded; `MergeResolver` reads nullable `conflict` from the store.
+- [x] 0407 Guarded `workspace == null` in `TopBar` (early return + real repo name) / `CaseEditor` / `RunsList` / `CreateRunModal` / `TitleBar`.
+- [x] 0408 **Read-path logic verified via a Vitest integration test (`repo.test.ts`) against a real temp git repo** (openRepo + loadWorkspace → tree/cases/runs); browser-verified the launcher empty-state mounts cleanly. The live NW.js render against `.fixture/` needs a real NW.js run (not possible headlessly here).
 
 **Notes:**
-- This decouples the merge UI from sample data, so `sample.ts` can be deleted in 0700.
-- No persistence yet — read-only proof that the bridge + format + repo layer work under real NW.js.
+- The merge UI is decoupled from sample data (store `conflict: null`), so `sample.ts` can be deleted in 0700.
+- No persistence yet — read-only proof that the bridge + format + repo layer work; the bundle confirms the node libs are runtime-required, not bundled.
 
 ---
 

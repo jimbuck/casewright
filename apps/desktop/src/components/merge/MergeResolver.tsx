@@ -2,18 +2,23 @@ import { useState } from 'react';
 import { I } from '@/components/icons';
 import { Button, Modal } from '@/components/ui';
 import { cn } from '@/lib/utils';
-import { conflict } from '@/data/sample';
 import { useApp } from '@/store/app-store';
 import type { Resolution, Resolutions } from '@/types';
 import { FileDetail } from './FileDetail';
 
-/** Root structured 3-way merge resolver (the showpiece). */
+/**
+ * Root structured 3-way merge resolver (the showpiece). Reads the conflict from the
+ * store; the structured 3-way merge engine that populates it is a deferred follow-up,
+ * so this is null (and the modal is not shown) until then.
+ */
 export function MergeResolver() {
-  const { completeMerge, setModal } = useApp();
+  const { completeMerge, setModal, conflict } = useApp();
   const cancel = () => setModal(null);
   const [active, setActive] = useState(0);
   const [resolutions, setResolutions] = useState<Resolutions>({});
   const setRes = (k: string, v: Resolution) => setResolutions((s) => ({ ...s, [k]: v }));
+
+  if (!conflict) return null;
 
   // count conflicts per file + how many are resolved
   const fileStats = conflict.files.map((f) => {

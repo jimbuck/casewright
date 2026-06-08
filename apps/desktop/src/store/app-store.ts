@@ -1,13 +1,19 @@
 import type { Dispatch, SetStateAction } from 'react';
 import { create } from 'zustand';
 
-import * as sample from '@/data/sample';
+import { caseFileName } from '@/services/format/filename';
+import { loadWorkspace, openRepo as openRepoSvc } from '@/services/repo';
+import { addRecent, listRecents } from '@/services/recents';
+import type { LintWarning } from '@/schemas';
 import { randomId, slug } from '@/utils/ids';
+import { pickDirectory } from '@/lib/nwjs';
 import type {
   Case,
   Change,
+  Conflict,
   CreateRunArgs,
   ModalKind,
+  Recent,
   Renaming,
   Resolutions,
   Run,
@@ -21,6 +27,8 @@ import type {
   View,
   Workspace,
 } from '@/types';
+
+const baseName = (p: string): string => p.replace(/[/\\]+$/, '').split(/[/\\]/).pop() || p;
 
 /* ---- tree helpers ---- */
 function buildSuiteIndex(tree: TreeNode[]) {
@@ -71,16 +79,24 @@ export interface AppState {
   cases: Case[];
   runs: Run[];
   tree: TreeNode[];
-  workspace: Workspace;
+  workspace: Workspace | null;
   workspaces: Workspace[];
+
+  /* repo / loading */
+  repoPath: string;
+  loading: boolean;
+  error: string | null;
+  warnings: LintWarning[];
+  recents: Recent[];
+  loadRecents: () => Promise<void>;
 
   /* navigation / selection */
   screen: Screen;
   view: View;
   sel: Selection;
-  openRepo: () => void;
+  openRepo: (path?: string) => Promise<void>;
   goHome: () => void;
-  setWorkspace: (w: Workspace) => void;
+  setWorkspace: (w: Workspace) => Promise<void>;
   openCase: (id: string) => void;
   openRunsList: () => void;
   openRun: (runId: string) => void;
@@ -122,6 +138,8 @@ export interface AppState {
   ahead: number;
   behind: number;
   changes: Change[];
+  /** Populated by the (deferred) structured 3-way merge engine; null until then. */
+  conflict: Conflict | null;
   doCommit: (selectedKeys: string[], msg: string) => void;
   doPush: () => void;
   doPull: () => void;
@@ -137,8 +155,11 @@ const changeKey = (c: Change) => c.kind + ':' + c.refId;
 export const useAppStore = create<AppState>()((set, get) => {
   const casePath = (c: Case): string => {
     const { tree, workspace } = get();
+    if (!workspace) return caseFileName(c);
     const idx = buildSuiteIndex(tree);
-    return `${workspace.path}/${idx.path[c.suite] || c.suite}/${slug(c.title)}.md`;
+    const suitePath = idx.path[c.suite] ?? '';
+    const dir = [workspace.path, suitePath].filter(Boolean).join('/');
+    return `${dir}/${caseFileName(c)}`;
   };
 
   // upsert a change by its kind:refId key, preserving list order
@@ -151,7 +172,9 @@ export const useAppStore = create<AppState>()((set, get) => {
     });
 
   const applyMerge = (resolutions: Resolutions) => {
-    sample.conflict.files.forEach((file) => {
+    const conflict = get().conflict;
+    if (!conflict) return;
+    conflict.files.forEach((file) => {
       if (file.kind === 'case') {
         const apply: Partial<Case> = {};
         file.elements.forEach((el) => {
@@ -207,19 +230,25 @@ export const useAppStore = create<AppState>()((set, get) => {
 
   return {
     /* ---- initial state ---- */
-    cases: sample.cases.map((c) => ({ ...c })),
-    tree: clone(sample.tree),
-    runs: sample.runs.map((r) => ({ ...r, rows: r.rows.map((x) => ({ ...x })) })),
-    workspace: sample.workspaces[0],
-    workspaces: sample.workspaces,
+    cases: [],
+    tree: [],
+    runs: [],
+    workspace: null,
+    workspaces: [],
+    repoPath: '',
+    loading: false,
+    error: null,
+    warnings: [],
+    recents: [],
+    conflict: null,
     screen: 'launcher',
     view: 'editor',
-    sel: { kind: 'case', id: sample.cases[0].id, runId: null },
+    sel: { kind: 'case', id: undefined, runId: null },
     changes: [],
-    ahead: 1,
-    behind: 3,
+    ahead: 0,
+    behind: 0,
     branch: 'main',
-    lastTester: 'amartin',
+    lastTester: '',
     modal: null,
     toasts: [],
     collapsed: {},
@@ -234,10 +263,79 @@ export const useAppStore = create<AppState>()((set, get) => {
       setTimeout(() => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })), 2600);
     },
 
-    /* ---- navigation ---- */
-    openRepo: () => set({ screen: 'main' }),
+    /* ---- repo ---- */
+    loadRecents: async () => {
+      set({ recents: await listRecents() });
+    },
+
+    openRepo: async (path) => {
+      const target = path ?? (await pickDirectory());
+      if (!target) return;
+      set({ loading: true, error: null });
+      try {
+        const opened = await openRepoSvc(target);
+        const ws = opened.workspaces[0] ?? null;
+        const loaded = ws
+          ? await loadWorkspace(opened.repoPath, ws)
+          : { tree: [], cases: [], runs: [], warnings: [] };
+        set({
+          repoPath: opened.repoPath,
+          workspaces: opened.workspaces,
+          workspace: ws,
+          branch: opened.branch,
+          tree: loaded.tree,
+          cases: loaded.cases,
+          runs: loaded.runs,
+          warnings: [...opened.warnings, ...loaded.warnings],
+          changes: [],
+          conflict: null,
+          ahead: 0,
+          behind: 0,
+          screen: 'main',
+          view: 'editor',
+          sel: { kind: 'case', id: loaded.cases[0]?.id, runId: null },
+          loading: false,
+          error: null,
+        });
+        const recents = await addRecent({
+          path: opened.repoPath,
+          name: baseName(opened.repoPath),
+          branch: opened.branch,
+          remote: '',
+          lastOpened: new Date().toISOString(),
+          workspaces: opened.workspaces.length,
+          lastWorkspaceId: ws?.id ?? null,
+        });
+        set({ recents });
+      } catch (e) {
+        set({ loading: false, error: e instanceof Error ? e.message : String(e) });
+        get().toast('Could not open repository');
+      }
+    },
+
     goHome: () => set({ screen: 'launcher' }),
-    setWorkspace: (w) => set({ workspace: w }),
+
+    setWorkspace: async (w) => {
+      const { repoPath } = get();
+      set({ loading: true, error: null });
+      try {
+        const loaded = await loadWorkspace(repoPath, w);
+        set({
+          workspace: w,
+          tree: loaded.tree,
+          cases: loaded.cases,
+          runs: loaded.runs,
+          warnings: loaded.warnings,
+          changes: [],
+          sel: { kind: 'case', id: loaded.cases[0]?.id, runId: null },
+          view: 'editor',
+          loading: false,
+        });
+      } catch (e) {
+        set({ loading: false, error: e instanceof Error ? e.message : String(e) });
+        get().toast('Could not load workspace');
+      }
+    },
     openCase: (id) => set((s) => ({ sel: { ...s.sel, kind: 'case', id }, view: 'editor' })),
     openRunsList: () => set({ view: 'runs' }),
     openRun: (runId) => set((s) => ({ sel: { ...s.sel, kind: 'run', runId }, view: 'run' })),
@@ -307,6 +405,7 @@ export const useAppStore = create<AppState>()((set, get) => {
 
     createCase: (parentSuiteId) => {
       const { cases, tree, workspace } = get();
+      if (!workspace) return;
       const newId = randomId();
       const num = Math.max(0, ...cases.map((c) => parseInt(c.displayId.split('-')[1] ?? '0', 10) || 0)) + 1;
       const displayId = `${workspace.prefix}-${String(num).padStart(4, '0')}`;
@@ -461,7 +560,13 @@ export const useAppStore = create<AppState>()((set, get) => {
         ),
       }));
       if (run)
-        upsertChange({ kind: 'run', refId: runId, path: get().workspace.path + '/' + run.file, status: 'M', label: run.name });
+        upsertChange({
+          kind: 'run',
+          refId: runId,
+          path: (get().workspace?.path ?? '') + '/' + run.file,
+          status: 'M',
+          label: run.name,
+        });
     },
 
     createRun: ({ name, scope, tag, suite }) => {
@@ -486,7 +591,13 @@ export const useAppStore = create<AppState>()((set, get) => {
         rows,
       };
       set((s) => ({ runs: [run, ...s.runs], modal: null, sel: { ...s.sel, kind: 'run', runId: run.id, guideIndex: 0 }, view: 'guide' }));
-      upsertChange({ kind: 'run', refId: run.id, path: get().workspace.path + '/' + run.file, status: 'A', label: run.name });
+      upsertChange({
+        kind: 'run',
+        refId: run.id,
+        path: (get().workspace?.path ?? '') + '/' + run.file,
+        status: 'A',
+        label: run.name,
+      });
       get().toast(`Created run · ${rows.length} cases seeded`);
     },
 

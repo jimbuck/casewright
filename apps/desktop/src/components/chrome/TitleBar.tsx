@@ -104,7 +104,7 @@ export function TitleBar() {
     },
   ];
 
-  const title = screen === 'main' ? `${ctx.workspace.name} — Casewright` : 'Casewright';
+  const title = screen === 'main' && ctx.workspace ? `${ctx.workspace.name} — Casewright` : 'Casewright';
 
   return (
     <div className="relative z-50 flex h-[34px] flex-none items-stretch select-none border-b border-border bg-[linear-gradient(var(--panel-2),oklch(0.972_0.004_80))] [-webkit-app-region:drag]">

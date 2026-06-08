@@ -86,7 +86,7 @@ export function CreateRunModal() {
               <span className={radio(scope === 'all')}>{scope === 'all' && <span className="size-2 rounded-full bg-accent" />}</span>
               <div>
                 <div className="text-[13px] font-semibold">Whole workspace</div>
-                <div className="mt-0.5 text-[12px] text-ink-3">Every case in {ctx.workspace.name}.</div>
+                <div className="mt-0.5 text-[12px] text-ink-3">Every case in {ctx.workspace?.name ?? 'this workspace'}.</div>
               </div>
             </div>
           </div>
