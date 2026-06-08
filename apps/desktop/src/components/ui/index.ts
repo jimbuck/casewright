@@ -26,3 +26,4 @@ export {
   DropdownMenuGroup,
 } from './dropdown-menu';
 export type { MenuItem } from './dropdown-menu';
+export { ContextMenu, ContextMenuTrigger, ContextMenuContent, RowContextMenu } from './context-menu';

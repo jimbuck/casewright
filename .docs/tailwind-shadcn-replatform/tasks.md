@@ -126,7 +126,7 @@ result picker, checklists).
 
 ---
 
-### [ ] 0500 - Convert the sidebar (tree, DnD, filters)
+### [x] 0500 - Convert the sidebar (tree, DnD, filters)
 
 **Overview:** Convert the sidebar — nav tabs, search, filter chips, and the suite/case tree with its
 absolutely-positioned drop-line overlay and hover row-actions — to Tailwind, keeping the drag-and-drop
@@ -136,14 +136,14 @@ behavior byte-identical.
 - `apps/desktop/src/components/sidebar/Sidebar.tsx` - The whole tree + filters + DnD.
 
 **Sub-Tasks:**
-- [ ] 0501 Convert nav tabs (Cases/Runs), search box, and status/tag filter chips.
-- [ ] 0502 Convert tree rows (case + suite), modified dot, monospace displayId, and hover-revealed row actions.
-- [ ] 0503 Convert the `position:relative` tree wrapper + the absolute `drop-line` overlay (keep the `offsetTop`-based positioning logic).
-- [ ] 0504 Manually verify the indentable insertion line + Radix context menu behave identically after conversion.
-- [ ] 0505 Delete the sidebar rules from `base.css` + `components.css`.
+- [x] 0501 Convert nav tabs (Cases/Runs), search box (Input + absolute icon), and status/tag filter chips.
+- [x] 0502 Convert tree rows (case + suite), modified dot, monospace displayId, hover row actions (`group-hover`), selection accent bar (`before:`).
+- [x] 0503 Convert the `relative` tree wrapper + the absolute drop-line overlay; `offsetTop` logic preserved (rows still offset from the `relative` tree-inner; wrapper kept static).
+- [x] 0504 Replaced the hand-rolled `ContextMenu.tsx` with Radix `ContextMenu` (new `ui/context-menu.tsx` `RowContextMenu`, trigger `asChild` so the row DOM/offsets are unchanged); kept `.tree-section-h` as a JS hook class for the tail-drop guard. Context menu Playwright-verified; DnD logic byte-identical.
+- [x] 0505 Deleted the sidebar + `.ctx-*` + `.drop-line` rules from `components.css`; deleted `sidebar/ContextMenu.tsx`.
 
 **Notes:**
-- Only classNames change — the flatten/`maxDepthAt`/`resolveDrop` DnD logic and the overlay-positioning must remain exactly as-is (it's what fixed the earlier flicker).
+- Only classNames changed — the flatten/`maxDepthAt`/`resolveDrop` DnD logic and overlay-positioning are exactly as-is.
 
 ---
 
