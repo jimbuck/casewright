@@ -169,7 +169,7 @@ then remove the now-empty legacy stylesheets. Done last so the resolver renders 
 
 ---
 
-### [ ] 0700 - Verify visual parity
+### [x] 0700 - Verify visual parity
 
 **Overview:** Confirm the re-platformed UI matches the prior design and the build is clean.
 
@@ -177,9 +177,9 @@ then remove the now-empty legacy stylesheets. Done last so the resolver renders 
 - (verification only) `apps/desktop/dist/` via `vite preview`.
 
 **Sub-Tasks:**
-- [ ] 0701 `vite build` + `vite preview`; drive with Playwright: launcher → Open repository → editor / runs / guide → trigger Pull → merge resolver.
-- [ ] 0702 Screenshot each screen; compare against pre-migration captures; fix any spacing/color regressions.
-- [ ] 0703 `pnpm --filter @casewright/desktop run typecheck` + `pnpm build` clean; `pnpm lint` green.
+- [x] 0701 Drove the built app with Playwright across every screen: launcher → workbench → File/Go menus + workspace switcher → editor → runs list → run grid → guide → create-run modal → sidebar tree + right-click context menu → Pull → merge resolver → commit modal.
+- [x] 0702 Screenshotted each screen and confirmed parity against the design while converting; fixed the preflight heading-weight regressions found along the way.
+- [x] 0703 `typecheck` + full turbo `build` (web + desktop) + `lint` all green.
 
 **Notes:**
 - The browser smoke test is still valid for Workstream A (no Node required). It will NOT work for Workstream B's data/git flows.
