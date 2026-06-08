@@ -23,7 +23,7 @@ on-disk shapes** and are mapped at the serialization boundary.
 
 ## Tasks
 
-### [ ] 0100 - Node/build bridge
+### [x] 0100 - Node/build bridge
 
 **Overview:** Make Node-only modules (`fs`, `simple-git`, `gray-matter`, `papaparse`) available at
 runtime in the Vite-bundled NW.js renderer via a single typed `require` bridge, and externalize them
@@ -37,15 +37,15 @@ from the Vite bundle so they're `require`d at runtime instead of bundled.
 - `apps/desktop/scripts/dev.mjs` - Reference only (already sets `node-remote` in dev).
 
 **Sub-Tasks:**
-- [ ] 0101 Add to `apps/desktop` **dependencies**: `simple-git`, `gray-matter`, `papaparse`, `zod`, `nanoid`; devDeps: `@types/papaparse`, `rollup-plugin-node-externals`.
-- [ ] 0102 Create `src/lib/node.ts`: `NotInNwjsError`; `nodeRequire()` from `globalThis.require ?? window.nw?.require`; lazy typed getters `node.fsp()`, `node.path()`, `node.os()`, `node.simpleGit()`, `node.matter()`, `node.papa()`.
-- [ ] 0103 Extend `src/lib/nwjs.ts`: expose `nw.App.dataPath`; add `pickDirectory(): Promise<string|null>` via a hidden `<input type="file" nwdirectory>`.
-- [ ] 0104 `vite.config.ts`: add `nodeExternals()` (first plugin) + `optimizeDeps.exclude: ['simple-git','gray-matter','papaparse']`; keep `zod`/`nanoid` bundled; `base:'./'`/`target:'chrome120'` unchanged.
-- [ ] 0105 Verify: `pnpm dev:desktop`; in NW.js devtools `require('node:fs')` and `require('simple-git')` resolve. `vite build` leaves them external (grep `dist/assets/*.js` for `require("simple-git")`).
+- [x] 0101 Added to **dependencies**: `simple-git`, `gray-matter`, `papaparse`, `zod`, `nanoid`; devDeps: `@types/papaparse`, `@types/node`.
+- [x] 0102 Created `src/lib/node.ts`: `NotInNwjsError`; `nodeRequire()` from `globalThis.require ?? window.nw?.require`; memoized typed getters `node.fsp()`/`path()`/`os()`/`simpleGit()`/`matter()`/`papa()` via dynamic `require(<string>)` (type-only imports → erased; libs never bundled).
+- [x] 0103 Extended `src/lib/nwjs.ts`: `appDataPath()` (`nw.App.dataPath`) + `pickDirectory()` via a hidden `<input nwdirectory>` (with focus-based cancel detection).
+- [x] 0104 `vite.config.ts`: `optimizeDeps.exclude` for the node-only libs. **Dropped `rollup-plugin-node-externals`** — its latest build calls `RegExp.escape` (unavailable on Node 22.15) and it's redundant: the dynamic-`require` bridge already keeps these libs out of the bundle (verified: JS bundle size unchanged, no lib source bundled).
+- [x] 0105 Build + typecheck clean; libs confirmed not bundled. The in-NW.js `require()` resolution check needs a real NW.js run (not possible headlessly here) — correct by construction; the Node-side require path is exercised by the Vitest setup in 0300.
 
 **Notes:**
-- Prod loads via `file://` (Node integration on by default) — no `node-remote` change needed; dev already sets it.
-- Packaging a flattened prod `node_modules` for nw-builder is a later concern; putting libs in real `dependencies` + externalizing de-risks it. Flag, don't solve here.
+- Prod loads via `file://` (Node integration on) — no `node-remote` change needed; dev already sets it.
+- Packaging a flattened prod `node_modules` for nw-builder is a later concern; libs are in real `dependencies` + kept unbundled, which de-risks it. Flagged, not solved here.
 
 ---
 
