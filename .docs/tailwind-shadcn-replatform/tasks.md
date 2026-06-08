@@ -20,7 +20,7 @@ is present until Workstream B removes it).
 
 ## Tasks
 
-### [ ] 0100 - Tailwind v4 setup + brand-token bridge
+### [x] 0100 - Tailwind v4 setup + brand-token bridge
 
 **Overview:** Install Tailwind v4 (CSS-first, no `tailwind.config.js`/PostCSS) via the Vite plugin,
 and bridge the existing `@casewright/brand` oklch design tokens into Tailwind's `@theme` so utility
@@ -35,12 +35,12 @@ duplicating them.
 - `packages/brand/tokens.css` - Canonical oklch `:root` vars (read-only reference; stays the source of truth, shared with the web app).
 
 **Sub-Tasks:**
-- [ ] 0101 Install `tailwindcss` and `@tailwindcss/vite` (latest v4) in `apps/desktop`.
-- [ ] 0102 Add the `tailwindcss()` plugin to `vite.config.ts` (alongside `@vitejs/plugin-react`).
-- [ ] 0103 Create `src/styles/app.css` with strict order: Google Fonts `@import url(...)` **first**, then `@import "tailwindcss";`, then the brand tokens import.
-- [ ] 0104 Add a `@theme inline { ... }` block mapping brand vars → Tailwind tokens: surfaces (`--color-bg`, `--color-panel`, `--color-panel-2`, `--color-raise`, `--color-sunken`, `--color-border`, `--color-border-2`), ink scale, accent set, status palette (`pass/fail/blocked/skipped/notrun` + `-soft`), diff (`add/del`), fonts (`--font-ui/-mono/-read`), radii (`--radius-sm/-/-lg`).
-- [ ] 0105 Import `app.css` in `main.tsx`; keep `base.css`/`components.css` imported for now (removed incrementally as components convert in 0300–0600).
-- [ ] 0106 Run `pnpm dev:desktop` / build; confirm a sample Tailwind utility (e.g. `bg-panel`) resolves to the brand color.
+- [x] 0101 Install `tailwindcss` and `@tailwindcss/vite` (latest v4) in `apps/desktop`.
+- [x] 0102 Add the `tailwindcss()` plugin to `vite.config.ts` (alongside `@vitejs/plugin-react`).
+- [x] 0103 Create `src/styles/app.css` with strict order: Google Fonts `@import url(...)` **first**, then `@import "tailwindcss";`, then the brand tokens import.
+- [x] 0104 Add a `@theme inline { ... }` block mapping brand vars → Tailwind tokens: surfaces (`--color-bg`, `--color-panel`, `--color-panel-2`, `--color-raise`, `--color-sunken`, `--color-border`, `--color-border-2`), ink scale, accent set, status palette (`pass/fail/blocked/skipped/notrun` + `-soft`), diff (`add/del`), fonts (`--font-ui/-mono/-read`), radii (`--radius-sm/-/-lg`).
+- [x] 0105 Import `app.css` in `main.tsx`; keep `base.css`/`components.css` imported for now (removed incrementally as components convert in 0300–0600).
+- [x] 0106 Run `pnpm dev:desktop` / build; confirm a sample Tailwind utility (e.g. `bg-panel`) resolves to the brand color.
 
 **Notes:**
 - Tailwind v4 needs no `tailwind.config.js` or PostCSS. The Google Fonts `@import` MUST precede `@import "tailwindcss"` or it's ignored.

@@ -1,6 +1,6 @@
 import { createRoot } from 'react-dom/client';
 
-import '@casewright/brand/tokens.css';
+import '@/styles/app.css';
 import '@/styles/base.css';
 import '@/styles/components.css';
 
