@@ -10,7 +10,7 @@ This is a [Turborepo](https://turbo.build/repo) monorepo (pnpm workspaces).
 ```
 casewright/
 ├── apps/
-│   ├── desktop/        # the Casewright app — NW.js (the design prototype, brought in as-is)
+│   ├── desktop/        # the Casewright app — NW.js + React + TypeScript (Vite)
 │   └── web/            # the marketing site — Astro static site, deployed to GitHub Pages
 ├── packages/
 │   └── brand/          # @casewright/brand — shared design tokens (palette, type, status colors)
@@ -72,6 +72,8 @@ install resolves in CI.
 
 ## Status
 
-The desktop app is the exported **design prototype** wired into NW.js so it runs today; the
-productionization follow-ups are tracked in [`apps/desktop/README.md`](apps/desktop/README.md).
+The desktop app is a **React + TypeScript** application (Vite-built, NW.js-hosted), architected
+into typed `components/` (with shadcn-style `ui/` primitives), `store/`, `data/`, `utils/`, and
+`types/`. Productionization follow-ups (native `nw.Shell` wiring, a filesystem + Git data layer,
+a Windows release build) are tracked in [`apps/desktop/README.md`](apps/desktop/README.md).
 The marketing site is a complete static landing page built on the shared brand tokens.

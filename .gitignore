@@ -148,7 +148,11 @@ vite.config.ts.timestamp-*
 # Astro
 apps/web/.astro/
 
-# NW.js build output
+# NW.js build + dev output
 apps/desktop/build/
 apps/desktop/dist/
+apps/desktop/.nwdev/
 *.nw
+
+# Playwright MCP artifacts
+.playwright-mcp/

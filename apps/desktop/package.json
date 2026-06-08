@@ -2,10 +2,11 @@
   "name": "@casewright/desktop",
   "version": "0.1.0",
   "private": true,
-  "description": "Casewright desktop app — a craftsman's editor for manual test cases (NW.js).",
+  "type": "module",
+  "description": "Casewright desktop app — a craftsman's editor for manual test cases (NW.js + React + TypeScript).",
   "license": "MIT",
   "author": "Jim Buck",
-  "main": "src/index.html",
+  "main": "dist/index.html",
   "window": {
     "title": "Casewright",
     "width": 1480,
@@ -16,10 +17,24 @@
     "show": true
   },
   "scripts": {
-    "dev": "nw .",
+    "dev": "node scripts/dev.mjs",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "lint": "tsc --noEmit",
     "start": "nw ."
   },
+  "dependencies": {
+    "@casewright/brand": "workspace:*",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7"
+  },
   "devDependencies": {
-    "nw": "0.112.0-sdk"
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.2",
+    "nw": "0.112.0-sdk",
+    "typescript": "^6.0.3",
+    "vite": "^8.0.16"
   }
 }
