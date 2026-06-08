@@ -156,3 +156,7 @@ apps/desktop/.nwdev/
 
 # Playwright MCP artifacts
 .playwright-mcp/
+
+# Generated fixture repo (dev/test target for the on-disk + git backend)
+apps/desktop/.fixture/
+apps/desktop/.fixture-origin.git/

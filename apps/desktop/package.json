@@ -23,6 +23,8 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "lint": "tsc --noEmit",
+    "test": "vitest run",
+    "fixture": "vite-node scripts/make-fixture.mts",
     "start": "nw ."
   },
   "dependencies": {
@@ -53,6 +55,8 @@
     "nw": "0.112.0-sdk",
     "tailwindcss": "^4.3.0",
     "typescript": "^6.0.3",
-    "vite": "^8.0.16"
+    "vite": "^8.0.16",
+    "vite-node": "^6.0.0",
+    "vitest": "^4.1.8"
   }
 }

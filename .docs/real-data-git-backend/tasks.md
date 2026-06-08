@@ -75,7 +75,7 @@ the minimal-diff guarantees.
 
 ---
 
-### [ ] 0300 - Testing harness: fixture repo + Vitest
+### [x] 0300 - Testing harness: fixture repo + Vitest
 
 **Overview:** Stand up the dev/test harness: a generator that materializes the current sample data
 into a **real git repo** to run the app against, plus Vitest unit tests for the pure
@@ -89,14 +89,14 @@ serialize/parse functions (the riskiest logic), runnable in plain Node.
 - `apps/desktop/package.json` - `test` script.
 
 **Sub-Tasks:**
-- [ ] 0301 Add `vitest` to `apps/desktop`; add a `test` script; ensure the `@` alias resolves under Vitest.
-- [ ] 0302 `case.test.ts`: round-trip every sample case (`serializeCase(parseCase(x)) ≈ x`); a golden-file test vs. the PRD §5.2 example markdown; lint-warning cases (blocked constructs, unknown `##` sections).
-- [ ] 0303 `run.test.ts`: CSV round-trip + `RunRowSchema` validation (bad `result`, missing columns).
-- [ ] 0304 `make-fixture.mjs` (plain Node): write `casewright.json`, `areas/payments/workspace.yaml`, suite folders, each case as `<displayId>-<slug>.md` via the **same `serializeCase`**, run CSVs + sidecars; `git init && add && commit`; a flag to also create a bare `origin` + a divergent clone for git tests. Output to `.fixture/` (gitignored).
-- [ ] 0305 Run `pnpm --filter @casewright/desktop test` → green; run `make-fixture` → inspect the generated repo with `git log`/open files.
+- [x] 0301 Added `vitest` + `vite-node`; `test`/`fixture` scripts; `vitest.config.ts` (`@` alias) + `vitest.setup.ts` (injects `globalThis.require` so the node bridge resolves modules in tests).
+- [x] 0302 `case.test.ts`: golden serialize === PRD §5.2 canonical; parse round-trip; tolerant 3-space steps; missing-id generation; out-of-schema preservation; **idempotent serialize for every sample case** + structural-field round-trip.
+- [x] 0303 `run.test.ts`: CSV round-trip (incl. comma-quoting), 7-column header, `RunRowSchema` coercion (bad `result`→`not_run`), missing-column warning, sidecar round-trip.
+- [x] 0304 `make-fixture.mts` (run via vite-node so it reuses the real `serializeCase`/`serializeRunCsv`): writes `casewright.json`, per-workspace `workspace.yaml`, the suite-folder tree, `<displayId>-<slug>.md` cases, run CSV+sidecars; `git init && add && commit` on `main`; `--with-origin` adds a bare `.fixture-origin.git` remote + push. Output gitignored.
+- [x] 0305 `pnpm test` → 17 passing; `pnpm fixture --with-origin` → inspected: real git repo, canonical files, correct folder tree, origin pushed.
 
 **Notes:**
-- Pure functions run in Node; tests import `gray-matter`/`papaparse` directly (no NW.js bridge).
+- The format layer uses the node bridge uniformly (NW.js + Vitest via the setup-injected require), rather than importing gray-matter/papaparse directly.
 - The fixture is the canonical dev target for 0400 onward (`pnpm dev:desktop` opened against `.fixture/`).
 
 ---
