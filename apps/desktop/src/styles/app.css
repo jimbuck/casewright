@@ -131,3 +131,15 @@
     opacity: 0;
   }
 }
+@keyframes ctxin {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+}
+@keyframes toastin {
+  from {
+    transform: translateY(10px);
+    opacity: 0;
+  }
+}

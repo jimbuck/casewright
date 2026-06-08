@@ -1,16 +1,7 @@
 import { useLayoutEffect, useRef, useState } from 'react';
-import type { IconFn } from '@/components/icons';
+import type { MenuItem } from '@/components/ui/dropdown-menu';
 
-export interface MenuItem {
-  sep?: boolean;
-  icon?: IconFn;
-  label?: string;
-  sub?: string;
-  /** Marks a native desktop action (NW.js shell) with a ↗. */
-  desktop?: boolean;
-  danger?: boolean;
-  on?: () => void;
-}
+export type { MenuItem };
 
 export interface ContextMenuProps {
   x: number;

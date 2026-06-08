@@ -16,3 +16,13 @@ export type { FieldProps } from './field';
 export { Kbd } from './kbd';
 export { Modal, ModalHeader, ModalBody, ModalFooter } from './modal';
 export type { ModalProps } from './modal';
+export {
+  Menu,
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuGroup,
+} from './dropdown-menu';
+export type { MenuItem } from './dropdown-menu';

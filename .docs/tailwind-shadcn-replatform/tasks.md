@@ -74,7 +74,7 @@ so existing consumers compile unchanged.
 
 ---
 
-### [ ] 0300 - Convert chrome + launcher to Tailwind
+### [x] 0300 - Convert chrome + launcher to Tailwind
 
 **Overview:** Convert the window chrome (custom titlebar, top bar, toasts) and the launcher screen to
 Tailwind utilities + shadcn, and replace the hand-rolled positioned context menu with Radix
@@ -88,15 +88,16 @@ Tailwind utilities + shadcn, and replace the hand-rolled positioned context menu
 - `apps/desktop/src/components/sidebar/ContextMenu.tsx` - Hand-rolled menu, to be replaced by Radix.
 
 **Sub-Tasks:**
-- [ ] 0301 Convert `TitleBar` to Tailwind; rebuild the File/View/Go/Help menu bar with Radix `dropdown-menu`; keep window controls + brand glyph.
-- [ ] 0302 Convert `TopBar` (workspace switcher dropdown, branch chip with ahead/behind, Pull/Commit/Push buttons) to Tailwind/shadcn.
-- [ ] 0303 Convert `Toasts`.
-- [ ] 0304 Convert `Launcher` (hero, feature list, recents list, action buttons).
-- [ ] 0305 Replace `components/sidebar/ContextMenu.tsx` with Radix `dropdown-menu`/`context-menu`; update its callers (Sidebar rows + TitleBar menus) to the new component.
-- [ ] 0306 Delete the chrome / launcher / context-menu rules from `base.css` + `components.css`.
+- [x] 0301 Convert `TitleBar` to Tailwind; rebuilt the File/View/Go/Help menu bar with Radix `dropdown-menu` (via new `ui/dropdown-menu.tsx` + `Menu` helper); kept window controls + brand glyph + drag regions.
+- [x] 0302 Convert `TopBar` (workspace switcher now a Radix `DropdownMenu`, branch chip with ahead/behind, Pull/Commit/Push buttons) to Tailwind/shadcn.
+- [x] 0303 Convert `Toasts`.
+- [x] 0304 Convert `Launcher` (hero, feature list, recents list, action buttons).
+- [x] 0305 New `ui/dropdown-menu.tsx` (Radix wrapper + shared `MenuItem` type) wired into the TitleBar menus. **Sidebar's** `ContextMenu` (right-click + hover `+` menus) is deferred to 0500 where the Sidebar is fully converted; old `ContextMenu.tsx` now re-exports `MenuItem` from the new module.
+- [x] 0306 Deleted the chrome/launcher/topbar/toast rules from `base.css` + `components.css`. The `.ctx-*` context-menu rules remain until 0500 (still used by the Sidebar's old `ContextMenu`).
 
 **Notes:**
-- Preserve the NW.js drag regions: replace `-webkit-app-region` CSS with Tailwind arbitrary properties (e.g. `[-webkit-app-region:drag]` / `[-webkit-app-region:no-drag]`) or a small utility class.
+- NW.js drag regions preserved via Tailwind arbitrary properties (`[-webkit-app-region:drag]` / `[-webkit-app-region:no-drag]`).
+- Verified via Playwright: launcher, titlebar File menu, and the workspace switcher all render with parity.
 
 ---
 
