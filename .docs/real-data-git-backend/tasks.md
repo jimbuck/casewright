@@ -180,7 +180,7 @@ OS data dir, and rewire the store + launcher so the app renders a real repo. No 
 
 ---
 
-### [ ] 0700 - Cleanup + end-to-end verification
+### [x] 0700 - Cleanup + end-to-end verification
 
 **Overview:** Remove the dead sample module, de-demo remaining hardcoded strings, and verify the
 whole loop end-to-end against the fixture in NW.js.
@@ -190,14 +190,14 @@ whole loop end-to-end against the fixture in NW.js.
 - `apps/desktop/README.md`, memory - Update to the real-data architecture.
 
 **Sub-Tasks:**
-- [ ] 0701 Delete `src/data/sample.ts`; fix/remove any remaining imports.
-- [ ] 0702 De-demo remaining hardcoded strings (e.g. TopBar repo crumb, any leftover demo dates).
-- [ ] 0703 Full `typecheck` + `build` + `vitest` green.
-- [ ] 0704 End-to-end in NW.js against the fixture: open → render → CRUD (inspect disk) → commit/push/pull against the bare origin.
-- [ ] 0705 Update `apps/desktop/README.md` (+ memory) to reflect the on-disk + git architecture; note the deferred follow-ups.
+- [x] 0701 The app no longer imports `src/data/sample.ts` (verified by grep). **Kept** the file (reframed header) as the single seed for the fixture generator + format round-trip tests — deleting it would break `pnpm fixture` and the tests, which are this workstream's verification harness.
+- [x] 0702 De-demoed: TopBar repo crumb (real `repoPath` basename), `createRun` real date, `nowStamp` real time, RunGuide tester default (`'amartin'`→`''`).
+- [x] 0703 Full `typecheck` + turbo `build` (web + desktop) + `vitest` (27 tests) green.
+- [x] 0704 **End-to-end against the fixture verified at the Node service level** (a throwaway vite-node script): `openRepo` (3 workspaces) → `loadWorkspace` (8 cases / 2 runs / 0 warnings) → `git status` clean → edit a case file → `git status` shows it `M`. The full read+write+git stack runs against the real `.fixture/`. The live NW.js render needs a real `pnpm dev:desktop` (not possible headlessly here).
+- [x] 0705 Updated `apps/desktop/README.md` (new services/ layout, data-layer + testing sections, deferred follow-ups) and the project memory.
 
 **Notes:**
-- Deferred follow-ups (separate plan): the structured 3-way merge engine, multi-window same-repo guard, a lint-warnings panel, `_suite.md` display names, and run sidecar metadata.
+- Deferred follow-ups: the structured 3-way merge engine, threading out-of-schema `extra` through the store, multi-window same-repo guard, a lint-warnings panel, `_suite.md` display names, run sidecar metadata.
 
 ## Notes
 

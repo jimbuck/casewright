@@ -1,6 +1,11 @@
 /* ============================================================
-   Casewright — sample repository data
-   A single open repo: areas/ + qa/ workspaces, Payments active.
+   Casewright — seed data (NOT app data)
+
+   The running app reads real files from disk via the repo + git services; it no
+   longer imports this module. This is the canonical seed for:
+     • `scripts/make-fixture.mts` — materializes it into a real Git fixture repo
+     • `services/format/*.test.ts` — serialize/parse round-trip tests
+   The `conflict` export illustrates the merge model for the deferred 3-way engine.
    ============================================================ */
 import type { Case, Conflict, Recent, Run, TreeNode, Workspace } from '@/types';
 

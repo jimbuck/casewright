@@ -15,7 +15,7 @@ export function RunGuide() {
   const idx = ctx.sel.guideIndex ?? 0;
   const [checks, setChecks] = useState<Record<string, Record<string, boolean>>>({});
   const [result, setResult] = useState<Result | null>(null);
-  const [tester, setTester] = useState(ctx.lastTester || 'amartin');
+  const [tester, setTester] = useState(ctx.lastTester);
   const [notes, setNotes] = useState('');
   const [forceRecord, setForceRecord] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
