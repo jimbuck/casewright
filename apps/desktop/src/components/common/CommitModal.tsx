@@ -10,7 +10,7 @@ const keyOf = (c: Change) => c.kind + ':' + c.refId;
 const STAT_COLOR: Record<string, string> = { M: 'text-blocked', A: 'text-pass', D: 'text-fail' };
 
 export function CommitModal() {
-  const { changes, doCommit, setModal } = useApp();
+  const { changes, branch, doCommit, setModal } = useApp();
   const close = () => setModal(null);
   const [sel, setSel] = useState<Record<string, boolean>>(() =>
     changes.reduce<Record<string, boolean>>((a, c) => ((a[keyOf(c)] = true), a), {}),
@@ -77,7 +77,7 @@ export function CommitModal() {
         )}
       </ModalBody>
       <ModalFooter>
-        <span className="mr-auto flex items-center gap-1.5 text-[12px] text-ink-3">{I.branch({ size: 13 })} main</span>
+        <span className="mr-auto flex items-center gap-1.5 text-[12px] text-ink-3">{I.branch({ size: 13 })} {branch}</span>
         <Button variant="ghost" onClick={close}>
           Cancel
         </Button>

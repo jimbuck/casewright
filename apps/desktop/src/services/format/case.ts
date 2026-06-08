@@ -140,8 +140,9 @@ function parseSteps(text: string): Step[] {
  * Validation is non-blocking: bad front matter coerces to defaults with a warning;
  * a missing `id` is generated; step depth derives from indentation (ordinals ignored).
  */
-export function parseCase(text: string): ParseCaseResult {
+export function parseCase(input: string): ParseCaseResult {
   const warnings: LintWarning[] = [];
+  const text = input.replace(/\r\n/g, '\n'); // tolerate CRLF (e.g. git autocrlf checkout)
   const parsed = node.matter()(text);
   const data = (parsed.data ?? {}) as Record<string, unknown>;
   const content = (parsed.content ?? '') as string;

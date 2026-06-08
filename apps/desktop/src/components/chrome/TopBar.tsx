@@ -11,7 +11,7 @@ import { useApp } from '@/store/app-store';
 const baseName = (p: string): string => p.replace(/[/\\]+$/, '').split(/[/\\]/).pop() || 'repository';
 
 export function TopBar() {
-  const { workspace, workspaces, repoPath, branch, ahead, behind, changes, setWorkspace, goHome, doPush, doPull, setModal, toast } =
+  const { workspace, workspaces, repoPath, branch, ahead, behind, changes, gitBusy, setWorkspace, goHome, doPush, doPull, setModal, toast } =
     useApp();
   const dirty = changes.length;
   if (!workspace) return null;
@@ -82,7 +82,7 @@ export function TopBar() {
       </span>
 
       <div className="ml-auto flex items-center gap-[7px]">
-        <Button onClick={doPull}>
+        <Button onClick={doPull} disabled={gitBusy}>
           {I.pull({ size: 15 })}Pull
           {behind ? (
             <span className="inline-grid h-4 min-w-4 place-items-center rounded-full bg-blocked-soft px-[5px] font-mono text-[10.5px] font-semibold text-[oklch(0.5_0.12_66)]">
@@ -90,7 +90,7 @@ export function TopBar() {
             </span>
           ) : null}
         </Button>
-        <Button onClick={() => setModal('commit')}>
+        <Button onClick={() => setModal('commit')} disabled={gitBusy}>
           {I.commit({ size: 15 })}Commit
           {dirty ? (
             <span className="inline-grid h-4 min-w-4 place-items-center rounded-full bg-accent-soft px-[5px] font-mono text-[10.5px] font-semibold text-accent-ink">
@@ -98,7 +98,7 @@ export function TopBar() {
             </span>
           ) : null}
         </Button>
-        <Button variant="primary" onClick={doPush} disabled={!ahead}>
+        <Button variant="primary" onClick={doPush} disabled={!ahead || gitBusy}>
           {I.push({ size: 15 })}Push
           {ahead ? (
             <span className="inline-grid h-4 min-w-4 place-items-center rounded-full bg-[oklch(1_0_0/0.22)] px-[5px] font-mono text-[10.5px] font-semibold text-white">

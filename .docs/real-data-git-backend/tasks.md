@@ -155,7 +155,7 @@ OS data dir, and rewire the store + launcher so the app renders a real repo. No 
 
 ---
 
-### [ ] 0600 - Git service + loop (status / commit / pull / push)
+### [x] 0600 - Git service + loop (status / commit / pull / push)
 
 **Overview:** Wrap `simple-git` for real status, commit, push, and pull; derive dirty state from
 `git status`; and handle conflicted pulls safely (the structured merge engine is deferred).
@@ -166,16 +166,17 @@ OS data dir, and rewire the store + launcher so the app renders a real repo. No 
 - `apps/desktop/src/components/chrome/TopBar.tsx`, `common/CommitModal.tsx` - Real git state.
 
 **Sub-Tasks:**
-- [ ] 0601 `git.ts`: `repo(repoPath)` = `simpleGit(repoPath)`; `status()` → `{ branch, ahead, behind, files }` mapping porcelain → `Change[]` (kind from path: `runsDir/*.csv` → `'run'`, else `'case'`).
-- [ ] 0602 `git.ts`: `stageAndCommit(paths, msg)`, `push()`, `pull()` (fetch+merge), `conflictedFiles()`, `readStage(1|2|3, path)` (`git show :N:path`), `completeMerge()`, `abortMerge()`; wrap push/pull → `GitAuthError` on credential failure.
-- [ ] 0603 Store: `refreshStatus()` sets `branch`/`ahead`/`behind`/`changes` from `git status`; call after writes (debounced) + after commit/pull/push; remove the manual `upsertChange` + hardcoded `branch:'main', ahead:1, behind:3`.
-- [ ] 0604 Store: `doCommit`/`doPush` async (+ `gitBusy`); `doPull` async — clean merge → reload + `refreshStatus`; conflicts → set a banner + expose `abortMerge` (structured resolver deferred; `conflict` stays null).
-- [ ] 0605 `TopBar`: real repo name / branch / ahead-behind; disable git buttons while `gitBusy`; surface `GitAuthError` as a toast. `CommitModal`: real `changes` + branch.
-- [ ] 0606 Verify: against `.fixture/` + a bare `origin` → commit (`git log` shows it), push (origin receives), make a divergent upstream commit → pull updates ahead/behind, clean-merges, or shows the conflict banner; `abortMerge` restores a clean tree.
+- [x] 0601 `git.ts` `status()` → `{ branch, ahead, behind, changes, conflicted }`, porcelain → `Change[]` (kind from path, status from index/working_dir).
+- [x] 0602 `git.ts`: `stageAndCommit`, `push`, `pull` (returns `{ ok, conflicted }` rather than throwing on conflict), `conflictedFiles`, `readStage(1|2|3,path)`, `completeMerge`, `abortMerge`; push/pull wrapped → `GitAuthError`.
+- [x] 0603 Store `refreshStatus()` sets `branch/ahead/behind/changes` from `git status`; scheduled (debounced) after every write + structural op, and after each git action. Optimistic `upsertChange`/`modified` kept for instant feedback, reconciled by `refreshStatus`.
+- [x] 0604 Store: `doCommit`/`doPush` async (+ `gitBusy`); `doPull` async — clean merge → `reloadFromDisk` + refresh; conflicts → `mergeBanner` + `abortMerge` (structured `conflict` stays null).
+- [x] 0605 `TopBar`: real repo name/branch/ahead-behind; git buttons disabled while `gitBusy`; `GitAuthError`→toast. `CommitModal`: real `changes` + branch. App shows the conflict banner + Abort button.
+- [x] 0606 **Verified at the service level via `git.test.ts` against a real repo + bare origin**: clean status, modify→commit→push (origin receives), divergent upstream → clean-merge pull, divergent same-file → conflict + `abortMerge` restores clean. The in-app loop against `.fixture/` needs a real NW.js run.
 
 **Notes:**
-- Auth uses the system credential helper (PRD §6.6); the app stores no secrets — just surface a clear error.
-- The structured 3-way merge engine (`services/merge.ts`, real `buildConflict`/`applyMerge`) is the **deferred follow-up**; 0600 only needs status/commit/push/pull + safe conflict handling.
+- Auth uses the system credential helper (PRD §6.6); the app stores no secrets — surfaces a clear error.
+- Defensive: `parseCase` normalizes CRLF (git autocrlf checkouts).
+- The structured 3-way merge engine (`services/merge.ts`, real `buildConflict`/`applyMerge`) is the **deferred follow-up**; 0600 delivers status/commit/push/pull + safe conflict handling.
 
 ---
 

@@ -14,6 +14,14 @@ import {
 } from '@/services/repo';
 import { addRecent, listRecents } from '@/services/recents';
 import { flushPersist, schedulePersist } from '@/services/persist';
+import {
+  abortMerge as gitAbortMerge,
+  GitAuthError,
+  pull as gitPull,
+  push as gitPush,
+  stageAndCommit,
+  status as gitStatus,
+} from '@/services/git';
 import type { LintWarning } from '@/schemas';
 import { randomId } from '@/utils/ids';
 import { pickDirectory } from '@/lib/nwjs';
@@ -148,11 +156,16 @@ export interface AppState {
   ahead: number;
   behind: number;
   changes: Change[];
+  gitBusy: boolean;
+  /** Set when a pull produced conflicts (structured resolver deferred — resolve via Git or abort). */
+  mergeBanner: string | null;
   /** Populated by the (deferred) structured 3-way merge engine; null until then. */
   conflict: Conflict | null;
+  refreshStatus: () => Promise<void>;
   doCommit: (selectedKeys: string[], msg: string) => void;
-  doPush: () => void;
-  doPull: () => void;
+  doPush: () => Promise<void>;
+  doPull: () => Promise<void>;
+  abortMerge: () => Promise<void>;
   completeMerge: (resolutions: Resolutions) => void;
 
   /* modals */
@@ -191,6 +204,13 @@ export const useAppStore = create<AppState>()((set, get) => {
     get().cases.forEach((c) => lastCasePath.set(c.id, casePath(c)));
   };
 
+  // recompute git-derived dirty state shortly after writes settle
+  const scheduleRefresh = () => schedulePersist('git:status', () => get().refreshStatus(), 250);
+  const reseed = () => {
+    seedPaths();
+    scheduleRefresh();
+  };
+
   const reloadFromDisk = async () => {
     const { repoPath, workspace } = get();
     if (!repoPath || !workspace) return;
@@ -220,6 +240,7 @@ export const useAppStore = create<AppState>()((set, get) => {
       const prev = lastCasePath.get(id);
       if (prev && prev !== rel) await deletePath(repoPath, prev);
       lastCasePath.set(id, rel);
+      scheduleRefresh();
     } catch (e) {
       onWriteError(e);
     }
@@ -231,6 +252,7 @@ export const useAppStore = create<AppState>()((set, get) => {
     try {
       await deletePath(repoPath, rel);
       lastCasePath.delete(id);
+      scheduleRefresh();
     } catch (e) {
       onWriteError(e);
     }
@@ -242,6 +264,7 @@ export const useAppStore = create<AppState>()((set, get) => {
     if (!repoPath || !run) return;
     try {
       await writeFileAt(repoPath, runRel(run), serializeRunCsv(run.rows));
+      scheduleRefresh();
     } catch (e) {
       onWriteError(e);
     }
@@ -330,6 +353,8 @@ export const useAppStore = create<AppState>()((set, get) => {
     view: 'editor',
     sel: { kind: 'case', id: undefined, runId: null },
     changes: [],
+    gitBusy: false,
+    mergeBanner: null,
     ahead: 0,
     behind: 0,
     branch: 'main',
@@ -383,6 +408,7 @@ export const useAppStore = create<AppState>()((set, get) => {
           error: null,
         });
         seedPaths();
+        void get().refreshStatus();
         const recents = await addRecent({
           path: opened.repoPath,
           name: baseName(opened.repoPath),
@@ -564,7 +590,7 @@ export const useAppStore = create<AppState>()((set, get) => {
           renaming: { id, value: name },
         };
       });
-      if (get().repoPath) void makeDir(get().repoPath, suiteRel(id)).catch(onWriteError);
+      if (get().repoPath) void makeDir(get().repoPath, suiteRel(id)).then(scheduleRefresh).catch(onWriteError);
       get().toast(parent ? `New suite in ${parent.name}` : 'New top-level suite');
     },
 
@@ -586,7 +612,7 @@ export const useAppStore = create<AppState>()((set, get) => {
       const rp = get().repoPath;
       const newRel = suiteRel(id);
       if (rp && oldRel && newRel && oldRel !== newRel) {
-        void renamePath(rp, oldRel, newRel).then(seedPaths).catch(onWriteError);
+        void renamePath(rp, oldRel, newRel).then(reseed).catch(onWriteError);
       }
     },
 
@@ -620,7 +646,7 @@ export const useAppStore = create<AppState>()((set, get) => {
         return { tree: next, cases: s.cases.filter((c) => !caseIds.includes(c.id)) };
       });
       const rp = get().repoPath;
-      if (rp && rel) void deletePath(rp, rel).then(seedPaths).catch(onWriteError);
+      if (rp && rel) void deletePath(rp, rel).then(reseed).catch(onWriteError);
       get().toast(`Deleted suite "${node.name}"`);
     },
 
@@ -673,7 +699,7 @@ export const useAppStore = create<AppState>()((set, get) => {
       const newRel = movedCase ? casePath(movedCase) : suiteRel(dragId);
       const rp = get().repoPath;
       if (rp && oldRel && newRel && oldRel !== newRel) {
-        void renamePath(rp, oldRel, newRel).then(seedPaths).catch(onWriteError);
+        void renamePath(rp, oldRel, newRel).then(reseed).catch(onWriteError);
       }
     },
 
@@ -733,7 +759,9 @@ export const useAppStore = create<AppState>()((set, get) => {
         void Promise.all([
           writeFileAt(rp, runRel(run), serializeRunCsv(run.rows)),
           writeFileAt(rp, runRel(run).replace(/\.csv$/, '.md'), serializeRunSidecar({ name, status: 'open' })),
-        ]).catch(onWriteError);
+        ])
+          .then(scheduleRefresh)
+          .catch(onWriteError);
       }
       get().toast(`Created run · ${rows.length} cases seeded`);
     },
@@ -754,32 +782,102 @@ export const useAppStore = create<AppState>()((set, get) => {
       })),
 
     /* ---- git ---- */
-    doCommit: (selectedKeys) => {
-      void flushPersist();
-      set((s) => ({
-        cases: s.cases.map((c) => (selectedKeys.includes('case:' + c.id) ? { ...c, modified: false } : c)),
-        changes: s.changes.filter((c) => !selectedKeys.includes(changeKey(c))),
-        ahead: s.ahead + 1,
-        modal: null,
-      }));
-      get().toast(`Committed ${selectedKeys.length} file(s)`);
+    refreshStatus: async () => {
+      const { repoPath } = get();
+      if (!repoPath) return;
+      try {
+        const s = await gitStatus(repoPath);
+        set({ branch: s.branch, ahead: s.ahead, behind: s.behind, changes: s.changes });
+      } catch {
+        /* status read failed — keep optimistic values */
+      }
     },
 
-    doPush: () => {
-      if (!get().ahead) return;
-      set({ ahead: 0 });
-      get().toast(`Pushed to origin/${get().branch}`);
+    doCommit: (selectedKeys, msg) => {
+      const { repoPath, changes } = get();
+      const paths = changes.filter((c) => selectedKeys.includes(changeKey(c))).map((c) => c.path);
+      set({ modal: null, gitBusy: true });
+      void (async () => {
+        try {
+          await flushPersist();
+          if (repoPath) await stageAndCommit(repoPath, paths, msg || 'Update test cases');
+          set((s) => ({
+            cases: s.cases.map((c) => (selectedKeys.includes('case:' + c.id) ? { ...c, modified: false } : c)),
+          }));
+          await get().refreshStatus();
+          get().toast(`Committed ${paths.length || selectedKeys.length} file(s)`);
+        } catch (e) {
+          set({ error: e instanceof Error ? e.message : String(e) });
+          get().toast('Commit failed');
+        } finally {
+          set({ gitBusy: false });
+        }
+      })();
     },
 
-    doPull: () => {
-      if (get().behind > 0) set({ modal: 'merge' });
-      else get().toast('Already up to date');
+    doPush: async () => {
+      const { repoPath, ahead } = get();
+      if (!repoPath || !ahead) return;
+      set({ gitBusy: true });
+      try {
+        await gitPush(repoPath);
+        await get().refreshStatus();
+        get().toast(`Pushed to origin/${get().branch}`);
+      } catch (e) {
+        set({ error: e instanceof Error ? e.message : String(e) });
+        get().toast(e instanceof GitAuthError ? 'Push failed — check Git credentials' : 'Push failed');
+      } finally {
+        set({ gitBusy: false });
+      }
+    },
+
+    doPull: async () => {
+      const { repoPath } = get();
+      if (!repoPath) return;
+      set({ gitBusy: true, mergeBanner: null });
+      try {
+        await flushPersist();
+        const res = await gitPull(repoPath);
+        if (res.ok) {
+          await reloadFromDisk();
+          await get().refreshStatus();
+          get().toast('Pulled — up to date');
+        } else {
+          set({
+            mergeBanner: `Pull produced conflicts in ${res.conflicted.length} file(s) — the structured resolver is coming soon; resolve via Git or abort the merge.`,
+          });
+          await get().refreshStatus();
+        }
+      } catch (e) {
+        set({ error: e instanceof Error ? e.message : String(e) });
+        get().toast(e instanceof GitAuthError ? 'Pull failed — check Git credentials' : 'Pull failed');
+      } finally {
+        set({ gitBusy: false });
+      }
+    },
+
+    abortMerge: async () => {
+      const { repoPath } = get();
+      if (!repoPath) return;
+      set({ gitBusy: true });
+      try {
+        await gitAbortMerge(repoPath);
+        await reloadFromDisk();
+        await get().refreshStatus();
+        set({ mergeBanner: null });
+        get().toast('Merge aborted');
+      } catch {
+        get().toast('Could not abort merge');
+      } finally {
+        set({ gitBusy: false });
+      }
     },
 
     completeMerge: (resolutions) => {
       applyMerge(resolutions);
-      set((s) => ({ behind: 0, ahead: s.ahead + 1, modal: null }));
-      get().toast('Merged origin/' + get().branch + ' · merge commit created');
+      set({ modal: null, conflict: null });
+      void get().refreshStatus();
+      get().toast('Merge resolved');
     },
 
     /* ---- modals ---- */

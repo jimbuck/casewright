@@ -25,7 +25,12 @@ export function schedulePersist(key: string, job: Job, ms = 400): void {
   timers.set(key, setTimeout(() => void fire(key), ms));
 }
 
-/** Run all pending jobs now (call before reads/commits/navigation). */
+/** Run all pending jobs now (call before reads/commits/navigation). Drains jobs
+ * enqueued while flushing (e.g. a post-write status refresh). */
 export async function flushPersist(): Promise<void> {
-  for (const key of [...jobs.keys()]) await fire(key);
+  let guard = 0;
+  while (jobs.size && guard++ < 100) {
+    const key = jobs.keys().next().value as string;
+    await fire(key);
+  }
 }
