@@ -218,3 +218,35 @@ export async function loadWorkspace(repoPath: string, ws: Workspace): Promise<Lo
   const runs = await loadRuns(path.join(wsAbs, ws.runsDir), ws.runsDir, warnings);
   return { tree, cases, runs, warnings };
 }
+
+// ---------------------------------------------------------------------------
+// Write path — low-level, repo-relative fs ops (PRD §6.2–6.5)
+// The store composes these with the serializers + its path/tree knowledge.
+// ---------------------------------------------------------------------------
+
+/** Write `content` to `<repoPath>/<rel>`, creating parent dirs as needed. */
+export async function writeFileAt(repoPath: string, rel: string, content: string): Promise<void> {
+  const path = node.path();
+  const abs = path.join(repoPath, rel);
+  await node.fsp().mkdir(path.dirname(abs), { recursive: true });
+  await node.fsp().writeFile(abs, content);
+}
+
+/** Delete `<repoPath>/<rel>` (file or directory, recursive). */
+export async function deletePath(repoPath: string, rel: string): Promise<void> {
+  await node.fsp().rm(node.path().join(repoPath, rel), { recursive: true, force: true });
+}
+
+/** Move/rename `<repoPath>/<fromRel>` → `<repoPath>/<toRel>`, creating the target's parent. */
+export async function renamePath(repoPath: string, fromRel: string, toRel: string): Promise<void> {
+  if (fromRel === toRel) return;
+  const path = node.path();
+  const to = path.join(repoPath, toRel);
+  await node.fsp().mkdir(path.dirname(to), { recursive: true });
+  await node.fsp().rename(path.join(repoPath, fromRel), to);
+}
+
+/** Create directory `<repoPath>/<rel>` (recursive, idempotent). */
+export async function makeDir(repoPath: string, rel: string): Promise<void> {
+  await node.fsp().mkdir(node.path().join(repoPath, rel), { recursive: true });
+}

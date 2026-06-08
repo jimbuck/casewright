@@ -1,11 +1,21 @@
 import type { Dispatch, SetStateAction } from 'react';
 import { create } from 'zustand';
 
-import { caseFileName } from '@/services/format/filename';
-import { loadWorkspace, openRepo as openRepoSvc } from '@/services/repo';
+import { serializeCase } from '@/services/format/case';
+import { caseFileName, runFileStem } from '@/services/format/filename';
+import { serializeRunCsv, serializeRunSidecar } from '@/services/format/run';
+import {
+  deletePath,
+  loadWorkspace,
+  makeDir,
+  openRepo as openRepoSvc,
+  renamePath,
+  writeFileAt,
+} from '@/services/repo';
 import { addRecent, listRecents } from '@/services/recents';
+import { flushPersist, schedulePersist } from '@/services/persist';
 import type { LintWarning } from '@/schemas';
-import { randomId, slug } from '@/utils/ids';
+import { randomId } from '@/utils/ids';
 import { pickDirectory } from '@/lib/nwjs';
 import type {
   Case,
@@ -162,6 +172,81 @@ export const useAppStore = create<AppState>()((set, get) => {
     return `${dir}/${caseFileName(c)}`;
   };
 
+  /* ---- disk persistence (optimistic in-memory + write; reload on error) ---- */
+  const suiteRel = (suiteId: string): string => {
+    const { tree, workspace } = get();
+    if (!workspace) return '';
+    const sp = buildSuiteIndex(tree).path[suiteId] ?? '';
+    return [workspace.path, sp].filter(Boolean).join('/');
+  };
+  const runRel = (run: Run): string => {
+    const ws = get().workspace;
+    return ws ? `${ws.path}/${run.file}` : run.file;
+  };
+
+  // the path each case was last written to — drives rename-on-write cleanup
+  const lastCasePath = new Map<string, string>();
+  const seedPaths = () => {
+    lastCasePath.clear();
+    get().cases.forEach((c) => lastCasePath.set(c.id, casePath(c)));
+  };
+
+  const reloadFromDisk = async () => {
+    const { repoPath, workspace } = get();
+    if (!repoPath || !workspace) return;
+    try {
+      const loaded = await loadWorkspace(repoPath, workspace);
+      set({ tree: loaded.tree, cases: loaded.cases, runs: loaded.runs, warnings: loaded.warnings });
+      seedPaths();
+    } catch {
+      /* keep optimistic state if even the reload fails */
+    }
+  };
+
+  const onWriteError = (e: unknown) => {
+    set({ error: e instanceof Error ? e.message : String(e) });
+    get().toast('Write failed — reloading from disk');
+    void reloadFromDisk();
+  };
+
+  const writeCaseNow = async (id: string) => {
+    const { repoPath } = get();
+    const c = get().cases.find((x) => x.id === id);
+    if (!repoPath || !c) return;
+    const rel = casePath(c);
+    const { suite: _s, modified: _m, ...parsed } = c;
+    try {
+      await writeFileAt(repoPath, rel, serializeCase(parsed));
+      const prev = lastCasePath.get(id);
+      if (prev && prev !== rel) await deletePath(repoPath, prev);
+      lastCasePath.set(id, rel);
+    } catch (e) {
+      onWriteError(e);
+    }
+  };
+
+  const deleteCaseOnDisk = async (rel: string, id: string) => {
+    const { repoPath } = get();
+    if (!repoPath) return;
+    try {
+      await deletePath(repoPath, rel);
+      lastCasePath.delete(id);
+    } catch (e) {
+      onWriteError(e);
+    }
+  };
+
+  const writeRunNow = async (runId: string) => {
+    const { repoPath } = get();
+    const run = get().runs.find((r) => r.id === runId);
+    if (!repoPath || !run) return;
+    try {
+      await writeFileAt(repoPath, runRel(run), serializeRunCsv(run.rows));
+    } catch (e) {
+      onWriteError(e);
+    }
+  };
+
   // upsert a change by its kind:refId key, preserving list order
   const upsertChange = (change: Change) =>
     set((s) => {
@@ -297,6 +382,7 @@ export const useAppStore = create<AppState>()((set, get) => {
           loading: false,
           error: null,
         });
+        seedPaths();
         const recents = await addRecent({
           path: opened.repoPath,
           name: baseName(opened.repoPath),
@@ -313,7 +399,10 @@ export const useAppStore = create<AppState>()((set, get) => {
       }
     },
 
-    goHome: () => set({ screen: 'launcher' }),
+    goHome: () => {
+      void flushPersist();
+      set({ screen: 'launcher' });
+    },
 
     setWorkspace: async (w) => {
       const { repoPath } = get();
@@ -331,16 +420,29 @@ export const useAppStore = create<AppState>()((set, get) => {
           view: 'editor',
           loading: false,
         });
+        seedPaths();
       } catch (e) {
         set({ loading: false, error: e instanceof Error ? e.message : String(e) });
         get().toast('Could not load workspace');
       }
     },
-    openCase: (id) => set((s) => ({ sel: { ...s.sel, kind: 'case', id }, view: 'editor' })),
-    openRunsList: () => set({ view: 'runs' }),
-    openRun: (runId) => set((s) => ({ sel: { ...s.sel, kind: 'run', runId }, view: 'run' })),
+    openCase: (id) => {
+      void flushPersist();
+      set((s) => ({ sel: { ...s.sel, kind: 'case', id }, view: 'editor' }));
+    },
+    openRunsList: () => {
+      void flushPersist();
+      set({ view: 'runs' });
+    },
+    openRun: (runId) => {
+      void flushPersist();
+      set((s) => ({ sel: { ...s.sel, kind: 'run', runId }, view: 'run' }));
+    },
     openCreateRun: () => set({ modal: 'createRun' }),
-    startGuide: (runId, index = 0) => set((s) => ({ sel: { ...s.sel, kind: 'run', runId, guideIndex: index }, view: 'guide' })),
+    startGuide: (runId, index = 0) => {
+      void flushPersist();
+      set((s) => ({ sel: { ...s.sel, kind: 'run', runId, guideIndex: index }, view: 'guide' }));
+    },
     guideGo: (index) => set((s) => ({ sel: { ...s.sel, guideIndex: index } })),
     exitGuide: () => set({ view: 'run' }),
 
@@ -359,6 +461,7 @@ export const useAppStore = create<AppState>()((set, get) => {
           label: merged.title,
         });
       }
+      schedulePersist('case:' + id, () => writeCaseNow(id));
     },
 
     duplicateCase: (id) => {
@@ -380,6 +483,7 @@ export const useAppStore = create<AppState>()((set, get) => {
       };
       set((s) => ({ cases: [...s.cases, dup], sel: { kind: 'case', id: newId, runId: null }, view: 'editor' }));
       upsertChange({ kind: 'case', refId: newId, path: casePath(dup), status: 'A', label: dup.title });
+      void writeCaseNow(newId);
       get().toast('Duplicated — resolve the display ID conflict');
     },
 
@@ -397,9 +501,11 @@ export const useAppStore = create<AppState>()((set, get) => {
         )
       )
         return;
+      const rel = lastCasePath.get(id) ?? casePath(c);
       const rest = cases.filter((x) => x.id !== id);
       set({ cases: rest, sel: { kind: 'case', id: rest[0]?.id, runId: null }, view: 'editor' });
       upsertChange({ kind: 'case', refId: id, path: casePath(c), status: 'D', label: c.title });
+      void deleteCaseOnDisk(rel, id);
       get().toast('Deleted ' + c.displayId);
     },
 
@@ -438,6 +544,7 @@ export const useAppStore = create<AppState>()((set, get) => {
         };
       });
       upsertChange({ kind: 'case', refId: newId, path: casePath(kase), status: 'A', label: kase.title });
+      void writeCaseNow(newId);
       get().toast('New case · ' + displayId);
     },
 
@@ -457,10 +564,12 @@ export const useAppStore = create<AppState>()((set, get) => {
           renaming: { id, value: name },
         };
       });
+      if (get().repoPath) void makeDir(get().repoPath, suiteRel(id)).catch(onWriteError);
       get().toast(parent ? `New suite in ${parent.name}` : 'New top-level suite');
     },
 
-    renameSuite: (id, name) =>
+    renameSuite: (id, name) => {
+      const oldRel = suiteRel(id);
       set((s) => {
         const next = clone(s.tree);
         const fix = (nodes: TreeNode[], parentPath: string) =>
@@ -473,7 +582,13 @@ export const useAppStore = create<AppState>()((set, get) => {
           });
         fix(next, '');
         return { tree: next };
-      }),
+      });
+      const rp = get().repoPath;
+      const newRel = suiteRel(id);
+      if (rp && oldRel && newRel && oldRel !== newRel) {
+        void renamePath(rp, oldRel, newRel).then(seedPaths).catch(onWriteError);
+      }
+    },
 
     deleteSuite: (id) => {
       const node = findSuiteNode(get().tree, id);
@@ -490,6 +605,7 @@ export const useAppStore = create<AppState>()((set, get) => {
         )
       )
         return;
+      const rel = suiteRel(id);
       set((s) => {
         const next = clone(s.tree);
         const prune = (nodes: TreeNode[]): boolean => {
@@ -503,6 +619,8 @@ export const useAppStore = create<AppState>()((set, get) => {
         prune(next);
         return { tree: next, cases: s.cases.filter((c) => !caseIds.includes(c.id)) };
       });
+      const rp = get().repoPath;
+      if (rp && rel) void deletePath(rp, rel).then(seedPaths).catch(onWriteError);
       get().toast(`Deleted suite "${node.name}"`);
     },
 
@@ -510,6 +628,8 @@ export const useAppStore = create<AppState>()((set, get) => {
     moveNodeToParent: (dragId, parentId, index) => {
       if (dragId === parentId) return;
       if (parentId && isDescendant(get().tree, dragId, parentId)) return;
+      const draggedCase = get().cases.find((c) => c.id === dragId);
+      const oldRel = draggedCase ? lastCasePath.get(dragId) ?? casePath(draggedCase) : suiteRel(dragId);
       set((s) => {
         const next = clone(s.tree);
         let dragged: TreeNode | null = null;
@@ -549,6 +669,12 @@ export const useAppStore = create<AppState>()((set, get) => {
         );
         return { tree: next, cases };
       });
+      const movedCase = get().cases.find((c) => c.id === dragId);
+      const newRel = movedCase ? casePath(movedCase) : suiteRel(dragId);
+      const rp = get().repoPath;
+      if (rp && oldRel && newRel && oldRel !== newRel) {
+        void renamePath(rp, oldRel, newRel).then(seedPaths).catch(onWriteError);
+      }
     },
 
     /* ---- runs ---- */
@@ -567,10 +693,12 @@ export const useAppStore = create<AppState>()((set, get) => {
           status: 'M',
           label: run.name,
         });
+      schedulePersist('run:' + runId, () => writeRunNow(runId));
     },
 
     createRun: ({ name, scope, tag, suite }) => {
-      const { cases } = get();
+      const { cases, workspace } = get();
+      if (!workspace) return;
       const ids =
         scope === 'tag'
           ? cases.filter((c) => c.tags.includes(tag)).map((c) => c.id)
@@ -581,11 +709,13 @@ export const useAppStore = create<AppState>()((set, get) => {
         const c = cases.find((x) => x.id === id)!;
         return { case_id: id, display_id: c.displayId, title: c.title, result: 'not_run', tester: '', executed_at: '', notes: '' };
       });
+      const date = new Date().toISOString().slice(0, 10);
+      const stem = runFileStem(name, date);
       const run: Run = {
-        id: 'run-' + randomId(5),
+        id: stem,
         name,
-        file: `runs/2026-06-01-${slug(name)}.csv`,
-        created: '2026-06-01',
+        file: `${workspace.runsDir}/${stem}.csv`,
+        created: date,
         status: 'open',
         scope,
         rows,
@@ -594,10 +724,17 @@ export const useAppStore = create<AppState>()((set, get) => {
       upsertChange({
         kind: 'run',
         refId: run.id,
-        path: (get().workspace?.path ?? '') + '/' + run.file,
+        path: `${workspace.path}/${run.file}`,
         status: 'A',
         label: run.name,
       });
+      const rp = get().repoPath;
+      if (rp) {
+        void Promise.all([
+          writeFileAt(rp, runRel(run), serializeRunCsv(run.rows)),
+          writeFileAt(rp, runRel(run).replace(/\.csv$/, '.md'), serializeRunSidecar({ name, status: 'open' })),
+        ]).catch(onWriteError);
+      }
       get().toast(`Created run · ${rows.length} cases seeded`);
     },
 
@@ -618,6 +755,7 @@ export const useAppStore = create<AppState>()((set, get) => {
 
     /* ---- git ---- */
     doCommit: (selectedKeys) => {
+      void flushPersist();
       set((s) => ({
         cases: s.cases.map((c) => (selectedKeys.includes('case:' + c.id) ? { ...c, modified: false } : c)),
         changes: s.changes.filter((c) => !selectedKeys.includes(changeKey(c))),

@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { node } from '@/lib/node';
-import { serializeCase, type ParsedCase } from './format/case';
+import { parseCase, serializeCase, type ParsedCase } from './format/case';
 import { serializeRunCsv } from './format/run';
-import { loadWorkspace, openRepo } from './repo';
+import { deletePath, loadWorkspace, makeDir, openRepo, renamePath, writeFileAt } from './repo';
 
 let repoPath: string;
 
@@ -108,5 +108,42 @@ describe('loadWorkspace', () => {
     expect(runs).toHaveLength(1);
     expect(runs[0].rows[0].result).toBe('pass');
     expect(runs[0].file).toBe('runs/2026-06-01-smoke.csv');
+  });
+});
+
+describe('write primitives', () => {
+  let dir: string;
+  const exists = async (rel: string) =>
+    node
+      .fsp()
+      .stat(node.path().join(dir, rel))
+      .then(() => true)
+      .catch(() => false);
+
+  beforeAll(async () => {
+    dir = await node.fsp().mkdtemp(node.path().join(node.os().tmpdir(), 'cw-write-'));
+  });
+  afterAll(async () => {
+    await node.fsp().rm(dir, { recursive: true, force: true });
+  });
+
+  it('writes a case file, creating parent dirs', async () => {
+    await writeFileAt(dir, 'areas/payments/Auth/PAY-0001-first.md', serializeCase(c1));
+    expect(await exists('areas/payments/Auth/PAY-0001-first.md')).toBe(true);
+    const text = await node.fsp().readFile(node.path().join(dir, 'areas/payments/Auth/PAY-0001-first.md'), 'utf8');
+    expect(parseCase(text).case.title).toBe('First case');
+  });
+
+  it('renames (moves) a file across folders', async () => {
+    await renamePath(dir, 'areas/payments/Auth/PAY-0001-first.md', 'areas/payments/Billing/PAY-0001-first.md');
+    expect(await exists('areas/payments/Auth/PAY-0001-first.md')).toBe(false);
+    expect(await exists('areas/payments/Billing/PAY-0001-first.md')).toBe(true);
+  });
+
+  it('creates a directory and deletes a path', async () => {
+    await makeDir(dir, 'areas/payments/runs');
+    expect(await exists('areas/payments/runs')).toBe(true);
+    await deletePath(dir, 'areas/payments/Billing/PAY-0001-first.md');
+    expect(await exists('areas/payments/Billing/PAY-0001-first.md')).toBe(false);
   });
 });

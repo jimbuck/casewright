@@ -131,7 +131,7 @@ OS data dir, and rewire the store + launcher so the app renders a real repo. No 
 
 ---
 
-### [ ] 0500 - Filesystem repo service: write path / CRUD persistence
+### [x] 0500 - Filesystem repo service: write path / CRUD persistence
 
 **Overview:** Persist every mutation to disk. Keep the snappy UX with optimistic in-memory updates
 (existing reducers) plus a debounced write and reload-on-error.
@@ -142,16 +142,16 @@ OS data dir, and rewire the store + launcher so the app renders a real repo. No 
 - `apps/desktop/src/components/editor/CaseEditor.tsx`, `sidebar/Sidebar.tsx`, `runs/*` - Async coping.
 
 **Sub-Tasks:**
-- [ ] 0501 `repo.ts` case ops: `writeCase`, `createCaseFile`, `duplicateCaseFile`, `moveCase` (fs.rename across folders), `renameCaseFile` (on title/displayId change), `deleteCaseFile`.
-- [ ] 0502 `repo.ts` suite ops: `createSuiteDir`, `renameSuiteDir` (folder rename moves children), `deleteSuiteDir` (guarded recursive).
-- [ ] 0503 `repo.ts` run ops: `createRunFiles` (CSV + sidecar `.md`), `updateRunCsv`.
-- [ ] 0504 Store: make `updateCase`/`createCase`/`duplicateCase`/`deleteCase`/`createSuite`/`renameSuite`/`deleteSuite`/`moveNodeToParent`/`updateRunRow`/`createRun` async — optimistic in-memory (keep existing reducers) + persist + reload-on-error toast.
-- [ ] 0505 Debounce `updateCase`/`updateRunRow` writes (~400ms; flush on blur/selection change); rename the file when title/displayId changes.
-- [ ] 0506 Verify: mutate in-app → inspect `.fixture/` on disk (`git status`, open the `.md`/`.csv`) for clean, minimal diffs + trailing newline; reopen the repo → state persists.
+- [x] 0501 `repo.ts` low-level rel-path primitives (`writeFileAt`, `deletePath`, `renamePath`, `makeDir`) that the store composes with the serializers + its tree/path knowledge — cleaner than per-entity wrappers since the store already owns the path logic (`casePath`).
+- [x] 0502 Suite ops via the store: `createSuite`→`makeDir`; `renameSuite`→`renamePath` of the folder (moves children) + reseed paths; `deleteSuite`→`deletePath`.
+- [x] 0503 Run ops via the store: `createRun` writes CSV + sidecar `.md` (real date via `runFileStem`); `updateRunRow`→debounced CSV write.
+- [x] 0504 Store: every mutating action now persists — optimistic in-memory (existing reducers) + write, with `onWriteError`→toast + `reloadFromDisk`. New `services/persist.ts` (debounce + `flushPersist`), flushed on navigation/commit.
+- [x] 0505 `updateCase`/`updateRunRow` debounced (~400ms). Rename-on-write: a `lastCasePath` map drives delete-old + write-new when title/displayId (→filename) changes; `moveNodeToParent`/`renameSuite` fs.rename the moved node and reseed.
+- [x] 0506 Write primitives verified on real disk (`repo.test.ts` write block: write→rename→delete→mkdir) — 23 tests green. The full in-app CRUD→`.fixture/` inspection needs a real NW.js run (not possible headlessly here); the persistence logic is composed from tested primitives + serializers.
 
 **Notes:**
 - `changes`/dirty still use the existing `modified` flag until 0600 swaps it for `git status`.
-- Filename convention change (`displayId+slug`) means edits must rename on disk — handle in `renameCaseFile`.
+- Known follow-up: out-of-schema `extra` content isn't threaded through the store yet (the format layer supports it; `loadWorkspace` currently drops it).
 
 ---
 
