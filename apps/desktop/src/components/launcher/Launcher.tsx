@@ -1,7 +1,7 @@
 import { I } from '@/components/icons';
 import { Button } from '@/components/ui';
 import { recents } from '@/data/sample';
-import { useApp } from '@/store/app-context';
+import { useApp } from '@/store/app-store';
 
 export function Launcher() {
   const { openRepo } = useApp();

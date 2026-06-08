@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState, type DragEvent } from 'react';
 import { I } from '@/components/icons';
 import { Button } from '@/components/ui';
-import { useApp } from '@/store/app-context';
+import { useApp } from '@/store/app-store';
 import type { Case, Status, SuiteNode, TreeNode } from '@/types';
 import { ContextMenu, type MenuItem } from './ContextMenu';
 

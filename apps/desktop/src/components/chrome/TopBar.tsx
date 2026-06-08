@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { I } from '@/components/icons';
 import { Button } from '@/components/ui';
-import { useApp } from '@/store/app-context';
+import { useApp } from '@/store/app-store';
 
 export function TopBar() {
   const { workspace, workspaces, branch, ahead, behind, changes, setWorkspace, goHome, doPush, doPull, setModal, toast } =

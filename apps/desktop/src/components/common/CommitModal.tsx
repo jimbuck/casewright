@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { I } from '@/components/icons';
 import { Button, Field, Modal, ModalBody, ModalFooter, ModalHeader, Tag, Textarea } from '@/components/ui';
-import { useApp } from '@/store/app-context';
+import { useApp } from '@/store/app-store';
 import type { Change } from '@/types';
 
 const keyOf = (c: Change) => c.kind + ':' + c.refId;

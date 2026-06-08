@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { I } from '@/components/icons';
 import { Button, RES, RESULTS } from '@/components/ui';
-import { useApp } from '@/store/app-context';
+import { useApp } from '@/store/app-store';
 import { nowStamp } from '@/utils/ids';
 import { renderInline } from '@/utils/markdown';
 import { numberSteps } from '@/utils/steps';

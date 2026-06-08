@@ -1,6 +1,6 @@
 import { I } from '@/components/icons';
 import { Button, RES, Tag } from '@/components/ui';
-import { useApp } from '@/store/app-context';
+import { useApp } from '@/store/app-store';
 import type { Result, RunRow } from '@/types';
 
 type Tally = Record<Result, number>;

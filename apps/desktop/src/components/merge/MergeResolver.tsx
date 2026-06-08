@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { I } from '@/components/icons';
 import { Button } from '@/components/ui';
 import { conflict } from '@/data/sample';
-import { useApp } from '@/store/app-context';
+import { useApp } from '@/store/app-store';
 import type { Resolution, Resolutions } from '@/types';
 import { FileDetail } from './FileDetail';
 

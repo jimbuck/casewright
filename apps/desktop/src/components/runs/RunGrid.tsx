@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { I } from '@/components/icons';
 import { Button, RES, RESULTS } from '@/components/ui';
-import { useApp } from '@/store/app-context';
+import { useApp } from '@/store/app-store';
 import { firstUnrun, nowStamp } from '@/utils/ids';
 import type { Result, RunRow } from '@/types';
 import { NotesCell } from './NotesCell';

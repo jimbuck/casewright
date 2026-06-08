@@ -2,7 +2,7 @@ import { useEffect, useState, type MouseEvent } from 'react';
 import { I } from '@/components/icons';
 import { ContextMenu, type MenuItem } from '@/components/sidebar/ContextMenu';
 import { nwWindow } from '@/lib/nwjs';
-import { useApp } from '@/store/app-context';
+import { useApp } from '@/store/app-store';
 
 /* window-control glyphs (VS Code / Windows style) */
 const wcProps = { viewBox: '0 0 10 10', width: 10, height: 10, fill: 'none', stroke: 'currentColor', strokeWidth: 1.1 } as const;

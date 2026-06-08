@@ -1,6 +1,6 @@
 import { I } from '@/components/icons';
 import { Button } from '@/components/ui';
-import { useApp } from '@/store/app-context';
+import { useApp } from '@/store/app-store';
 import type { Case, Status } from '@/types';
 import { ListControl } from './ListControl';
 import { ObjectiveEditor } from './ObjectiveEditor';

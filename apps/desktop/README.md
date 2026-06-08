@@ -36,7 +36,7 @@ src/
 ├── types/                    # domain model (Case, TreeNode, Run, Conflict, …)
 ├── data/sample.ts            # the in-memory sample repository (typed)
 ├── utils/                    # markdown render, word diff, step numbering, ids, cx
-├── store/app-context.tsx     # the app store — typed React context + useApp() hook
+├── store/app-store.ts        # the app store — a typed Zustand store + useApp() hook
 │                             #   (replaces the prototype's window.CW globals)
 ├── lib/nwjs.ts               # typed NW.js window helpers (frameless titlebar controls)
 ├── styles/                   # base.css + components.css (tokens come from @casewright/brand)

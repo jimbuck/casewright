@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { I } from '@/components/icons';
 import { Button, Field, Input, Modal, ModalBody, ModalFooter, ModalHeader, Select } from '@/components/ui';
-import { useApp } from '@/store/app-context';
+import { useApp } from '@/store/app-store';
 import type { RunScope } from '@/types';
 
 export function CreateRunModal() {

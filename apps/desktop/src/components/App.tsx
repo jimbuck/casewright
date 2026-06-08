@@ -1,4 +1,4 @@
-import { AppProvider, useApp } from '@/store/app-context';
+import { useApp } from '@/store/app-store';
 import { TitleBar } from './chrome/TitleBar';
 import { TopBar } from './chrome/TopBar';
 import { Toasts } from './chrome/Toasts';
@@ -50,9 +50,5 @@ function Workbench() {
 }
 
 export function App() {
-  return (
-    <AppProvider>
-      <Workbench />
-    </AppProvider>
-  );
+  return <Workbench />;
 }

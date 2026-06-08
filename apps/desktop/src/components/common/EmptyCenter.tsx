@@ -1,6 +1,6 @@
 import { I } from '@/components/icons';
 import { Button } from '@/components/ui';
-import { useApp } from '@/store/app-context';
+import { useApp } from '@/store/app-store';
 
 export function EmptyCenter() {
   const { createCase } = useApp();
