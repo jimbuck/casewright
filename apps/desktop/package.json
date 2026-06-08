@@ -1,0 +1,25 @@
+{
+  "name": "@casewright/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Casewright desktop app — a craftsman's editor for manual test cases (NW.js).",
+  "license": "MIT",
+  "author": "Jim Buck",
+  "main": "src/index.html",
+  "window": {
+    "title": "Casewright",
+    "width": 1480,
+    "height": 940,
+    "min_width": 1024,
+    "min_height": 640,
+    "frame": true,
+    "show": true
+  },
+  "scripts": {
+    "dev": "nw .",
+    "start": "nw ."
+  },
+  "devDependencies": {
+    "nw": "0.112.0-sdk"
+  }
+}

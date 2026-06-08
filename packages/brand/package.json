@@ -1,0 +1,17 @@
+{
+  "name": "@casewright/brand",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Shared Casewright design tokens — the warm-neutral palette, slate-blue accent, status colors, and type roles used across the desktop app and marketing site.",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    "./tokens.css": "./tokens.css"
+  },
+  "files": [
+    "tokens.css"
+  ],
+  "sideEffects": [
+    "*.css"
+  ]
+}
