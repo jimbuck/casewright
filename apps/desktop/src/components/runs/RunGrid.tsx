@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { I } from '@/components/icons';
 import { Button, RES, RESULTS } from '@/components/ui';
+import { cn } from '@/lib/utils';
 import { useApp } from '@/store/app-store';
 import { firstUnrun, nowStamp } from '@/utils/ids';
 import type { Result, RunRow } from '@/types';
@@ -8,6 +9,14 @@ import { NotesCell } from './NotesCell';
 
 type Tally = Record<Result, number>;
 const SEGS: Result[] = ['pass', 'fail', 'blocked', 'skipped', 'not_run'];
+
+const RUN_STATUS: Record<string, string> = {
+  open: 'text-accent-ink bg-accent-soft',
+  closed: 'text-ink-3 bg-sunken',
+};
+
+const cellInput =
+  'w-full rounded-sm border border-transparent bg-transparent px-1.5 py-1 text-[12.5px] hover:border-border hover:bg-panel focus:border-accent focus:bg-panel focus:shadow-[0_0_0_2px_var(--accent-soft)] focus:outline-none';
 
 export function RunGrid() {
   const ctx = useApp();
@@ -31,29 +40,45 @@ export function RunGrid() {
   const passRate = executed ? Math.round((t.pass / executed) * 100) : 0;
 
   return (
-    <div className="run-view">
-      <div className="run-bar">
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex flex-none items-center gap-[14px] border-b border-border bg-panel-2 px-[26px] py-[14px]">
         <Button icon variant="ghost" onClick={ctx.openRunsList} title="Back to runs">
           {I.back({ size: 16 })}
         </Button>
         <div>
-          <div className="rb-title">
-            {run.name} <span className={'run-status ' + run.status}>{run.status}</span>
+          <div className="text-[16px] font-semibold">
+            {run.name}{' '}
+            <span className={cn('rounded-full px-2 py-0.5 text-[10.5px] font-bold uppercase tracking-[0.05em]', RUN_STATUS[run.status])}>
+              {run.status}
+            </span>
           </div>
-          <div className="rb-file">{run.file}</div>
+          <div className="font-mono text-[11.5px] text-ink-faint">{run.file}</div>
         </div>
-        <div className="summary">
+        <div className="ml-auto flex items-center gap-[14px]">
           <div
-            className="summary-bar"
+            className="flex h-[30px] w-[220px] overflow-hidden rounded-md border border-border"
             title={`${t.pass} pass · ${t.fail} fail · ${t.blocked} blocked · ${t.skipped} skipped · ${t.not_run} not run`}
           >
-            {SEGS.map((s) => (t[s] ? <i key={s} style={{ flexGrow: t[s], background: RES[s].color }}>{t[s]}</i> : null))}
+            {SEGS.map((s) =>
+              t[s] ? (
+                <i
+                  key={s}
+                  className="flex h-full items-center justify-center font-mono text-[11px] font-bold text-[oklch(1_0_0/0.92)] transition-[flex-grow] duration-300"
+                  style={{ flexGrow: t[s], background: RES[s].color }}
+                >
+                  {t[s]}
+                </i>
+              ) : null,
+            )}
           </div>
-          <div className="pass-rate">
-            <div className="pct" style={{ color: passRate >= 80 ? 'var(--pass)' : passRate >= 50 ? 'var(--blocked)' : 'var(--fail)' }}>
+          <div className="text-right">
+            <div
+              className="text-[22px] font-bold leading-none tracking-[-0.01em]"
+              style={{ color: passRate >= 80 ? 'var(--pass)' : passRate >= 50 ? 'var(--blocked)' : 'var(--fail)' }}
+            >
               {passRate}%
             </div>
-            <div className="lbl">pass rate</div>
+            <div className="text-[10.5px] uppercase tracking-[0.05em] text-ink-faint">pass rate</div>
           </div>
           <Button variant="primary" onClick={() => ctx.startGuide(run.id, firstUnrun(run))}>
             {I.play({ size: 13 })} Start testing
@@ -61,10 +86,10 @@ export function RunGrid() {
         </div>
       </div>
 
-      <div className="grid-scroll">
-        <table className="runs-grid">
+      <div className="min-h-0 flex-1 overflow-auto">
+        <table className="w-full border-separate border-spacing-0 text-[13px]">
           <thead>
-            <tr>
+            <tr className="[&>th]:sticky [&>th]:top-0 [&>th]:z-[2] [&>th]:whitespace-nowrap [&>th]:border-b [&>th]:border-border-2 [&>th]:bg-panel-2 [&>th]:px-3 [&>th]:py-[9px] [&>th]:text-left [&>th]:text-[11px] [&>th]:font-semibold [&>th]:uppercase [&>th]:tracking-[0.05em] [&>th]:text-ink-faint">
               <th style={{ width: 90 }}>Case</th>
               <th>Title</th>
               <th style={{ width: 150 }}>Result</th>
@@ -78,39 +103,51 @@ export function RunGrid() {
             {run.rows.map((row, i) => {
               const gone = !liveIds.has(row.case_id);
               return (
-                <tr key={row.case_id + i}>
-                  <td className="c-did">{row.display_id}</td>
-                  <td className="c-title">
+                <tr
+                  key={row.case_id + i}
+                  className="hover:bg-[oklch(0.975_0.004_80)] [&>td]:border-b [&>td]:border-border [&>td]:px-3 [&>td]:py-[7px] [&>td]:align-middle"
+                >
+                  <td className="whitespace-nowrap font-mono text-[12px] text-ink-3">{row.display_id}</td>
+                  <td className="max-w-[420px]">
                     {gone ? (
-                      <span className="gone">{row.title}</span>
+                      <span className="text-ink-faint">{row.title}</span>
                     ) : (
-                      <button className="c-title-link" title="Walk through this case" onClick={() => ctx.startGuide(run.id, i)}>
+                      <button
+                        className="rounded-[3px] border-0 bg-transparent p-0 text-left text-ink hover:text-accent-ink hover:underline hover:underline-offset-2"
+                        title="Walk through this case"
+                        onClick={() => ctx.startGuide(run.id, i)}
+                      >
                         {row.title}
                       </button>
                     )}
                     {gone && (
-                      <span className="gone-tag" title="Case no longer resolves to a live file">
+                      <span className="ml-1.5 text-[10px] text-fail" title="Case no longer resolves to a live file">
                         ⚠ deleted
                       </span>
                     )}
                   </td>
-                  <td style={{ position: 'relative' }}>
-                    <button className="result-pick" onClick={() => setMenu(menu === i ? null : i)}>
-                      <span className="dot" style={{ width: 9, height: 9, borderRadius: 3, background: RES[row.result].color }} />
+                  <td className="relative">
+                    <button
+                      className="inline-flex items-center gap-[5px] rounded-[5px] border border-border bg-panel px-[9px] py-[3px] font-mono text-[12px] font-semibold hover:bg-raise"
+                      onClick={() => setMenu(menu === i ? null : i)}
+                    >
+                      <span className="size-[9px] rounded-[3px]" style={{ background: RES[row.result].color }} />
                       {RES[row.result].label}
                       {I.chevronDown({ size: 12 })}
                     </button>
                     {menu === i && (
                       <>
-                        <div style={{ position: 'fixed', inset: 0, zIndex: 20 }} onClick={() => setMenu(null)} />
-                        <div className="res-pop">
+                        <div className="fixed inset-0 z-20" onClick={() => setMenu(null)} />
+                        <div className="absolute z-30 flex min-w-[130px] flex-col gap-0.5 rounded-md border border-border-2 bg-panel p-[5px] shadow-[0_12px_30px_var(--shadow)]">
                           {RESULTS.map((r) => (
-                            <button key={r.key} className="res-opt" onClick={() => setResult(i, r.key)}>
-                              <span className="dot" style={{ background: r.color }} />
+                            <button
+                              key={r.key}
+                              className="flex items-center gap-2 rounded-sm border-0 bg-transparent px-[9px] py-1.5 text-left text-[12.5px] hover:bg-raise"
+                              onClick={() => setResult(i, r.key)}
+                            >
+                              <span className="size-[9px] shrink-0 rounded-[3px]" style={{ background: r.color }} />
                               {r.label}
-                              {row.result === r.key && (
-                                <span style={{ marginLeft: 'auto', color: 'var(--accent)' }}>{I.check({ size: 13 })}</span>
-                              )}
+                              {row.result === r.key && <span className="ml-auto text-accent">{I.check({ size: 13 })}</span>}
                             </button>
                           ))}
                         </div>
@@ -119,7 +156,7 @@ export function RunGrid() {
                   </td>
                   <td>
                     <input
-                      className="cell-input mono"
+                      className={cn(cellInput, 'font-mono')}
                       value={row.tester}
                       placeholder={ctx.lastTester || '—'}
                       onChange={(e) => {
@@ -128,7 +165,9 @@ export function RunGrid() {
                       }}
                     />
                   </td>
-                  <td className="c-did">{row.executed_at || <span className="muted">—</span>}</td>
+                  <td className="whitespace-nowrap font-mono text-[12px] text-ink-3">
+                    {row.executed_at || <span className="text-ink-3">—</span>}
+                  </td>
                   <td>
                     <NotesCell value={row.notes} onChange={(v) => update(i, { notes: v })} />
                   </td>

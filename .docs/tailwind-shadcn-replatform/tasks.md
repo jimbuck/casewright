@@ -101,7 +101,7 @@ Tailwind utilities + shadcn, and replace the hand-rolled positioned context menu
 
 ---
 
-### [ ] 0400 - Convert editor + runs + guide to Tailwind
+### [x] 0400 - Convert editor + runs + guide to Tailwind
 
 **Overview:** Convert the case editor (and its structured-section controls), the runs views, and the
 guided runner to Tailwind, preserving all interaction behavior (drag-reorder, indent/outdent,
@@ -113,16 +113,16 @@ result picker, checklists).
 - `apps/desktop/src/components/guide/*` - `RunGuide`, `GuideChecklist`, `GuideCheck`.
 
 **Sub-Tasks:**
-- [ ] 0401 Convert `CaseEditor` (head/title, meta row incl. ID-conflict bar, footer, section layout).
-- [ ] 0402 Convert `ObjectiveEditor`, `FmtBar`, `ListControl`, `StepsControl`, `TagEditor` — classNames only; keep drag/reorder/indent JS intact.
-- [ ] 0403 Convert `RunsList` (run cards + segmented result bars).
-- [ ] 0404 Convert `RunGrid` (table, result-picker popover, inline cells) + `NotesCell` (idle render vs textarea).
-- [ ] 0405 Convert `CreateRunModal` (scope options) using the shadcn `Dialog`.
-- [ ] 0406 Convert `RunGuide` + `GuideChecklist` + `GuideCheck` (checklists, progress bars, the gated recorder).
-- [ ] 0407 Delete the editor / runs / guide rules from `base.css` + `components.css`.
+- [x] 0401 Convert `CaseEditor` (head/title, meta row incl. ID-conflict bar, footer, section layout).
+- [x] 0402 Convert `ObjectiveEditor`, `FmtBar`, `ListControl`, `StepsControl`, `TagEditor` — classNames only; drag/reorder/indent JS intact (group-hover for grip/actions reveal; before-pseudo drop line).
+- [x] 0403 Convert `RunsList` (run cards + segmented result bars).
+- [x] 0404 Convert `RunGrid` (table via `[&>th]/[&>td]` group utilities, result-picker popover, inline cells) + `NotesCell` (idle render vs textarea).
+- [x] 0405 Convert `CreateRunModal` (scope options; radio dot now a conditional child span).
+- [x] 0406 Convert `RunGuide` + `GuideChecklist` + `GuideCheck` (checklists, progress bars, the gated recorder).
+- [x] 0407 Deleted the editor / runs / guide rules from `components.css` (kept shared `.center`/`.empty-center` for EmptyCenter and `.drop-line` for the Sidebar tree, both pending their own conversion).
 
 **Notes:**
-- Result/status colors come from the `@theme` token mapping (0104). The `status-select` and result swatches must match the current palette exactly.
+- Result/status colors come from the `@theme` token mapping (0104). Verified via Playwright: editor, runs list, run grid, guide, and create-run modal all render with full parity.
 
 ---
 

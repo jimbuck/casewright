@@ -1,6 +1,7 @@
 import { Fragment, useRef, useState, type ReactNode } from 'react';
 import { I } from '@/components/icons';
 import { Button } from '@/components/ui';
+import { cn } from '@/lib/utils';
 
 export interface ListControlProps {
   icon: ReactNode;
@@ -11,6 +12,9 @@ export interface ListControlProps {
   onChange: (items: string[]) => void;
   placeholder?: string;
 }
+
+const dropLine =
+  "relative mx-0.5 my-px h-0.5 rounded-[2px] bg-accent before:absolute before:-left-0.5 before:top-1/2 before:size-[7px] before:-translate-y-1/2 before:rounded-full before:bg-accent before:shadow-[0_0_0_2px_var(--panel)] before:content-['']";
 
 /** Generic single-line list control (Systems / Expected) with drag-reorder. */
 export function ListControl({ icon, title, mark, marker, items, onChange, placeholder }: ListControlProps) {
@@ -49,28 +53,38 @@ export function ListControl({ icon, title, mark, marker, items, onChange, placeh
   };
 
   return (
-    <div className="section">
-      <div className="section-h">
-        <span className="ricon2" style={{ color: 'var(--ink-3)' }}>
-          {icon}
-        </span>
-        <span className="sh-title">{title}</span>
-        <span className="sh-mark">{mark}</span>
+    <div className="flex flex-col gap-2.5">
+      <div className="flex items-center gap-[9px]">
+        <span className="grid place-items-center text-ink-3">{icon}</span>
+        <span className="text-[13px] font-semibold tracking-[0.01em] text-ink">{title}</span>
+        <span className="font-mono text-[11px] text-ink-faint">{mark}</span>
       </div>
-      <div className="item-list compact" onDragOver={(e) => e.preventDefault()} onDrop={() => doDrop()}>
+      <div className="flex flex-col" onDragOver={(e) => e.preventDefault()} onDrop={() => doDrop()}>
         {items.map((it, i) => (
           <Fragment key={i}>
-            {drag !== null && dropIdx === i && <div className="drop-line" />}
-            <div className={'litem' + (drag === i ? ' dragging' : '')} onDragOver={rowOver(i)} onDrop={doDrop}>
-              <span className="grip" draggable onDragStart={() => setDrag(i)} onDragEnd={endDrag}>
+            {drag !== null && dropIdx === i && <div className={dropLine} />}
+            <div
+              className={cn(
+                'group flex items-center gap-[7px] rounded-sm border border-transparent px-0.5 hover:bg-[oklch(0.975_0.004_80)]',
+                drag === i && 'opacity-40',
+              )}
+              onDragOver={rowOver(i)}
+              onDrop={doDrop}
+            >
+              <span
+                className="grid shrink-0 cursor-grab place-items-center text-ink-faint opacity-0 group-hover:opacity-100"
+                draggable
+                onDragStart={() => setDrag(i)}
+                onDragEnd={endDrag}
+              >
                 {I.drag({ size: 14 })}
               </span>
-              <span className="bullet">{marker}</span>
+              <span className="w-3.5 shrink-0 text-center font-mono text-ink-faint">{marker}</span>
               <input
                 ref={(el) => {
                   refs.current[i] = el;
                 }}
-                className="li-input"
+                className="flex-1 rounded-sm border border-transparent bg-transparent px-2 py-[3px] text-[14px] hover:bg-panel focus:border-accent focus:bg-panel focus:shadow-[0_0_0_3px_var(--accent-soft)] focus:outline-none"
                 value={it}
                 placeholder={placeholder}
                 onChange={(e) => setItem(i, e.target.value)}
@@ -87,15 +101,25 @@ export function ListControl({ icon, title, mark, marker, items, onChange, placeh
                   }
                 }}
               />
-              <Button icon size="sm" variant="ghost" className="li-del" title="Remove" onClick={() => remove(i)}>
+              <Button
+                icon
+                size="sm"
+                variant="ghost"
+                className="shrink-0 text-ink-faint opacity-0 hover:text-fail group-hover:opacity-100"
+                title="Remove"
+                onClick={() => remove(i)}
+              >
                 {I.trash({ size: 13 })}
               </Button>
             </div>
           </Fragment>
         ))}
-        {drag !== null && dropIdx === items.length && <div className="drop-line" />}
+        {drag !== null && dropIdx === items.length && <div className={dropLine} />}
       </div>
-      <button className="add-item" onClick={add}>
+      <button
+        className="inline-flex items-center gap-1.5 self-start rounded-sm border border-transparent px-2 py-[5px] text-[12.5px] text-ink-3 hover:bg-raise hover:text-ink"
+        onClick={add}
+      >
         {I.plus({ size: 14 })} Add item
       </button>
     </div>
