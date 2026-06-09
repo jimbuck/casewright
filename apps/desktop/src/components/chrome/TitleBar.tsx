@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { I } from '@/components/icons';
+import { Logo } from '@/components/Logo';
 import { Menu, type MenuItem } from '@/components/ui';
 import { nwWindow } from '@/lib/nwjs';
 import { useApp } from '@/store/app-store';
@@ -109,13 +110,7 @@ export function TitleBar() {
   return (
     <div className="relative z-50 flex h-[34px] flex-none items-stretch select-none border-b border-border bg-[linear-gradient(var(--panel-2),oklch(0.972_0.004_80))] [-webkit-app-region:drag]">
       <div className="flex items-center pl-2.5 pr-2">
-        <span className="grid size-4 place-items-center rounded-sm bg-accent shadow-[0_1px_1px_oklch(0.3_0.05_256/0.3)]">
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M4 5h11l5 5v9H4z" />
-            <path d="M15 5v5h5" />
-            <path d="M8 13h7M8 16h5" />
-          </svg>
-        </span>
+        <Logo size={16} className="rounded-sm shadow-[0_1px_1px_oklch(0.3_0.05_256/0.3)]" />
       </div>
 
       {screen === 'main' && (

@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { I } from '@/components/icons';
+import { Logo } from '@/components/Logo';
 import { Button } from '@/components/ui';
 import { useApp } from '@/store/app-store';
 
@@ -31,13 +32,7 @@ export function Launcher() {
     <div className="grid min-h-0 flex-1 grid-cols-[1.1fr_1fr]">
       <div className="flex flex-col bg-[linear-gradient(160deg,oklch(0.30_0.04_256),oklch(0.24_0.03_262))] px-[54px] py-[52px] text-[oklch(0.97_0.01_256)]">
         <div className="mb-auto flex items-center gap-3">
-          <div className="grid size-10 shrink-0 place-items-center rounded-lg bg-[oklch(0.55_0.13_256)] shadow-[inset_0_1px_0_oklch(1_0_0/0.25)]">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M4 5h11l5 5v9H4z" />
-              <path d="M15 5v5h5" />
-              <path d="M8 13h7M8 16h5" />
-            </svg>
-          </div>
+          <Logo size={40} className="shrink-0 rounded-lg" />
           <span className="font-mono text-[13px] tracking-[0.04em] text-[oklch(0.78_0.02_256)]">casewright</span>
         </div>
         <h1 className="m-0 mb-3 text-[30px] font-semibold tracking-[-0.02em]">Casewright</h1>

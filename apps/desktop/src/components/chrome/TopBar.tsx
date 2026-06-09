@@ -1,4 +1,5 @@
 import { I } from '@/components/icons';
+import { Logo } from '@/components/Logo';
 import { Button } from '@/components/ui';
 import { useApp } from '@/store/app-store';
 
@@ -16,13 +17,8 @@ export function TopBar() {
         {I.repo({ size: 16 })}
       </Button>
 
-      <div className="flex min-w-0 items-center gap-2" title={`${workspaces.length} workspace(s) · casewright.json`}>
-        <span className="grid size-[26px] shrink-0 place-items-center rounded-[7px] bg-[oklch(0.55_0.13_256)] shadow-[inset_0_1px_0_oklch(1_0_0/0.25)]">
-          <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round">
-            <path d="M4 5h11l5 5v9H4z" />
-            <path d="M15 5v5h5" />
-          </svg>
-        </span>
+      <div className="flex min-w-0 items-center gap-2" title={`${workspaces.length} workspace(s) · .casewright/`}>
+        <Logo size={26} className="shrink-0 rounded-[7px]" />
         <span className="whitespace-nowrap font-semibold">{repoName}</span>
         <span className="whitespace-nowrap font-mono text-[12px] text-ink-3">
           {workspaces.length} workspace{workspaces.length === 1 ? '' : 's'}
