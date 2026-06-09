@@ -12,7 +12,10 @@ export function WorkspaceModal() {
   const close = () => ctx.setModal(null);
   const workspaces = ctx.workspaces;
 
-  const initialId = ctx.wsModalId ?? ctx.workspace?.id ?? workspaces[0]?.id ?? '';
+  // Fall back to the first workspace when the preferred id no longer exists (e.g. it was
+  // removed externally while the modal was closed) so the dropdown never shows a stale value.
+  const preferred = ctx.wsModalId ?? ctx.workspace?.id;
+  const initialId = (workspaces.find((w) => w.id === preferred) ?? workspaces[0])?.id ?? '';
   const [wsId, setWsId] = useState(initialId);
   const current = workspaces.find((w) => w.id === wsId);
   const [name, setName] = useState(current?.name ?? '');
@@ -65,7 +68,7 @@ export function WorkspaceModal() {
         <Button variant="ghost" onClick={close}>
           Cancel
         </Button>
-        <Button variant="primary" disabled={!name.trim()} onClick={save}>
+        <Button variant="primary" disabled={!current || !name.trim()} onClick={save}>
           {I.check({ size: 14 })} Save
         </Button>
       </ModalFooter>

@@ -353,22 +353,23 @@ describe('self-write echo suppression', () => {
 });
 
 describe('toRepoRelative', () => {
-  const sep = node.path().sep;
-  const join = (...p: string[]) => p.join(sep);
-  const repo = join('home', 'user', 'casewright');
+  const path = node.path();
+  // `path.resolve` yields a genuinely absolute, platform-native path (the contract the
+  // helper documents), so these exercise real `path.isAbsolute`/root handling.
+  const repo = path.resolve('home', 'user', 'casewright');
 
   it('returns "" for the repo root itself', () => {
     expect(toRepoRelative(repo, repo)).toBe('');
   });
 
   it('returns a forward-slash relative path for a folder inside the repo', () => {
-    expect(toRepoRelative(repo, join(repo, 'areas', 'payments'))).toBe('areas/payments');
-    expect(toRepoRelative(repo, join(repo, 'Auth'))).toBe('Auth');
+    expect(toRepoRelative(repo, path.join(repo, 'areas', 'payments'))).toBe('areas/payments');
+    expect(toRepoRelative(repo, path.join(repo, 'Auth'))).toBe('Auth');
   });
 
   it('returns null for a folder outside the repo', () => {
-    expect(toRepoRelative(repo, join('home', 'user', 'elsewhere'))).toBeNull();
-    expect(toRepoRelative(repo, join('home', 'user'))).toBeNull();
+    expect(toRepoRelative(repo, path.resolve('home', 'user', 'elsewhere'))).toBeNull();
+    expect(toRepoRelative(repo, path.resolve('home', 'user'))).toBeNull();
   });
 });
 
