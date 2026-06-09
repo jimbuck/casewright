@@ -1,9 +1,9 @@
 import { useMemo, useRef, useState, type DragEvent } from 'react';
 import { I } from '@/components/icons';
-import { Button } from '@/components/ui';
+import { Button, Input, RowContextMenu, type MenuItem } from '@/components/ui';
+import { cn } from '@/lib/utils';
 import { useApp } from '@/store/app-store';
 import type { Case, Status, SuiteNode, TreeNode } from '@/types';
-import { ContextMenu, type MenuItem } from './ContextMenu';
 
 interface FlatRow {
   id: string;
@@ -17,11 +17,6 @@ interface DropPos {
   depth: number;
   y: number;
 }
-interface Menu {
-  x: number;
-  y: number;
-  node: TreeNode;
-}
 
 function findSuiteNode(nodes: TreeNode[], id: string): SuiteNode | null {
   for (const n of nodes) {
@@ -32,6 +27,11 @@ function findSuiteNode(nodes: TreeNode[], id: string): SuiteNode | null {
   return null;
 }
 
+const rowBase =
+  'group relative flex h-7 cursor-pointer select-none items-center gap-1.5 rounded-sm px-1.5 text-ink hover:bg-raise';
+const selBefore =
+  "before:absolute before:bottom-1 before:left-0 before:top-1 before:w-[2.5px] before:rounded-[2px] before:bg-accent before:content-['']";
+
 export function Sidebar() {
   const {
     cases,
@@ -39,6 +39,7 @@ export function Sidebar() {
     sel,
     view,
     openCase,
+    openSuite,
     openRunsList,
     collapsed,
     setCollapsed,
@@ -60,7 +61,6 @@ export function Sidebar() {
   const [tag, setTag] = useState<string | null>(null);
   const [drag, setDrag] = useState<string | null>(null);
   const [dropPos, setDropPos] = useState<DropPos | null>(null);
-  const [menu, setMenu] = useState<Menu | null>(null);
   const treeRef = useRef<HTMLDivElement>(null);
   const innerRef = useRef<HTMLDivElement>(null);
   const tailRef = useRef<HTMLDivElement>(null);
@@ -215,14 +215,7 @@ export function Sidebar() {
     setDropPos(null);
   };
 
-  // ---- context menu ----
-  const openMenu = (node: TreeNode) => (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setMenu({ x: e.clientX, y: e.clientY, node });
-  };
-  const closeMenu = () => setMenu(null);
-
+  // ---- context-menu items ----
   const menuItems = (node: TreeNode | undefined): MenuItem[] => {
     if (!node) return [];
     if (node.type === 'case') {
@@ -239,6 +232,20 @@ export function Sidebar() {
         { icon: I.code, label: 'Open in default editor', desktop: true, on: () => toast('nw.Shell.openItem — opened externally') },
         { sep: true },
         { icon: I.trash, label: 'Delete', danger: true, on: () => deleteCase(c.id) },
+      ];
+    }
+    if (node.isWorkspace) {
+      return [
+        { icon: I.file, label: 'New case', on: () => createCase(node.id) },
+        { icon: I.folder, label: 'New suite', on: () => createSuite(node.id) },
+        {
+          icon: collapsed[node.id] ? I.chevronDown : I.chevron,
+          label: collapsed[node.id] ? 'Expand' : 'Collapse',
+          on: () => setCollapsed((s) => ({ ...s, [node.id]: !collapsed[node.id] })),
+        },
+        { sep: true },
+        { icon: I.link, label: 'Copy workspace path', sub: node.path, on: () => toast('Copied ' + node.path) },
+        { icon: I.folderOpen, label: 'Reveal in File Explorer', desktop: true, on: () => toast('nw.Shell.showItemInFolder — ' + node.name) },
       ];
     }
     return [
@@ -264,36 +271,43 @@ export function Sidebar() {
       if (!matches(c)) return null;
       const active = sel.kind === 'case' && sel.id === c.id;
       return (
-        <div key={c.id} className="drag-wrap">
-          <div
-            className={
-              'row case-row' +
-              (active ? ' sel' : '') +
-              (c.status === 'deprecated' ? ' deprecated' : '') +
-              (drag === c.id ? ' dragging' : '')
-            }
-            style={{ paddingLeft: 8 + depth * 15 }}
-            draggable={!filtering}
-            onDragStart={(e) => {
-              if (filtering) {
-                e.preventDefault();
-                return;
-              }
-              setDrag(c.id);
-              e.dataTransfer.effectAllowed = 'move';
-            }}
-            onDragEnd={endDrag}
-            onDragOver={onRowDragOver(node)}
-            onDrop={doDrop}
-            onContextMenu={openMenu(node)}
-            onClick={() => openCase(c.id)}
-          >
-            <span className="twist" />
-            <span className="ricon2">{I.file({ size: 14 })}</span>
-            <span className="rlabel">{c.title}</span>
-            {c.modified && <span className="moddot" title="Unsaved / uncommitted" />}
-            <span className="rdid">{c.displayId}</span>
-          </div>
+        <div key={c.id}>
+          <RowContextMenu items={menuItems(node)}>
+            <div
+              className={cn(rowBase, active && cn('bg-accent-soft', selBefore), drag === c.id && 'opacity-40')}
+              style={{ paddingLeft: 8 + depth * 15 }}
+              draggable={!filtering}
+              onDragStart={(e) => {
+                if (filtering) {
+                  e.preventDefault();
+                  return;
+                }
+                setDrag(c.id);
+                e.dataTransfer.effectAllowed = 'move';
+              }}
+              onDragEnd={endDrag}
+              onDragOver={onRowDragOver(node)}
+              onDrop={doDrop}
+              onClick={() => openCase(c.id)}
+            >
+              <span className="grid size-4 shrink-0 place-items-center text-ink-faint" />
+              <span className={cn('grid shrink-0 place-items-center', active ? 'text-accent-ink' : 'text-ink-3')}>
+                {I.file({ size: 14 })}
+              </span>
+              <span
+                className={cn(
+                  'min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-[13px]',
+                  c.status === 'deprecated' && 'text-ink-faint',
+                )}
+              >
+                {c.title}
+              </span>
+              {c.modified && <span className="size-1.5 shrink-0 rounded-full bg-blocked" title="Unsaved / uncommitted" />}
+              <span className={cn('shrink-0 font-mono text-[11px]', active ? 'text-accent-ink' : 'text-ink-faint')}>
+                {c.displayId}
+              </span>
+            </div>
+          </RowContextMenu>
         </div>
       );
     }
@@ -301,79 +315,100 @@ export function Sidebar() {
     const isOpen = !collapsed[node.id];
     const count = node.children.filter((n) => n.type === 'case').length;
     const isRenaming = !!renaming && renaming.id === node.id;
+    const suiteActive = view === 'suite' && sel.suiteId === node.id;
     return (
-      <div key={node.id} className="drag-wrap">
-        <div
-          className={'row suite-row' + (drag === node.id ? ' dragging' : '')}
-          style={{ paddingLeft: 6 + depth * 15 }}
-          draggable={!filtering && !isRenaming}
-          onDragStart={(e) => {
-            if (filtering || isRenaming) {
-              e.preventDefault();
-              return;
-            }
-            setDrag(node.id);
-            e.dataTransfer.effectAllowed = 'move';
-          }}
-          onDragEnd={endDrag}
-          onDragOver={onRowDragOver(node)}
-          onDrop={doDrop}
-          onContextMenu={openMenu(node)}
-          onClick={() => !isRenaming && setCollapsed((s) => ({ ...s, [node.id]: isOpen }))}
-        >
-          <span className="twist">{isOpen ? I.chevronDown({ size: 13 }) : I.chevron({ size: 13 })}</span>
-          <span className="ricon2">{isOpen ? I.folderOpen({ size: 15 }) : I.folder({ size: 15 })}</span>
-          {isRenaming ? (
-            <input
-              className="suite-rename"
-              autoFocus
-              value={renaming!.value}
-              onClick={(e) => e.stopPropagation()}
-              onChange={(e) => setRenaming({ id: node.id, value: e.target.value })}
-              onBlur={commitRename}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') commitRename();
-                if (e.key === 'Escape') setRenaming(null);
-              }}
-            />
-          ) : (
+      <div key={node.id}>
+        <RowContextMenu items={menuItems(node)}>
+          <div
+            className={cn(rowBase, suiteActive && cn('bg-accent-soft', selBefore), drag === node.id && 'opacity-40')}
+            style={{ paddingLeft: 6 + depth * 15 }}
+            draggable={!filtering && !isRenaming && !node.isWorkspace}
+            onDragStart={(e) => {
+              if (filtering || isRenaming || node.isWorkspace) {
+                e.preventDefault();
+                return;
+              }
+              setDrag(node.id);
+              e.dataTransfer.effectAllowed = 'move';
+            }}
+            onDragEnd={endDrag}
+            onDragOver={onRowDragOver(node)}
+            onDrop={doDrop}
+            onClick={() => !isRenaming && openSuite(node.id)}
+          >
             <span
-              className="rlabel"
-              style={{ fontWeight: 500 }}
-              onDoubleClick={(e) => {
+              className="-ml-0.5 grid size-[18px] shrink-0 place-items-center rounded-sm text-ink-faint hover:bg-accent-line/40 hover:text-ink-2"
+              title={isOpen ? 'Collapse' : 'Expand'}
+              onClick={(e) => {
                 e.stopPropagation();
-                setRenaming({ id: node.id, value: node.name });
+                setCollapsed((s) => ({ ...s, [node.id]: isOpen }));
               }}
             >
-              {node.name}
+              {isOpen ? I.chevronDown({ size: 13 }) : I.chevron({ size: 13 })}
             </span>
-          )}
-          <span className="row-actions">
-            <button
-              className="ra-btn"
-              title="New case in this suite"
-              onClick={(e) => {
-                e.stopPropagation();
-                createCase(node.id);
-              }}
-            >
-              {I.file({ size: 13 })}
-              <span className="ra-plus">+</span>
-            </button>
-            <button
-              className="ra-btn"
-              title="New nested suite"
-              onClick={(e) => {
-                e.stopPropagation();
-                createSuite(node.id);
-              }}
-            >
-              {I.folder({ size: 13 })}
-              <span className="ra-plus">+</span>
-            </button>
-          </span>
-          {!isRenaming && <span className="scount">{count || ''}</span>}
-        </div>
+            <span className={cn('grid shrink-0 place-items-center', node.isWorkspace ? 'text-accent' : 'text-ink-3')}>
+              {node.isWorkspace ? I.workspace({ size: 15 }) : isOpen ? I.folderOpen({ size: 15 }) : I.folder({ size: 15 })}
+            </span>
+            {isRenaming ? (
+              <input
+                className="min-w-0 flex-1 rounded-sm border border-accent bg-panel px-[5px] py-px text-[13px] font-medium text-ink shadow-[0_0_0_2px_var(--accent-soft)] focus:outline-none"
+                autoFocus
+                value={renaming!.value}
+                onClick={(e) => e.stopPropagation()}
+                onChange={(e) => setRenaming({ id: node.id, value: e.target.value })}
+                onBlur={commitRename}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') commitRename();
+                  if (e.key === 'Escape') setRenaming(null);
+                }}
+              />
+            ) : (
+              <span
+                className={cn(
+                  'min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-[13px]',
+                  node.isWorkspace ? 'font-semibold' : 'font-medium',
+                )}
+                onDoubleClick={
+                  node.isWorkspace
+                    ? undefined
+                    : (e) => {
+                        e.stopPropagation();
+                        setRenaming({ id: node.id, value: node.name });
+                      }
+                }
+              >
+                {node.name}
+              </span>
+            )}
+            <span className="ml-auto hidden shrink-0 items-center gap-0.5 group-hover:flex">
+              <button
+                className="flex h-[22px] items-center gap-0.5 rounded-sm border-0 bg-transparent px-1 text-ink-3 hover:bg-accent-soft hover:text-accent-ink"
+                title="Add case"
+                aria-label="Add case"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  createCase(node.id);
+                }}
+              >
+                {I.plus({ size: 12 })}
+                {I.file({ size: 13 })}
+              </button>
+              <button
+                className="flex h-[22px] items-center gap-0.5 rounded-sm border-0 bg-transparent px-1 text-ink-3 hover:bg-accent-soft hover:text-accent-ink"
+                title={node.isWorkspace ? 'Add suite' : 'Add nested suite'}
+                aria-label={node.isWorkspace ? 'Add suite' : 'Add nested suite'}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  createSuite(node.id);
+                }}
+              >
+                {I.plus({ size: 12 })}
+                {I.folder({ size: 13 })}
+              </button>
+            </span>
+            {!isRenaming && <span className="font-mono text-[11px] text-ink-faint group-hover:hidden">{count || ''}</span>}
+          </div>
+        </RowContextMenu>
         {isOpen && node.children.map((ch) => renderNode(ch, depth + 1))}
       </div>
     );
@@ -383,35 +418,46 @@ export function Sidebar() {
   const runsActive = view === 'runs' || view === 'run' || view === 'guide';
 
   return (
-    <aside className="sidebar">
-      <div className="side-nav">
-        <button className={'nav-tab' + (!runsActive ? ' on' : '')} onClick={() => sel.id && openCase(sel.id)}>
+    <aside className="flex min-h-0 w-[290px] flex-none flex-col border-r border-border bg-panel-2">
+      <div className="flex gap-0.5 px-2.5 pt-2">
+        <button
+          className={cn(
+            'inline-flex h-7 flex-1 items-center justify-center gap-1.5 rounded-md border border-transparent bg-transparent text-[12.5px] font-medium text-ink-2 hover:bg-raise',
+            !runsActive && 'border-border bg-panel text-ink shadow-[0_1px_2px_var(--shadow)]',
+          )}
+          onClick={() => sel.id && openCase(sel.id)}
+        >
           {I.layers({ size: 14 })} Cases
         </button>
-        <button className={'nav-tab' + (runsActive ? ' on' : '')} onClick={openRunsList}>
+        <button
+          className={cn(
+            'inline-flex h-7 flex-1 items-center justify-center gap-1.5 rounded-md border border-transparent bg-transparent text-[12.5px] font-medium text-ink-2 hover:bg-raise',
+            runsActive && 'border-border bg-panel text-ink shadow-[0_1px_2px_var(--shadow)]',
+          )}
+          onClick={openRunsList}
+        >
           {I.grid({ size: 14 })} Runs
         </button>
       </div>
 
-      <div className="side-search">
-        <div className="search-box">
-          {I.search({ size: 14 })}
-          <input className="input" placeholder="Search cases…" value={q} onChange={(e) => setQ(e.target.value)} />
+      <div className="flex flex-col gap-2 border-b border-border p-2.5">
+        <div className="relative flex items-center">
+          <span className="pointer-events-none absolute left-2 text-ink-faint">{I.search({ size: 14 })}</span>
+          <Input className="h-[30px] pl-7" placeholder="Search cases…" value={q} onChange={(e) => setQ(e.target.value)} />
         </div>
-        <div className="filter-row">
+        <div className="flex flex-wrap gap-1.5">
           {(['active', 'draft', 'deprecated'] as Status[]).map((s) => (
             <button
               key={s}
-              className={'fchip' + (status === s ? ' on' : '')}
-              style={{ textTransform: 'capitalize' }}
+              className={cn(
+                'inline-flex items-center gap-1 rounded-full border border-border bg-panel px-2 py-0.5 text-[11.5px] capitalize text-ink-2 hover:bg-raise',
+                status === s && 'border-accent-line bg-accent-soft font-semibold text-accent-ink',
+              )}
               onClick={() => setStatus(status === s ? null : s)}
             >
               <span
-                className="dot"
+                className="size-[7px] rounded-full"
                 style={{
-                  width: 7,
-                  height: 7,
-                  borderRadius: 99,
                   background: s === 'active' ? 'var(--pass)' : s === 'draft' ? 'var(--blocked)' : 'var(--ink-faint)',
                 }}
               />
@@ -420,10 +466,17 @@ export function Sidebar() {
           ))}
         </div>
         {allTags.length > 0 && (
-          <div className="filter-row">
+          <div className="flex flex-wrap gap-1.5">
             {allTags.map((t) => (
-              <button key={t} className={'fchip' + (tag === t ? ' on' : '')} onClick={() => setTag(tag === t ? null : t)}>
-                <span className="fx">#</span>
+              <button
+                key={t}
+                className={cn(
+                  'inline-flex items-center gap-1 rounded-full border border-border bg-panel px-2 py-0.5 text-[11.5px] text-ink-2 hover:bg-raise',
+                  tag === t && 'border-accent-line bg-accent-soft font-semibold text-accent-ink',
+                )}
+                onClick={() => setTag(tag === t ? null : t)}
+              >
+                <span className="font-mono">#</span>
                 {t}
               </button>
             ))}
@@ -431,15 +484,15 @@ export function Sidebar() {
         )}
       </div>
 
-      <div className="tree" ref={treeRef} onDragOver={onTreeDragOver} onDrop={doDrop}>
-        <div className="tree-inner" ref={innerRef}>
-          <div className="tree-section-h">
-            <span>Suites</span>
-            <span className="tsh-actions">
-              <Button size="sm" variant="ghost" title="New top-level case" onClick={() => createCase(null)}>
+      <div className="min-h-0 flex-1 overflow-auto px-2 pb-[14px] pt-1.5" ref={treeRef} onDragOver={onTreeDragOver} onDrop={doDrop}>
+        <div className="relative" ref={innerRef}>
+          <div className="tree-section-h flex items-center justify-between px-1.5 pb-1 pt-2">
+            <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-ink-faint">Workspaces</span>
+            <span className="flex gap-0.5">
+              <Button size="sm" variant="ghost" className="h-[22px] gap-1 px-[7px] text-[11.5px] text-ink-3 hover:bg-accent-soft hover:text-accent-ink" title="New top-level case" onClick={() => createCase(null)}>
                 {I.file({ size: 13 })} Case
               </Button>
-              <Button size="sm" variant="ghost" title="New top-level suite" onClick={() => createSuite(null)}>
+              <Button size="sm" variant="ghost" className="h-[22px] gap-1 px-[7px] text-[11.5px] text-ink-3 hover:bg-accent-soft hover:text-accent-ink" title="New top-level suite" onClick={() => createSuite(null)}>
                 {I.folder({ size: 13 })} Suite
               </Button>
             </span>
@@ -447,20 +500,21 @@ export function Sidebar() {
           {anyVisible ? (
             tree.map((n) => renderNode(n, 0))
           ) : (
-            <div className="tree-empty">
+            <div className="px-[14px] py-6 text-center text-[12.5px] text-ink-faint">
               No cases match.
               <br />
               Adjust search or filters.
             </div>
           )}
-          <div className="tree-tail" ref={tailRef} />
+          <div className="min-h-9" ref={tailRef} />
           {drag != null && dropPos && (
-            <div className="drop-line tree-abs" style={{ top: dropPos.y, left: 10 + dropPos.depth * 15 }} />
+            <div
+              className="pointer-events-none absolute right-2 z-[5] m-0 h-0.5 -translate-y-px rounded-[2px] bg-accent before:absolute before:-left-0.5 before:top-1/2 before:size-[7px] before:-translate-y-1/2 before:rounded-full before:bg-accent before:shadow-[0_0_0_2px_var(--panel)] before:content-['']"
+              style={{ top: dropPos.y, left: 10 + dropPos.depth * 15 }}
+            />
           )}
         </div>
       </div>
-
-      {menu && <ContextMenu x={menu.x} y={menu.y} items={menuItems(menu.node)} onClose={closeMenu} />}
     </aside>
   );
 }

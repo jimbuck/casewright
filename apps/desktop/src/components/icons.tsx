@@ -57,6 +57,13 @@ export const I = {
       d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2M3 7v10a2 2 0 002 2h12.5a1.5 1.5 0 001.45-1.1L21 9"
     />
   ),
+  workspace: (p?: IconProps) => (
+    <Icon {...p}>
+      <path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z" />
+      <path d="M4 7.5l8 4.5 8-4.5" />
+      <path d="M12 12v9" />
+    </Icon>
+  ),
   file: (p?: IconProps) => (
     <Icon {...p}>
       <path d="M6 3h8l4 4v14a0 0 0 01 0 0H6a0 0 0 01 0 0V3z" />

@@ -1,6 +1,7 @@
 import { Fragment, useRef, useState } from 'react';
 import { I } from '@/components/icons';
 import { Button } from '@/components/ui';
+import { cn } from '@/lib/utils';
 import { numberSteps } from '@/utils/steps';
 import type { Step } from '@/types';
 
@@ -8,6 +9,9 @@ export interface StepsControlProps {
   steps: Step[];
   onChange: (steps: Step[]) => void;
 }
+
+const dropLine =
+  "relative mx-0.5 my-px h-0.5 rounded-[2px] bg-accent before:absolute before:-left-0.5 before:top-1/2 before:size-[7px] before:-translate-y-1/2 before:rounded-full before:bg-accent before:shadow-[0_0_0_2px_var(--panel)] before:content-['']";
 
 /** Steps — ordered, nestable list (Tab to nest, drag ↔ to re-parent). */
 export function StepsControl({ steps, onChange }: StepsControlProps) {
@@ -68,37 +72,48 @@ export function StepsControl({ steps, onChange }: StepsControlProps) {
   };
 
   return (
-    <div className="section">
-      <div className="section-h">
-        <span className="ricon2" style={{ color: 'var(--ink-3)' }}>
-          {I.list({ size: 15 })}
-        </span>
-        <span className="sh-title">Steps</span>
-        <span className="sh-mark">## Steps</span>
-        <span className="sh-spacer" />
-        <span className="muted" style={{ fontSize: 11 }}>
-          Tab to nest · drag ↔ to re-parent
-        </span>
+    <div className="flex flex-col gap-2.5">
+      <div className="flex items-center gap-[9px]">
+        <span className="grid place-items-center text-ink-3">{I.list({ size: 15 })}</span>
+        <span className="text-[13px] font-semibold tracking-[0.01em] text-ink">Steps</span>
+        <span className="font-mono text-[11px] text-ink-faint">## Steps</span>
+        <span className="flex-1" />
+        <span className="text-[11px] text-ink-3">Tab to nest · drag ↔ to re-parent</span>
       </div>
-      <div className="item-list compact" ref={listRef} onDragOver={(e) => e.preventDefault()} onDrop={() => doDrop()}>
+      <div className="flex flex-col" ref={listRef} onDragOver={(e) => e.preventDefault()} onDrop={() => doDrop()}>
         {steps.map((s, i) => (
           <Fragment key={i}>
-            {drag !== null && dropIdx === i && <div className="drop-line" style={{ marginLeft: dropDepth * 22 }} />}
+            {drag !== null && dropIdx === i && <div className={dropLine} style={{ marginLeft: dropDepth * 22 }} />}
             <div
-              className={'litem step-litem' + (s.depth > 0 ? ' sub' : '') + (drag === i ? ' dragging' : '')}
+              className={cn(
+                'group flex items-center gap-[7px] rounded-sm border border-transparent px-0.5 hover:bg-[oklch(0.975_0.004_80)]',
+                drag === i && 'opacity-40',
+              )}
               style={{ marginLeft: s.depth * 22 }}
               onDragOver={rowOver(i)}
               onDrop={doDrop}
             >
-              <span className="grip" draggable onDragStart={() => setDrag(i)} onDragEnd={endDrag}>
+              <span
+                className="grid shrink-0 cursor-grab place-items-center text-ink-faint opacity-0 group-hover:opacity-100"
+                draggable
+                onDragStart={() => setDrag(i)}
+                onDragEnd={endDrag}
+              >
                 {I.drag({ size: 14 })}
               </span>
-              <span className="step-num">{nums[i]}.</span>
+              <span
+                className={cn(
+                  'min-w-[30px] shrink-0 text-right font-mono text-[12px]',
+                  s.depth > 0 ? 'font-medium text-ink-faint' : 'font-semibold text-accent-ink',
+                )}
+              >
+                {nums[i]}.
+              </span>
               <input
                 ref={(el) => {
                   refs.current[i] = el;
                 }}
-                className="li-input"
+                className="flex-1 rounded-sm border border-transparent bg-transparent px-2 py-[3px] text-[14px] hover:bg-panel focus:border-accent focus:bg-panel focus:shadow-[0_0_0_3px_var(--accent-soft)] focus:outline-none"
                 value={s.text}
                 placeholder="Describe the action…"
                 onChange={(e) => setText(i, e.target.value)}
@@ -116,23 +131,26 @@ export function StepsControl({ steps, onChange }: StepsControlProps) {
                   }
                 }}
               />
-              <div className="step-actions">
-                <Button icon size="sm" variant="ghost" title="Outdent" disabled={s.depth === 0} onClick={() => setDepth(i, s.depth - 1)}>
+              <div className="flex shrink-0 gap-px opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
+                <Button icon size="sm" variant="ghost" className="text-ink-faint hover:text-ink" title="Outdent" disabled={s.depth === 0} onClick={() => setDepth(i, s.depth - 1)}>
                   {I.outdent({ size: 14 })}
                 </Button>
-                <Button icon size="sm" variant="ghost" title="Indent" disabled={s.depth >= 3} onClick={() => setDepth(i, s.depth + 1)}>
+                <Button icon size="sm" variant="ghost" className="text-ink-faint hover:text-ink" title="Indent" disabled={s.depth >= 3} onClick={() => setDepth(i, s.depth + 1)}>
                   {I.indent({ size: 14 })}
                 </Button>
-                <Button icon size="sm" variant="ghost" className="del" title="Remove" onClick={() => remove(i)}>
+                <Button icon size="sm" variant="ghost" className="text-ink-faint hover:bg-fail-soft hover:text-fail" title="Remove" onClick={() => remove(i)}>
                   {I.trash({ size: 13 })}
                 </Button>
               </div>
             </div>
           </Fragment>
         ))}
-        {drag !== null && dropIdx === steps.length && <div className="drop-line" style={{ marginLeft: dropDepth * 22 }} />}
+        {drag !== null && dropIdx === steps.length && <div className={dropLine} style={{ marginLeft: dropDepth * 22 }} />}
       </div>
-      <button className="add-item" onClick={() => addAfter(steps.length - 1)}>
+      <button
+        className="inline-flex items-center gap-1.5 self-start rounded-sm border border-transparent px-2 py-[5px] text-[12.5px] text-ink-3 hover:bg-raise hover:text-ink"
+        onClick={() => addAfter(steps.length - 1)}
+      >
         {I.plus({ size: 14 })} Add step
       </button>
     </div>

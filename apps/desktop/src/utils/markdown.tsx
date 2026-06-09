@@ -18,10 +18,20 @@ export function renderInline(text: string | null | undefined, keyPrefix = 'k'): 
     if (m[1]) out.push(<strong key={key}>{m[2]}</strong>);
     else if (m[3]) out.push(<em key={key}>{m[4]}</em>);
     else if (m[5]) out.push(<s key={key}>{m[6]}</s>);
-    else if (m[7]) out.push(<code key={key} className="md-code">{m[8]}</code>);
+    else if (m[7])
+      out.push(
+        <code key={key} className="rounded-sm border border-border bg-sunken px-1 font-mono text-[0.88em]">
+          {m[8]}
+        </code>,
+      );
     else if (m[9])
       out.push(
-        <a key={key} href={m[11]} className="md-link" onClick={(ev) => ev.preventDefault()}>
+        <a
+          key={key}
+          href={m[11]}
+          className="text-accent-ink underline underline-offset-2"
+          onClick={(ev) => ev.preventDefault()}
+        >
           {m[10]}
         </a>,
       );

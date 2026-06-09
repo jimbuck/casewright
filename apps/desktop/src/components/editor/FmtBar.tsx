@@ -8,6 +8,9 @@ export interface FmtBarProps {
   hint?: boolean;
 }
 
+const fmtBtn =
+  'grid h-[26px] w-7 place-items-center rounded-sm border border-transparent bg-transparent text-ink-2 hover:bg-raise hover:text-ink';
+
 /** Inline-formatting toolbar for the Objective editor. */
 export function FmtBar({ targetRef, onApply, hint = true }: FmtBarProps) {
   const apply = (before: string, after: string) => {
@@ -22,24 +25,24 @@ export function FmtBar({ targetRef, onApply, hint = true }: FmtBarProps) {
   };
   const prevent = (e: { preventDefault: () => void }) => e.preventDefault();
   return (
-    <div className="fmt-bar">
-      <button className="fmt-btn" title="Bold" onMouseDown={prevent} onClick={() => apply('**', '**')}>
+    <div className="mb-2 flex items-center gap-0.5">
+      <button className={fmtBtn} title="Bold" onMouseDown={prevent} onClick={() => apply('**', '**')}>
         {I.bold({ size: 15 })}
       </button>
-      <button className="fmt-btn" title="Italic" onMouseDown={prevent} onClick={() => apply('*', '*')}>
+      <button className={fmtBtn} title="Italic" onMouseDown={prevent} onClick={() => apply('*', '*')}>
         {I.italic({ size: 15 })}
       </button>
-      <button className="fmt-btn" title="Strikethrough" onMouseDown={prevent} onClick={() => apply('~~', '~~')}>
+      <button className={fmtBtn} title="Strikethrough" onMouseDown={prevent} onClick={() => apply('~~', '~~')}>
         {I.strike({ size: 15 })}
       </button>
-      <span className="fmt-sep" />
-      <button className="fmt-btn" title="Inline code" onMouseDown={prevent} onClick={() => apply('`', '`')}>
+      <span className="mx-1 h-4 w-px bg-border" />
+      <button className={fmtBtn} title="Inline code" onMouseDown={prevent} onClick={() => apply('`', '`')}>
         {I.code({ size: 15 })}
       </button>
-      <button className="fmt-btn" title="Link" onMouseDown={prevent} onClick={() => apply('[', '](https://)')}>
+      <button className={fmtBtn} title="Link" onMouseDown={prevent} onClick={() => apply('[', '](https://)')}>
         {I.link({ size: 15 })}
       </button>
-      {hint && <span className="fmt-hint">inline only — bold, italic, strike, code, links</span>}
+      {hint && <span className="ml-auto text-[11px] text-ink-faint">inline only — bold, italic, strike, code, links</span>}
     </div>
   );
 }

@@ -1,6 +1,6 @@
-import { useEffect, useState, type MouseEvent } from 'react';
+import { useEffect, useState } from 'react';
 import { I } from '@/components/icons';
-import { ContextMenu, type MenuItem } from '@/components/sidebar/ContextMenu';
+import { Menu, type MenuItem } from '@/components/ui';
 import { nwWindow } from '@/lib/nwjs';
 import { useApp } from '@/store/app-store';
 
@@ -28,16 +28,12 @@ const WinClose = () => (
   </svg>
 );
 
-interface OpenMenu {
-  x: number;
-  y: number;
-  items: MenuItem[];
-}
+const winBtn =
+  'grid w-[46px] place-items-center border-0 bg-transparent text-ink-2 transition-colors duration-100 [-webkit-app-region:no-drag]';
 
 export function TitleBar() {
   const ctx = useApp();
   const { screen } = ctx;
-  const [menu, setMenu] = useState<OpenMenu | null>(null);
   const [maximized, setMaximized] = useState(false);
 
   // keep the maximize/restore glyph in sync with the real window state
@@ -66,11 +62,6 @@ export function TitleBar() {
     }
     if (maximized) win.unmaximize();
     else win.maximize();
-  };
-
-  const openMenu = (e: MouseEvent<HTMLButtonElement>, items: MenuItem[]) => {
-    const r = e.currentTarget.getBoundingClientRect();
-    setMenu({ x: r.left, y: r.bottom, items });
   };
 
   const menus: { label: string; items: MenuItem[] }[] = [
@@ -113,12 +104,12 @@ export function TitleBar() {
     },
   ];
 
-  const title = screen === 'main' ? `${ctx.workspace.name} — Casewright` : 'Casewright';
+  const title = screen === 'main' && ctx.workspace ? `${ctx.workspace.name} — Casewright` : 'Casewright';
 
   return (
-    <div className="titlebar">
-      <div className="tb-brand">
-        <span className="tb-glyph">
+    <div className="relative z-50 flex h-[34px] flex-none items-stretch select-none border-b border-border bg-[linear-gradient(var(--panel-2),oklch(0.972_0.004_80))] [-webkit-app-region:drag]">
+      <div className="flex items-center pl-2.5 pr-2">
+        <span className="grid size-4 place-items-center rounded-sm bg-accent shadow-[0_1px_1px_oklch(0.3_0.05_256/0.3)]">
           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
             <path d="M4 5h11l5 5v9H4z" />
             <path d="M15 5v5h5" />
@@ -128,36 +119,50 @@ export function TitleBar() {
       </div>
 
       {screen === 'main' && (
-        <div className="tb-menubar">
+        <div className="flex items-stretch [-webkit-app-region:no-drag]">
           {menus.map((m) => (
-            <button
+            <Menu
               key={m.label}
-              className={'tb-menu-btn' + (menu && menu.items === m.items ? ' open' : '')}
-              onClick={(e) => openMenu(e, m.items)}
-            >
-              {m.label}
-            </button>
+              align="start"
+              items={m.items}
+              trigger={
+                <button className="flex items-center border-0 bg-transparent px-[9px] text-[12.5px] text-ink-2 hover:bg-raise data-[state=open]:bg-raise">
+                  {m.label}
+                </button>
+              }
+            />
           ))}
         </div>
       )}
 
-      <div className="tb-title" onDoubleClick={toggleMax}>
+      <div
+        className="flex min-w-0 flex-1 items-center justify-center overflow-hidden text-ellipsis whitespace-nowrap px-3 text-[12px] tracking-[0.01em] text-ink-3"
+        onDoubleClick={toggleMax}
+      >
         {title}
       </div>
 
-      <div className="tb-winctl">
-        <button className="tb-wc" onClick={minimize} title="Minimize" aria-label="Minimize">
+      <div className="flex items-stretch [-webkit-app-region:no-drag]">
+        <button className={winBtn + ' hover:bg-raise'} onClick={minimize} title="Minimize" aria-label="Minimize">
           <WinMin />
         </button>
-        <button className="tb-wc" onClick={toggleMax} title={maximized ? 'Restore' : 'Maximize'} aria-label="Maximize">
+        <button
+          className={winBtn + ' hover:bg-raise'}
+          onClick={toggleMax}
+          title={maximized ? 'Restore' : 'Maximize'}
+          aria-label="Maximize"
+        >
           {maximized ? <WinRestore /> : <WinMax />}
         </button>
-        <button className="tb-wc close" onClick={close} title="Close" aria-label="Close">
+        <button
+          className={winBtn + ' hover:bg-[oklch(0.58_0.21_27)] hover:text-white'}
+          onClick={close}
+          title="Close"
+          aria-label="Close"
+        >
           <WinClose />
         </button>
       </div>
-
-      {menu && <ContextMenu x={menu.x} y={menu.y} items={menu.items} onClose={() => setMenu(null)} />}
     </div>
   );
 }

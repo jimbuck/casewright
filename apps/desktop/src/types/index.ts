@@ -33,6 +33,8 @@ export interface SuiteNode {
   name: string;
   path: string;
   children: TreeNode[];
+  /** True for a workspace root folder (top-level in the tree; not draggable/renamable). */
+  isWorkspace?: boolean;
 }
 export interface CaseNode {
   type: 'case';
@@ -51,14 +53,14 @@ export interface Workspace {
 }
 
 export interface Recent {
-  name: string;
   path: string;
+  name: string;
   branch: string;
   remote: string;
+  /** ISO timestamp of when this repo was last opened. */
   lastOpened: string;
   workspaces: number;
-  lastWorkspace: string | null;
-  current?: boolean;
+  lastWorkspaceId: string | null;
 }
 
 /* ---- runs (CSV-backed) ---- */
@@ -102,13 +104,14 @@ export interface Change {
 
 /* ---- ui selection + ephemera ---- */
 export interface Selection {
-  kind: 'case' | 'run';
+  kind: 'case' | 'run' | 'suite';
   id?: string;
   runId?: string | null;
+  suiteId?: string | null;
   guideIndex?: number;
 }
 
-export type View = 'editor' | 'runs' | 'run' | 'guide';
+export type View = 'editor' | 'runs' | 'run' | 'guide' | 'suite';
 export type Screen = 'launcher' | 'main';
 export type ModalKind = 'commit' | 'createRun' | 'merge' | null;
 

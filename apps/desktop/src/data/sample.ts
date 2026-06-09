@@ -1,6 +1,11 @@
 /* ============================================================
-   Casewright — sample repository data
-   A single open repo: areas/ + qa/ workspaces, Payments active.
+   Casewright — seed data (NOT app data)
+
+   The running app reads real files from disk via the repo + git services; it no
+   longer imports this module. This is the canonical seed for:
+     • `scripts/make-fixture.mts` — materializes it into a real Git fixture repo
+     • `services/format/*.test.ts` — serialize/parse round-trip tests
+   The `conflict` export illustrates the merge model for the deferred 3-way engine.
    ============================================================ */
 import type { Case, Conflict, Recent, Run, TreeNode, Workspace } from '@/types';
 
@@ -10,37 +15,9 @@ export const recents: Recent[] = [
     path: '~/work/acme/qa-testcases',
     branch: 'main',
     remote: 'ssh://git@ssh.dev.azure.com/v3/acme/QA/qa-testcases',
-    lastOpened: '2 minutes ago',
+    lastOpened: '2026-06-08T12:00:00.000Z',
     workspaces: 4,
-    lastWorkspace: 'Payments QA',
-    current: true,
-  },
-  {
-    name: 'platform-wiki',
-    path: '~/work/acme/platform.wiki',
-    branch: 'wikiMain',
-    remote: 'https://dev.azure.com/acme/Platform/_git/platform.wiki',
-    lastOpened: 'yesterday',
-    workspaces: 7,
-    lastWorkspace: 'Checkout',
-  },
-  {
-    name: 'mobile-qa',
-    path: '~/work/acme/mobile-qa',
-    branch: 'main',
-    remote: 'ssh://git@ssh.dev.azure.com/v3/acme/Mobile/mobile-qa',
-    lastOpened: '3 days ago',
-    workspaces: 2,
-    lastWorkspace: 'iOS',
-  },
-  {
-    name: 'onboarding-cases',
-    path: '~/sandbox/onboarding-cases',
-    branch: 'main',
-    remote: '(local only)',
-    lastOpened: 'last week',
-    workspaces: 1,
-    lastWorkspace: null,
+    lastWorkspaceId: 'payments',
   },
 ];
 

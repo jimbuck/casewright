@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { I } from '@/components/icons';
 import { Button, Field, Input, Modal, ModalBody, ModalFooter, ModalHeader, Select } from '@/components/ui';
+import { cn } from '@/lib/utils';
 import { useApp } from '@/store/app-store';
 import type { RunScope } from '@/types';
 
@@ -21,12 +22,18 @@ export function CreateRunModal() {
         ? ctx.casesInSuite(suite).length
         : ctx.cases.length;
 
+  const scopeOpt = (on: boolean) =>
+    cn(
+      'flex cursor-pointer items-start gap-2.5 rounded-md border px-[13px] py-[11px]',
+      on ? 'border-accent bg-accent-soft' : 'border-border hover:border-accent-line',
+    );
+  const radio = (on: boolean) =>
+    cn('mt-px grid size-4 shrink-0 place-items-center rounded-full border-[1.5px]', on ? 'border-accent' : 'border-border-2');
+
   return (
     <Modal onClose={close}>
       <ModalHeader>
-        <span className="ricon2" style={{ color: 'var(--accent)' }}>
-          {I.grid({ size: 18 })}
-        </span>
+        <span className="grid place-items-center text-accent">{I.grid({ size: 18 })}</span>
         <h3>New test run</h3>
       </ModalHeader>
       <ModalBody style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -34,15 +41,15 @@ export function CreateRunModal() {
           <Input value={name} onChange={(e) => setName(e.target.value)} />
         </Field>
         <Field label="Scope — which cases to seed">
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <div className={'scope-opt' + (scope === 'tag' ? ' on' : '')} onClick={() => setScope('tag')}>
-              <span className="radio" />
-              <div style={{ flex: 1 }}>
-                <div className="so-title">By tag</div>
-                <div className="so-sub">Every case carrying a tag.</div>
+          <div className="flex flex-col gap-2">
+            <div className={scopeOpt(scope === 'tag')} onClick={() => setScope('tag')}>
+              <span className={radio(scope === 'tag')}>{scope === 'tag' && <span className="size-2 rounded-full bg-accent" />}</span>
+              <div className="flex-1">
+                <div className="text-[13px] font-semibold">By tag</div>
+                <div className="mt-0.5 text-[12px] text-ink-3">Every case carrying a tag.</div>
                 {scope === 'tag' && (
                   <Select
-                    style={{ marginTop: 8, width: 'auto' }}
+                    className="mt-2 w-auto"
                     value={tag}
                     onClick={(e) => e.stopPropagation()}
                     onChange={(e) => setTag(e.target.value)}
@@ -54,14 +61,14 @@ export function CreateRunModal() {
                 )}
               </div>
             </div>
-            <div className={'scope-opt' + (scope === 'suite' ? ' on' : '')} onClick={() => setScope('suite')}>
-              <span className="radio" />
-              <div style={{ flex: 1 }}>
-                <div className="so-title">By suite</div>
-                <div className="so-sub">All cases in a folder (and its sub-suites).</div>
+            <div className={scopeOpt(scope === 'suite')} onClick={() => setScope('suite')}>
+              <span className={radio(scope === 'suite')}>{scope === 'suite' && <span className="size-2 rounded-full bg-accent" />}</span>
+              <div className="flex-1">
+                <div className="text-[13px] font-semibold">By suite</div>
+                <div className="mt-0.5 text-[12px] text-ink-3">All cases in a folder (and its sub-suites).</div>
                 {scope === 'suite' && (
                   <Select
-                    style={{ marginTop: 8, width: 'auto' }}
+                    className="mt-2 w-auto"
                     value={suite}
                     onClick={(e) => e.stopPropagation()}
                     onChange={(e) => setSuite(e.target.value)}
@@ -75,18 +82,18 @@ export function CreateRunModal() {
                 )}
               </div>
             </div>
-            <div className={'scope-opt' + (scope === 'all' ? ' on' : '')} onClick={() => setScope('all')}>
-              <span className="radio" />
+            <div className={scopeOpt(scope === 'all')} onClick={() => setScope('all')}>
+              <span className={radio(scope === 'all')}>{scope === 'all' && <span className="size-2 rounded-full bg-accent" />}</span>
               <div>
-                <div className="so-title">Whole workspace</div>
-                <div className="so-sub">Every case in {ctx.workspace.name}.</div>
+                <div className="text-[13px] font-semibold">Whole workspace</div>
+                <div className="mt-0.5 text-[12px] text-ink-3">Every case in {ctx.workspace?.name ?? 'this workspace'}.</div>
               </div>
             </div>
           </div>
         </Field>
-        <div className="muted" style={{ fontSize: 12.5 }}>
-          {I.layers({ size: 13 })} Seeds <b>{count}</b> rows · keyed on stable <span className="mono">case_id</span> · result{' '}
-          <span className="mono">not_run</span>.
+        <div className="text-[12.5px] text-ink-3">
+          {I.layers({ size: 13 })} Seeds <b>{count}</b> rows · keyed on stable <span className="font-mono">case_id</span> · result{' '}
+          <span className="font-mono">not_run</span>.
         </div>
       </ModalBody>
       <ModalFooter>

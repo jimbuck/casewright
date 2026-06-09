@@ -32,47 +32,82 @@ paths (`base: './'`) so it loads from `file://`.
 
 ```
 src/
-├── main.tsx                  # React root + global style imports
+├── main.tsx                  # React root + app.css import
 ├── types/                    # domain model (Case, TreeNode, Run, Conflict, …)
-├── data/sample.ts            # the in-memory sample repository (typed)
+├── schemas/                  # Zod schemas for the on-disk shapes + LintWarning
+├── services/                 # the real backend:
+│   ├── format/               #   serialize/parse case markdown, run CSV, suite, filename
+│   ├── repo.ts               #   openRepo + loadWorkspace (read) + fs write primitives
+│   ├── git.ts                #   simple-git wrapper (status/commit/push/pull/abort)
+│   ├── recents.ts            #   recents.json in nw.App.dataPath
+│   └── persist.ts            #   debounce + flush for disk writes
+├── data/sample.ts            # seed data for the fixture + tests (NOT app data)
 ├── utils/                    # markdown render, word diff, step numbering, ids, cx
 ├── store/app-store.ts        # the app store — a typed Zustand store + useApp() hook
-│                             #   (replaces the prototype's window.CW globals)
-├── lib/nwjs.ts               # typed NW.js window helpers (frameless titlebar controls)
-├── styles/                   # base.css + components.css (tokens come from @casewright/brand)
+├── lib/
+│   ├── node.ts               # runtime require() bridge for Node-only modules
+│   └── nwjs.ts               # NW.js window helpers + dataPath + pickDirectory
+├── styles/app.css            # Tailwind v4 + brand-token @theme bridge
 └── components/
-    ├── App.tsx               # provider + view routing + modals
+    ├── App.tsx               # view routing + modals + merge-conflict banner
     ├── icons.tsx             # the line-icon set
-    ├── ui/                   # shadcn-style base components: Button, Input, Select,
-    │                         #   Textarea, Tag, StatusPill, ResultSwatch, Field, Modal, Kbd
+    ├── ui/                   # shadcn/Radix primitives over Tailwind: Button, Input, Select,
+    │                         #   Textarea, Tag, StatusPill, ResultSwatch, Field, Modal, Kbd,
+    │                         #   dropdown-menu, context-menu
     ├── chrome/               # TitleBar (custom frameless), TopBar, Toasts
-    ├── launcher/             # Launcher
-    ├── sidebar/              # Sidebar (tree DnD + filters) + ContextMenu
+    ├── launcher/             # Launcher (real recents + folder picker)
+    ├── sidebar/              # Sidebar (tree DnD + filters + Radix context menu)
     ├── editor/               # CaseEditor + Objective / List / Steps / Tag controls
     ├── runs/                 # RunsList, RunGrid, CreateRunModal, NotesCell
     ├── guide/                # RunGuide + checklist
-    ├── merge/                # the structured 3-way merge resolver (the showpiece)
+    ├── merge/                # the structured 3-way merge resolver (decoupled; deferred engine)
     └── common/               # CommitModal, EmptyCenter
 ```
 
-The **`ui/` primitives** are shadcn-style components (typed prop variants like
-`<Button variant="primary" size="sm">`) that render the design-token CSS classes — the visual
-design is unchanged, only the component API is added. Shared design tokens live in
-[`@casewright/brand`](../../packages/brand).
+The UI is **Tailwind v4 + shadcn/ui (Radix)**; the `ui/` primitives keep a stable export
+surface (`<Button variant="primary" size="sm">`). The brand oklch tokens in
+[`@casewright/brand`](../../packages/brand) are bridged into Tailwind via `@theme inline` in
+`styles/app.css` and remain the single source of truth (shared with the marketing site).
+
+**Data layer.** The Git repository _is_ the data store. `services/repo.ts` reads a repo
+(`casewright.json` → workspaces → suite/case tree + run CSVs) and writes cases/suites/runs back
+as plain files; `services/git.ts` drives status/commit/push/pull. Node-only modules
+(`fs`, `simple-git`, `gray-matter`, `papaparse`) load at runtime through the `lib/node.ts`
+bridge (NW.js shares Node with the renderer), so they're never bundled.
 
 The window is **frameless** (`window.frame: false`) with a custom VS Code–style **titlebar**
 (`chrome/TitleBar.tsx`): an app-region drag bar with a File/View/Go/Help menu bar (wired to app
 actions, reusing the `ContextMenu`) and Windows-style minimize / maximize / close controls backed
 by `lib/nwjs.ts`. Outside NW.js (dev preview / tests) the controls no-op gracefully.
 
+## Testing & the fixture repo
+
+```bash
+pnpm --filter @casewright/desktop test            # Vitest: format round-trips + repo/git integration
+pnpm --filter @casewright/desktop fixture         # materialize a real .fixture/ repo from the seed
+pnpm --filter @casewright/desktop fixture --with-origin   # …plus a bare .fixture-origin.git remote
+```
+
+`scripts/make-fixture.mts` turns the seed in `src/data/sample.ts` into a **real Git repository**
+(under `.fixture/`, gitignored) using the same serializers the app uses — the canonical dev/test
+target. Run the app against it (`pnpm dev:desktop`, then Open repository… → `.fixture/`). The
+Vitest suite covers the pure format layer plus integration tests for `repo.ts`/`git.ts` against
+temp git repos (open/load, write/rename/delete, commit/push/pull/conflict+abort).
+
 ## Status & next steps
 
-The full prototype has been ported to a typed, modular React app (verified: `tsc` clean, `vite`
-build, and a browser smoke test through the launcher → editor → merge resolver). Intentional
-follow-ups:
+The desktop app is a typed, modular **React 19 + Tailwind v4 + shadcn** app backed by a real
+on-disk + Git data layer (verified: `tsc` clean, `vite` build, 27 Vitest tests, and a Node-level
+end-to-end open → load → edit → `git status` against the fixture). Intentional follow-ups:
 
+- **Structured 3-way merge engine.** The resolver UI (`components/merge/*`) is in place but
+  decoupled from real git stages; conflicted pulls currently show a banner + `git merge --abort`.
+  The follow-up wires `services/merge.ts` (`buildConflict` from `git show :1/:2/:3`, per-element
+  3-way per PRD §6.7) to populate the store `conflict` and re-enable the resolver.
 - **Wire NW.js native shell APIs.** The right-click actions (Reveal in File Explorer, Open in
   default editor, …) are still mocked toasts; back them with `nw.Shell`.
-- **Back the data layer with the filesystem + Git** instead of the in-memory `data/sample.ts`.
-- **Packaging.** A GitHub release workflow producing a single Windows `.exe` (via `nw-builder`) is
-  the agreed next deliverable — it will package this `dist/` output.
+- **Preserve out-of-schema content** through the store (the format layer captures it; the store
+  round-trip currently drops it), a lint-warnings panel, `_suite.md` display names, run sidecar
+  metadata, and a multi-window same-repo guard.
+- **Packaging.** A GitHub release workflow producing a single Windows `.exe` (via `nw-builder`) —
+  note pnpm symlinks won't ship as-is; a `pnpm deploy --prod` flatten of the runtime deps is needed.
