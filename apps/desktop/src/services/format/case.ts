@@ -41,7 +41,9 @@ function serializeSetup(items: SetupItem[]): string {
   return items
     .map((it) => {
       const head = it.name ? `### ${it.name}` : '###';
-      const body = it.body.trim();
+      // Trim only surrounding blank lines — never the first/last line's own
+      // indentation, which is significant markdown (code blocks, nested lists).
+      const body = trimBlank(it.body.split('\n')).join('\n');
       return body ? `${head}\n\n${body}` : head;
     })
     .join('\n\n');
@@ -138,15 +140,20 @@ function parseBullets(text: string): string[] {
 /** Split a Setup section into `### name` + body items (h1–h3 are reserved, so `###` is unambiguous). */
 function parseSetup(text: string): SetupItem[] {
   const items: { name: string; body: string[] }[] = [];
+  const lead: string[] = []; // any content before the first `###` heading
   for (const line of text.split('\n')) {
     const h = /^###(?:[ \t]+(.*?))?[ \t]*$/.exec(line);
     if (h) {
       items.push({ name: (h[1] ?? '').trim(), body: [] });
       continue;
     }
-    if (items.length) items[items.length - 1].body.push(line);
+    (items.length ? items[items.length - 1].body : lead).push(line);
   }
-  return items.map((it) => ({ name: it.name, body: trimBlank(it.body).join('\n') }));
+  const result = items.map((it) => ({ name: it.name, body: trimBlank(it.body).join('\n') }));
+  // Preserve any heading-less leading prose as an unnamed item rather than dropping it.
+  const leadBody = trimBlank(lead).join('\n');
+  if (leadBody) result.unshift({ name: '', body: leadBody });
+  return result;
 }
 
 function parseSteps(text: string): Step[] {

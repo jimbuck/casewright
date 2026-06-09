@@ -71,13 +71,14 @@ export function hasBlockConstructs(text: string | null | undefined): boolean {
 /**
  * Detect ATX h1–h3 headings (`#`, `##`, `###`). These are reserved for the case's
  * own `##` sections and a setup item's `###` name, so they're disallowed inside a
- * setup body (h4–h6, lists, and inline formatting remain allowed).
+ * setup body (h4–h6, lists, and inline formatting remain allowed). A bare marker
+ * (e.g. a lone `###`) counts — the setup parser treats it as a new item heading.
  */
 export function hasHeadings13(text: string | null | undefined): boolean {
-  return /^\s{0,3}#{1,3}[ \t]/m.test(text || '');
+  return /^[ \t]{0,3}#{1,3}([ \t]|$)/m.test(text || '');
 }
 
-/** Strip h1–h3 heading markers, keeping the heading text. */
+/** Strip h1–h3 heading markers (including bare ones), keeping any heading text. */
 export function stripHeadings13(text: string): string {
-  return text.replace(/^\s{0,3}#{1,3}[ \t]+/gm, '');
+  return text.replace(/^[ \t]{0,3}#{1,3}(?:[ \t]+|[ \t]*$)/gm, '');
 }

@@ -134,6 +134,24 @@ describe('parseCase', () => {
     expect(serializeCase(c)).toContain('### Inbox access\n\n## Steps');
   });
 
+  it('preserves significant leading indentation in a setup body (round-trip)', () => {
+    const c: ParsedCase = {
+      ...PRD_CASE,
+      setup: [{ name: 'Seed', body: '    indented code line\n    second line' }],
+    };
+    const round = parseCase(serializeCase(c)).case;
+    expect(round.setup).toEqual(c.setup);
+  });
+
+  it('preserves heading-less leading prose in a Setup section as an unnamed item', () => {
+    const md = PRD_CANONICAL.replace('## Setup\n\n### Test account', '## Setup\n\nOrphaned intro.\n\n### Test account');
+    const c = parseCase(md).case;
+    expect(c.setup[0]).toEqual({ name: '', body: 'Orphaned intro.' });
+    // and the recovered content round-trips
+    const text = serializeCase(c);
+    expect(serializeCase(parseCase(text).case)).toBe(text);
+  });
+
   it('preserves out-of-schema content and warns', () => {
     const md = PRD_CANONICAL + '\n## Notes\n\nSome extra content.\n';
     const { extra, warnings } = parseCase(md);
