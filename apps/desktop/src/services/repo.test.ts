@@ -1,8 +1,8 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { node } from '@/lib/node';
 import { parseCase, serializeCase, type ParsedCase } from './format/case';
 import { serializeRunCsv } from './format/run';
-import { deletePath, initRepo, loadRepo, loadWorkspace, makeDir, openRepo, relJoin, renamePath, writeFileAt } from './repo';
+import { deletePath, initRepo, loadRepo, loadWorkspace, makeDir, markWrite, openRepo, relJoin, renamePath, wasSelfWrite, writeFileAt } from './repo';
 
 const c1: ParsedCase = {
   id: 'aaa1111aaaa',
@@ -330,6 +330,25 @@ describe('initRepo scaffold', () => {
     expect(opened.warnings.some((w) => w.code === 'empty-repo')).toBe(true);
 
     await fsp.rm(repoPath, { recursive: true, force: true });
+  });
+});
+
+describe('self-write echo suppression', () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it('flags a recently self-written path, expiring after the TTL', () => {
+    markWrite('areas/payments/Auth/PAY-0001-first.md');
+    expect(wasSelfWrite('areas/payments/Auth/PAY-0001-first.md')).toBe(true);
+    expect(wasSelfWrite('areas/payments/Other.md')).toBe(false);
+    vi.advanceTimersByTime(5000); // past the 4s TTL
+    expect(wasSelfWrite('areas/payments/Auth/PAY-0001-first.md')).toBe(false);
+  });
+
+  it('normalizes backslashes and also marks the parent dir (fs.watch fires for both)', () => {
+    markWrite('areas/payments/Billing/PAY-0088.md');
+    expect(wasSelfWrite('areas\\payments\\Billing\\PAY-0088.md')).toBe(true);
+    expect(wasSelfWrite('areas/payments/Billing')).toBe(true);
   });
 });
 

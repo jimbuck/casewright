@@ -40,7 +40,8 @@ src/
 │   ├── repo.ts               #   .casewright/ discovery + load (read) + initRepo scaffold + fs writes
 │   ├── git.ts                #   simple-git wrapper (status/commit/push/pull/abort)
 │   ├── recents.ts            #   recents.json in nw.App.dataPath
-│   └── persist.ts            #   debounce + flush for disk writes
+│   ├── persist.ts            #   debounce + flush for disk writes
+│   └── watch.ts              #   fs.watch the repo → live-reload on external changes
 ├── data/sample.ts            # seed data for the fixture + tests (NOT app data)
 ├── utils/                    # markdown render, word diff, step numbering, ids, cx
 ├── store/app-store.ts        # the app store — a typed Zustand store + useApp() hook
@@ -99,6 +100,12 @@ my-repo/
 
 Workspaces don't nest (the walk stops at the first `casewright.yaml`); if the root itself has a
 `casewright.yaml`, the whole repo is a single workspace.
+
+External changes are picked up **live** — `services/watch.ts` watches the working tree (Node's
+recursive `fs.watch`) and, on a debounced tick, re-runs discovery + load so cases / suites /
+workspaces created or edited outside the app (an editor, Claude Code, `git pull`/`checkout`) appear
+automatically. The app's own writes are filtered out (self-write tracking in `repo.ts`) so saves
+don't self-trigger, and the active selection is preserved across a reload.
 
 The window is **frameless** (`window.frame: false`) with a custom VS Code–style **titlebar**
 (`chrome/TitleBar.tsx`): an app-region drag bar with a File/View/Go/Help menu bar (wired to app

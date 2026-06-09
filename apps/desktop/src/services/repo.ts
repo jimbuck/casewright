@@ -328,6 +328,31 @@ export async function loadRepo(repoPath: string, workspaces: Workspace[]): Promi
 }
 
 // ---------------------------------------------------------------------------
+// Self-write tracking — lets the file watcher (services/watch.ts) ignore the
+// app's own writes so they don't trigger an external-change reload.
+// ---------------------------------------------------------------------------
+
+const SELF_WRITE_TTL = 4000; // ms a path stays "recently written by us"
+const recentWrites = new Map<string, number>();
+
+/** Record that we just wrote `rel` (and its parent dir, since fs.watch also fires for it). */
+export function markWrite(rel: string): void {
+  const norm = rel.replace(/\\/g, '/');
+  const now = Date.now();
+  recentWrites.set(norm, now);
+  const slash = norm.lastIndexOf('/');
+  if (slash > 0) recentWrites.set(norm.slice(0, slash), now);
+}
+
+/** True if `rel` was written by us within the TTL (prunes stale entries as it goes). */
+export function wasSelfWrite(rel: string): boolean {
+  const now = Date.now();
+  for (const [k, t] of recentWrites) if (now - t > SELF_WRITE_TTL) recentWrites.delete(k);
+  const t = recentWrites.get(rel.replace(/\\/g, '/'));
+  return t != null && now - t <= SELF_WRITE_TTL;
+}
+
+// ---------------------------------------------------------------------------
 // Write path — low-level, repo-relative fs ops (PRD §6.2–6.5)
 // The store composes these with the serializers + its path/tree knowledge.
 // ---------------------------------------------------------------------------
@@ -336,12 +361,14 @@ export async function loadRepo(repoPath: string, workspaces: Workspace[]): Promi
 export async function writeFileAt(repoPath: string, rel: string, content: string): Promise<void> {
   const path = node.path();
   const abs = path.join(repoPath, rel);
+  markWrite(rel);
   await node.fsp().mkdir(path.dirname(abs), { recursive: true });
   await node.fsp().writeFile(abs, content);
 }
 
 /** Delete `<repoPath>/<rel>` (file or directory, recursive). */
 export async function deletePath(repoPath: string, rel: string): Promise<void> {
+  markWrite(rel);
   await node.fsp().rm(node.path().join(repoPath, rel), { recursive: true, force: true });
 }
 
@@ -350,11 +377,14 @@ export async function renamePath(repoPath: string, fromRel: string, toRel: strin
   if (fromRel === toRel) return;
   const path = node.path();
   const to = path.join(repoPath, toRel);
+  markWrite(fromRel);
+  markWrite(toRel);
   await node.fsp().mkdir(path.dirname(to), { recursive: true });
   await node.fsp().rename(path.join(repoPath, fromRel), to);
 }
 
 /** Create directory `<repoPath>/<rel>` (recursive, idempotent). */
 export async function makeDir(repoPath: string, rel: string): Promise<void> {
+  markWrite(rel);
   await node.fsp().mkdir(node.path().join(repoPath, rel), { recursive: true });
 }

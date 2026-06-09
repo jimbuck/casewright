@@ -13,10 +13,12 @@ import {
   openRepo as openRepoSvc,
   relJoin,
   renamePath,
+  wasSelfWrite,
   writeFileAt,
 } from '@/services/repo';
 import { addRecent, listRecents } from '@/services/recents';
 import { flushPersist, schedulePersist } from '@/services/persist';
+import { watchRepo, type RepoWatcher } from '@/services/watch';
 import {
   abortMerge as gitAbortMerge,
   GitAuthError,
@@ -27,7 +29,7 @@ import {
 } from '@/services/git';
 import type { LintWarning } from '@/schemas';
 import { randomId, slug } from '@/utils/ids';
-import { pickDirectory } from '@/lib/nwjs';
+import { isNwjs, pickDirectory } from '@/lib/nwjs';
 import type {
   Case,
   Change,
@@ -241,6 +243,86 @@ export const useAppStore = create<AppState>()((set, get) => {
     }
   };
 
+  /* ---- external-change watcher: live-reload when files change outside the app ---- */
+  let repoWatcher: RepoWatcher | null = null;
+  let reloadingExternal = false;
+  let queuedReload = false;
+
+  const stopWatch = () => {
+    repoWatcher?.close();
+    repoWatcher = null;
+  };
+
+  // Re-run discovery + load so externally added/removed workspaces, suites, cases and
+  // runs all appear; preserve the active workspace + selection when they still exist.
+  const reloadAfterExternalChange = async () => {
+    const repoPath = get().repoPath;
+    if (!repoPath) return;
+    await flushPersist(); // land any pending in-app edits first (ours win on a same-file clash)
+    const opened = await openRepoSvc(repoPath);
+    if (opened.needsInit) {
+      stopWatch();
+      set({
+        needsInit: true,
+        emptyRepo: false,
+        screen: 'launcher',
+        workspace: null,
+        workspaces: [],
+        tree: [],
+        cases: [],
+        runs: [],
+        warnings: opened.warnings,
+      });
+      return;
+    }
+    const loaded = await loadRepo(repoPath, opened.workspaces);
+    set((s) => {
+      const ws = opened.workspaces.find((w) => w.id === s.workspace?.id) ?? opened.workspaces[0] ?? null;
+      const keepSel = s.sel.kind === 'case' && !!s.sel.id && loaded.cases.some((c) => c.id === s.sel.id);
+      return {
+        workspaces: opened.workspaces,
+        workspace: ws,
+        branch: opened.branch,
+        tree: loaded.tree,
+        cases: loaded.cases,
+        runs: loaded.runs,
+        warnings: [...opened.warnings, ...loaded.warnings],
+        emptyRepo: opened.workspaces.length === 0,
+        sel: keepSel ? s.sel : { ...s.sel, id: loaded.cases[0]?.id },
+      };
+    });
+    seedPaths();
+    void get().refreshStatus();
+    get().toast('Reloaded — external changes detected');
+  };
+
+  // Serialize reloads; if changes land mid-reload, run once more after (don't drop them).
+  const handleExternalChange = async () => {
+    if (reloadingExternal) {
+      queuedReload = true;
+      return;
+    }
+    reloadingExternal = true;
+    try {
+      do {
+        queuedReload = false;
+        try {
+          await reloadAfterExternalChange();
+        } catch {
+          /* transient (a file mid-write by the external tool) — a later event retries */
+        }
+      } while (queuedReload);
+    } finally {
+      reloadingExternal = false;
+    }
+  };
+
+  const startWatch = (repoPath: string) => {
+    stopWatch();
+    if (!repoPath || !isNwjs()) return; // watching needs the NW.js/Node runtime
+    repoWatcher = watchRepo(repoPath, () => void handleExternalChange(), { isSelfWrite: wasSelfWrite });
+  };
+
   const onWriteError = (e: unknown) => {
     set({ error: e instanceof Error ? e.message : String(e) });
     get().toast('Write failed — reloading from disk');
@@ -420,6 +502,7 @@ export const useAppStore = create<AppState>()((set, get) => {
         // No `.casewright/` yet — stay on the launcher and offer to scaffold it (req 2).
         // Clear any previously-open repo's slices so the launcher never reads stale data.
         if (opened.needsInit) {
+          stopWatch();
           set({
             loading: false,
             repoPath: opened.repoPath,
@@ -473,6 +556,7 @@ export const useAppStore = create<AppState>()((set, get) => {
         });
         seedPaths();
         void get().refreshStatus();
+        startWatch(opened.repoPath); // live-reload on external file changes
         const recents = await addRecent({
           path: opened.repoPath,
           name: baseName(opened.repoPath),
@@ -506,6 +590,7 @@ export const useAppStore = create<AppState>()((set, get) => {
 
     goHome: () => {
       void flushPersist();
+      stopWatch();
       set({ screen: 'launcher' });
     },
 
