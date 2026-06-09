@@ -45,7 +45,7 @@ tolerant (coerce + `LintWarning`, never throw). (PRD FR 3, 12, 13, 16–20.)
 
 ---
 
-### [ ] 0200 - Repo service: `.casewright/` validation, discovery walk, scaffold & central runs
+### [x] 0200 - Repo service: `.casewright/` validation, discovery walk, scaffold & central runs
 
 **Overview:** Rewrite the read path in `repo.ts`. `openRepo` validates both a Git worktree **and** a
 `.casewright/` directory, then discovers workspaces by a one-time walk for `casewright.yaml` markers
@@ -61,13 +61,13 @@ serializers. (PRD FR 1, 2, 4, 5, 6–11, 14, 16, 20.)
 - `apps/desktop/src/lib/node.ts` - Verify the YAML/`gray-matter` bridge handles the config doc (no change expected).
 
 **Sub-Tasks:**
-- [ ] 0201 Add `services/format/config.ts`: `serializeConfigYaml({ version, name? })` (reuse the `yamlScalar` quoting pattern from `format/workspace.ts`) and a `CASEWRIGHT_GITIGNORE` constant whose body ignores `cache/` (FR 4, 5). Optionally a small `parseConfigYaml(raw)` wrapper over `parseYamlDoc`.
-- [ ] 0202 In `format/workspace.ts`, change `serializeWorkspaceYaml` to `Pick<Workspace,'name'|'description'|'prefix'>` and drop the `runsDir` line (FR 12).
-- [ ] 0203 In `repo.ts`, rewrite `openRepo` validation: require a Git worktree **and** a `.casewright/` directory; when `.casewright/` is absent emit a `needs-init` warning (don't throw, FR 1–2); read+validate `.casewright/config.yaml` tolerantly via `ConfigYamlSchema` (malformed → defaults + warning, FR 3).
-- [ ] 0204 Replace `resolveWorkspacePaths` with a `discoverWorkspaces(repoPath)` walk: recurse from root, **skip** `.git`/`.casewright`/any dot-folder; a folder containing `casewright.yaml` is a workspace and the walk **does not descend** into it (FR 7, 8); short-circuit root-as-workspace when `<root>/casewright.yaml` exists (single workspace at `''`, FR 9); sort results alphabetically by display name, tie-break by path (FR 10); emit an empty-repo warning when no markers are found (FR 11).
-- [ ] 0205 Update `loadWorkspaceMeta` to read `casewright.yaml` (not `workspace.yaml`): coerce blank `name` → folder name and blank `displayIdPrefix` → a derived placeholder, each with a `LintWarning` (FR 13); drop `runsDir`. After discovery, emit a warning for any duplicated `displayIdPrefix` across workspaces (load anyway, FR 14).
-- [ ] 0206 Centralize runs: make `loadRuns` workspace-agnostic — read `.casewright/runs/` once at the repo level with `file`/`id` = `.casewright/runs/<stem>` (FR 16, 20); remove runs from `loadWorkspace` (and its per-workspace `runsDir` skip in the walk); call repo-level `loadRuns` from `loadRepo`. Adjust `LoadedWorkspace`/return shapes accordingly.
-- [ ] 0207 Add `initRepo(repoPath)` scaffold helper: write `.casewright/config.yaml` (via `serializeConfigYaml`), create `.casewright/runs/` (seed a `.gitkeep` so the empty dir is tracked), and write `.casewright/.gitignore` (FR 2, 4). Return enough for the store to re-open the now-initialized repo.
+- [x] 0201 Add `services/format/config.ts`: `serializeConfigYaml({ version, name? })` (reuses the `yamlScalar` quoting helper now exported from `format/workspace.ts`) and a `CASEWRIGHT_GITIGNORE` constant whose body ignores `cache/` (FR 4, 5).
+- [x] 0202 In `format/workspace.ts`, change `serializeWorkspaceYaml` to `Pick<Workspace,'name'|'description'|'prefix'>` and drop the `runsDir` line (FR 12); export `yamlScalar`.
+- [x] 0203 In `repo.ts`, rewrite `openRepo` validation: require a Git worktree **and** a `.casewright/` directory; when `.casewright/` is absent emit a `needs-init` warning + `needsInit: true` (don't throw, FR 1–2); read+validate `.casewright/config.yaml` tolerantly via `ConfigYamlSchema` (malformed → defaults + warning, FR 3).
+- [x] 0204 Replace `resolveWorkspacePaths` with a `discoverWorkspaces(repoPath)` walk: recurse from root, **skip** `.git`/`.casewright`/any dot-folder; a folder containing `casewright.yaml` is a workspace and the walk **does not descend** into it (FR 7, 8); the walk naturally yields root-as-workspace when `<root>/casewright.yaml` exists (single workspace at `'.'`→`''`, FR 9); sort alphabetically by display name, tie-break by path (FR 10); emit an empty-repo warning when no markers are found (FR 11).
+- [x] 0205 Update `loadWorkspaceMeta` to read `casewright.yaml` (not `workspace.yaml`): coerce blank `name` → folder name and blank `displayIdPrefix` → a derived placeholder (`derivePrefix`), each with a `LintWarning` (FR 13); drop `runsDir`. After discovery, emit a warning for any duplicated `displayIdPrefix` across workspaces (load anyway, FR 14).
+- [x] 0206 Centralize runs: made `loadRuns` workspace-agnostic — reads `.casewright/runs/` once at the repo level with `file`/`id` = `.casewright/runs/<stem>` (FR 16, 20); removed runs from `loadWorkspace` (split `LoadedWorkspace`/`LoadedRepo` return types); `loadRepo` calls repo-level `loadRuns`.
+- [x] 0207 Add `initRepo(repoPath)` scaffold helper: writes `.casewright/config.yaml` (via `serializeConfigYaml`), creates `.casewright/runs/` (seeds a `.gitkeep` so the empty dir is tracked), and writes `.casewright/.gitignore` (FR 2, 4).
 
 **Notes:**
 - Depends on 0100. The discovery walk fully replaces glob resolution — no `casewright.json` is read
