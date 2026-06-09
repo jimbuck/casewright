@@ -152,6 +152,7 @@ apps/web/.astro/
 apps/desktop/build/
 apps/desktop/dist/
 apps/desktop/.nwdev/
+apps/desktop/.nwcache/
 *.nw
 
 # Playwright MCP artifacts

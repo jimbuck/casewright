@@ -126,6 +126,48 @@ target. Run the app against it (`pnpm dev:desktop`, then Open repository… → 
 Vitest suite covers the pure format layer plus integration tests for `repo.ts`/`git.ts` against
 temp git repos (open/load, write/rename/delete, commit/push/pull/conflict+abort).
 
+## Packaging & releases (Windows)
+
+The Windows desktop app is built and published by the **Release desktop** workflow
+([`.github/workflows/release-desktop.yml`](../../.github/workflows/release-desktop.yml)). Cut a
+release by pushing a version tag — the version is taken from the tag:
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0          # → builds on windows-latest, publishes a GitHub Release
+```
+
+(or run it manually from the **Actions** tab, supplying the version). Each run produces two assets:
+
+- **`Casewright-Setup-<version>.exe`** — a per-user installer (no admin/UAC), with a Start-Menu
+  shortcut and uninstaller. Built with **Inno Setup** ([`build-resources/casewright.iss`](build-resources/casewright.iss)).
+- **`Casewright-<version>-win-x64.zip`** — a portable build (unzip and run `Casewright.exe`).
+
+### Building locally
+
+```bash
+pnpm --filter @casewright/desktop package:win   # vite build → stage → nw-builder → portable zip
+```
+
+This runs [`scripts/package-win.mjs`](scripts/package-win.mjs), which:
+
+1. **Stages** a minimal NW.js manifest + the built `dist/` under `build/staging/`.
+2. **`npm install`s only the runtime node-deps** there (`simple-git`, `gray-matter`, `papaparse`) —
+   the libs Vite leaves un-bundled (`lib/node.ts`). pnpm's symlinked store can't be copied into a
+   distributable, so the app ships its own flat `node_modules`.
+3. Runs **`nw-builder`** (pinned to the same NW.js version as the dev `nw` devDep, _normal_ flavor)
+   to merge the staged app into `build/out/Casewright.exe` (+ the Chromium runtime), with the icon
+   and version metadata embedded.
+4. **Zips** `build/out/` into `build/Casewright-<version>-win-x64.zip`.
+
+The installer step (Inno Setup) runs in CI; build it locally with
+`ISCC.exe /DMyAppVersion=0.1.0 build-resources/casewright.iss` if you have Inno Setup 6 installed.
+
+The app **icon** (`build-resources/icon.ico`) is generated from the shared brand mark
+(`@casewright/brand/logo-mark.svg`) by [`scripts/make-icon.mjs`](scripts/make-icon.mjs); it's
+committed, so packaging needs no rasterizer. Re-run `pnpm --filter @casewright/desktop make-icon`
+whenever the mark changes. Everything under `build/` and `.nwcache/` is gitignored.
+
 ## Status & next steps
 
 The desktop app is a typed, modular **React 19 + Tailwind v4 + shadcn** app backed by a real
@@ -141,5 +183,6 @@ end-to-end open → load → edit → `git status` against the fixture). Intenti
 - **Preserve out-of-schema content** through the store (the format layer captures it; the store
   round-trip currently drops it), a lint-warnings panel, `_suite.md` display names, run sidecar
   metadata, and a multi-window same-repo guard.
-- **Packaging.** A GitHub release workflow producing a single Windows `.exe` (via `nw-builder`) —
-  note pnpm symlinks won't ship as-is; a `pnpm deploy --prod` flatten of the runtime deps is needed.
+- **macOS / Linux packaging.** The Windows pipeline is in place (see _Packaging & releases_ above);
+  `nw-builder` can target `osx`/`linux` too — add matrix jobs + per-OS bundling (`.dmg` / `.AppImage`)
+  when those platforms are in scope.
