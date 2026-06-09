@@ -49,7 +49,6 @@ export interface Workspace {
   path: string;
   description: string;
   prefix: string;
-  runsDir: string;
 }
 
 export interface Recent {
@@ -77,6 +76,7 @@ export interface RunRow {
 export interface Run {
   id: string;
   name: string;
+  /** Repo-level path, `.casewright/runs/<stem>.csv`. */
   file: string;
   created: string;
   status: 'open' | 'closed';
@@ -84,7 +84,8 @@ export interface Run {
   rows: RunRow[];
 }
 
-export type RunScope = 'tag' | 'suite' | 'all';
+/** Which cases a new run is seeded from (PRD §4 req 19). */
+export type RunScope = 'all' | 'workspace' | 'suite' | 'tag';
 export interface CreateRunArgs {
   name: string;
   scope: RunScope;

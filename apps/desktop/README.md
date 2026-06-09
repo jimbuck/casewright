@@ -37,10 +37,11 @@ src/
 ├── schemas/                  # Zod schemas for the on-disk shapes + LintWarning
 ├── services/                 # the real backend:
 │   ├── format/               #   serialize/parse case markdown, run CSV, suite, filename
-│   ├── repo.ts               #   openRepo + loadWorkspace (read) + fs write primitives
+│   ├── repo.ts               #   .casewright/ discovery + load (read) + initRepo scaffold + fs writes
 │   ├── git.ts                #   simple-git wrapper (status/commit/push/pull/abort)
 │   ├── recents.ts            #   recents.json in nw.App.dataPath
-│   └── persist.ts            #   debounce + flush for disk writes
+│   ├── persist.ts            #   debounce + flush for disk writes
+│   └── watch.ts              #   fs.watch the repo → live-reload on external changes
 ├── data/sample.ts            # seed data for the fixture + tests (NOT app data)
 ├── utils/                    # markdown render, word diff, step numbering, ids, cx
 ├── store/app-store.ts        # the app store — a typed Zustand store + useApp() hook
@@ -55,7 +56,7 @@ src/
     │                         #   Textarea, Tag, StatusPill, ResultSwatch, Field, Modal, Kbd,
     │                         #   dropdown-menu, context-menu
     ├── chrome/               # TitleBar (custom frameless), TopBar, Toasts
-    ├── launcher/             # Launcher (real recents + folder picker)
+    ├── launcher/             # Launcher (recents + picker + .casewright/ init & empty states)
     ├── sidebar/              # Sidebar (tree DnD + filters + Radix context menu)
     ├── editor/               # CaseEditor + Objective / List / Steps / Tag controls
     ├── runs/                 # RunsList, RunGrid, CreateRunModal, NotesCell
@@ -69,11 +70,42 @@ surface (`<Button variant="primary" size="sm">`). The brand oklch tokens in
 [`@casewright/brand`](../../packages/brand) are bridged into Tailwind via `@theme inline` in
 `styles/app.css` and remain the single source of truth (shared with the marketing site).
 
-**Data layer.** The Git repository _is_ the data store. `services/repo.ts` reads a repo
-(`casewright.json` → workspaces → suite/case tree + run CSVs) and writes cases/suites/runs back
-as plain files; `services/git.ts` drives status/commit/push/pull. Node-only modules
-(`fs`, `simple-git`, `gray-matter`, `papaparse`) load at runtime through the `lib/node.ts`
-bridge (NW.js shares Node with the renderer), so they're never bundled.
+**Data layer.** The Git repository _is_ the data store. A repo is marked by a **`.casewright/`**
+folder at its root (`config.yaml` + a central `runs/` + an auto-managed `.gitignore`), and each
+workspace declares itself with a **`casewright.yaml`** — discovered by a one-time walk on open, so
+there is no central registry to maintain. `services/repo.ts` validates `.casewright/`, discovers
+workspaces, loads the suite/case tree + repo-level run CSVs, and writes cases/suites/runs and
+workspace config back as plain files (`initRepo` scaffolds `.casewright/` for an un-initialized
+repo); `services/git.ts` drives status/commit/push/pull. Node-only modules (`fs`, `simple-git`,
+`gray-matter`, `papaparse`) load at runtime through the `lib/node.ts` bridge (NW.js shares Node with
+the renderer), so they're never bundled.
+
+A casewright repository looks like:
+
+```
+my-repo/
+├── .casewright/
+│   ├── config.yaml          # repo-wide config (version, optional name)
+│   ├── runs/                # all run CSVs + .md sidecars — repo-level, may span workspaces
+│   └── .gitignore           # keeps cache/ out of Git (config.yaml + runs/ are committed)
+├── areas/payments/
+│   ├── casewright.yaml      # presence declares this folder a workspace (name, displayIdPrefix)
+│   ├── Authentication/      # suites are just folders
+│   │   └── PAY-0001-….md    # cases are markdown files
+│   └── Billing/…
+└── areas/onboarding/
+    ├── casewright.yaml
+    └── Activation/…
+```
+
+Workspaces don't nest (the walk stops at the first `casewright.yaml`); if the root itself has a
+`casewright.yaml`, the whole repo is a single workspace.
+
+External changes are picked up **live** — `services/watch.ts` watches the working tree (Node's
+recursive `fs.watch`) and, on a debounced tick, re-runs discovery + load so cases / suites /
+workspaces created or edited outside the app (an editor, Claude Code, `git pull`/`checkout`) appear
+automatically. The app's own writes are filtered out (self-write tracking in `repo.ts`) so saves
+don't self-trigger, and the active selection is preserved across a reload.
 
 The window is **frameless** (`window.frame: false`) with a custom VS Code–style **titlebar**
 (`chrome/TitleBar.tsx`): an app-region drag bar with a File/View/Go/Help menu bar (wired to app
@@ -83,7 +115,7 @@ by `lib/nwjs.ts`. Outside NW.js (dev preview / tests) the controls no-op gracefu
 ## Testing & the fixture repo
 
 ```bash
-pnpm --filter @casewright/desktop test            # Vitest: format round-trips + repo/git integration
+pnpm --filter @casewright/desktop test            # Vitest: format round-trips, schema coercion, repo/git integration
 pnpm --filter @casewright/desktop fixture         # materialize a real .fixture/ repo from the seed
 pnpm --filter @casewright/desktop fixture --with-origin   # …plus a bare .fixture-origin.git remote
 ```
@@ -97,7 +129,7 @@ temp git repos (open/load, write/rename/delete, commit/push/pull/conflict+abort)
 ## Status & next steps
 
 The desktop app is a typed, modular **React 19 + Tailwind v4 + shadcn** app backed by a real
-on-disk + Git data layer (verified: `tsc` clean, `vite` build, 27 Vitest tests, and a Node-level
+on-disk + Git data layer (verified: `tsc` clean, `vite` build, 47 Vitest tests, and a Node-level
 end-to-end open → load → edit → `git status` against the fixture). Intentional follow-ups:
 
 - **Structured 3-way merge engine.** The resolver UI (`components/merge/*`) is in place but

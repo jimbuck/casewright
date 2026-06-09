@@ -36,33 +36,34 @@ function StatCount({ label, n, dot }: { label: string; n: number; dot?: string }
   );
 }
 
-/** Editable workspace.yaml settings (commits on blur). */
+/** Editable casewright.yaml settings (commits on blur; Name + prefix can't be saved blank). */
 function WorkspaceSettings({ ws }: { ws: Workspace }) {
   const { updateWorkspace } = useApp();
   const [name, setName] = useState(ws.name);
   const [description, setDescription] = useState(ws.description);
   const [prefix, setPrefix] = useState(ws.prefix);
-  const [runsDir, setRunsDir] = useState(ws.runsDir);
 
   // resync when the workspace changes underneath us (e.g. reload / switching)
   useEffect(() => {
     setName(ws.name);
     setDescription(ws.description);
     setPrefix(ws.prefix);
-    setRunsDir(ws.runsDir);
-  }, [ws.id, ws.name, ws.description, ws.prefix, ws.runsDir]);
+  }, [ws.id, ws.name, ws.description, ws.prefix]);
 
   const commit = (patch: Partial<Workspace>) => updateWorkspace(ws.id, patch);
+  // Required fields revert to the saved value when left blank (PRD §4 req 15).
+  const commitName = () => (name.trim() ? commit({ name: name.trim() }) : setName(ws.name));
+  const commitPrefix = () => (prefix.trim() ? commit({ prefix: prefix.trim() }) : setPrefix(ws.prefix));
 
   return (
     <section className="rounded-lg border border-border bg-panel-2">
       <div className="flex items-center gap-2.5 border-b border-border px-4 py-3">
         <span className="text-[11px] font-bold uppercase tracking-[0.06em] text-ink-2">Workspace settings</span>
-        <span className="font-mono text-[11px] text-ink-faint">{ws.path}/workspace.yaml</span>
+        <span className="font-mono text-[11px] text-ink-faint">{ws.path ? `${ws.path}/` : ''}casewright.yaml</span>
       </div>
       <div className="flex flex-col gap-3.5 p-4">
         <Field label="Name">
-          <Input value={name} onChange={(e) => setName(e.target.value)} onBlur={() => name.trim() && commit({ name: name.trim() })} />
+          <Input value={name} onChange={(e) => setName(e.target.value)} onBlur={commitName} />
         </Field>
         <Field label="Description">
           <Textarea
@@ -73,29 +74,12 @@ function WorkspaceSettings({ ws }: { ws: Workspace }) {
             onBlur={() => commit({ description })}
           />
         </Field>
-        <div className="flex gap-3">
-          <Field label="Display ID prefix" className="flex-1">
-            <Input
-              mono
-              value={prefix}
-              placeholder="PAY"
-              onChange={(e) => setPrefix(e.target.value)}
-              onBlur={() => commit({ prefix: prefix.trim() })}
-            />
-          </Field>
-          <Field label="Runs directory" className="flex-1">
-            <Input
-              mono
-              value={runsDir}
-              placeholder="runs"
-              onChange={(e) => setRunsDir(e.target.value)}
-              onBlur={() => runsDir.trim() && runsDir.trim() !== ws.runsDir && commit({ runsDir: runsDir.trim() })}
-            />
-          </Field>
-        </div>
+        <Field label="Display ID prefix">
+          <Input mono value={prefix} placeholder="PAY" onChange={(e) => setPrefix(e.target.value)} onBlur={commitPrefix} />
+        </Field>
         <div className="text-[11.5px] text-ink-faint">
-          New cases here are numbered <span className="font-mono">{prefix || 'CW'}-NNNN</span>; runs are written to{' '}
-          <span className="font-mono">{ws.path}/{runsDir || 'runs'}/</span>.
+          New cases here are numbered <span className="font-mono">{prefix || 'CW'}-NNNN</span>; runs are stored centrally in{' '}
+          <span className="font-mono">.casewright/runs/</span>.
         </div>
       </div>
     </section>
@@ -125,11 +109,9 @@ export function SuiteSummary() {
   const counts: Record<Status, number> = { active: 0, draft: 0, deprecated: 0 };
   myCases.forEach((c) => (counts[c.status] += 1));
 
-  const relevantRuns = runs
-    .filter((r) =>
-      isWorkspace ? (ws ? ws.path === '' || r.file.startsWith(ws.path + '/') : false) : r.rows.some((row) => idSet.has(row.case_id)),
-    )
-    .slice(0, 6);
+  // Runs are repo-level; a run is relevant if any of its rows references a case that
+  // lives under this node (workspace or suite) — by case membership, not file path (req 21).
+  const relevantRuns = runs.filter((r) => r.rows.some((row) => idSet.has(row.case_id))).slice(0, 6);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-panel">
@@ -198,7 +180,7 @@ export function SuiteSummary() {
             ) : (
               <div className="flex flex-col gap-2">
                 {relevantRuns.map((run) => {
-                  const t = runTally(run, isWorkspace ? null : idSet);
+                  const t = runTally(run, idSet);
                   const pct = t.total ? Math.round((t.pass / t.total) * 100) : 0;
                   return (
                     <button

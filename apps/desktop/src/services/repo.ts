@@ -1,14 +1,21 @@
 import { node } from '@/lib/node';
-import { RootConfigSchema, WorkspaceYamlSchema, type LintWarning } from '@/schemas';
+import { ConfigYamlSchema, WorkspaceYamlSchema, type LintWarning } from '@/schemas';
 import type { Case, Run, TreeNode, Workspace } from '@/types';
 import { slug } from '@/utils/ids';
 import { parseCase } from './format/case';
+import { CASEWRIGHT_GITIGNORE, serializeConfigYaml } from './format/config';
 import { parseRunCsv, parseRunSidecar } from './format/run';
 import { parseSuite } from './format/suite';
 
 // ---------------------------------------------------------------------------
-// Small fs helpers (all Node access goes through the bridge)
+// `.casewright/` layout (PRD §4). The repo is identified by `.casewright/`; each
+// workspace declares itself with a `casewright.yaml`; runs are centralized.
 // ---------------------------------------------------------------------------
+
+const CASEWRIGHT_DIR = '.casewright';
+const CONFIG_REL = '.casewright/config.yaml';
+const RUNS_REL = '.casewright/runs';
+const WORKSPACE_MARKER = 'casewright.yaml';
 
 const byName = (a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name);
 
@@ -37,14 +44,25 @@ export function relJoin(...parts: string[]): string {
   return parts.flatMap((p) => (p === '.' || p === '' ? [] : p.split('/'))).join('/');
 }
 
-/** Parse a standalone YAML document (e.g. `workspace.yaml`) by wrapping it as front matter. */
+/** Parse a standalone YAML document (e.g. `casewright.yaml`) by wrapping it as front matter. */
 function parseYamlDoc(raw: string): Record<string, unknown> {
   const wrapped = `---\n${raw.replace(/\r\n/g, '\n').trim()}\n---\n`;
   return (node.matter()(wrapped).data ?? {}) as Record<string, unknown>;
 }
 
+/** Derive a placeholder display-ID prefix from a workspace name (PRD §4 req 13). */
+function derivePrefix(name: string): string {
+  const initials = name
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((w) => w[0])
+    .join('');
+  const cleaned = (initials || name).replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+  return cleaned.slice(0, 4) || 'CW';
+}
+
 // ---------------------------------------------------------------------------
-// Open repo → resolve workspaces
+// Open repo → validate `.casewright/` + discover workspaces
 // ---------------------------------------------------------------------------
 
 export interface OpenedRepo {
@@ -52,49 +70,71 @@ export interface OpenedRepo {
   workspaces: Workspace[];
   branch: string;
   warnings: LintWarning[];
+  /** True when the worktree is a Git repo but has no `.casewright/` yet (offer to init). */
+  needsInit: boolean;
 }
 
-/** Resolve `casewright.json` workspace globs (`qa/*`, explicit paths) to relative dirs. */
-async function resolveWorkspacePaths(repoPath: string, patterns: string[]): Promise<string[]> {
+/**
+ * Discover workspaces by walking from the repo root for `casewright.yaml` markers
+ * (PRD §4 req 6–9). Skips `.git`, `.casewright`, and any dot-folder; a folder with
+ * the marker is a workspace and the walk does **not** descend into it (no nesting).
+ * If the root itself has the marker, the whole repo is one workspace (`'.'`).
+ */
+async function discoverWorkspaces(repoPath: string): Promise<string[]> {
   const path = node.path();
-  const out: string[] = [];
-  for (const pat of patterns) {
-    if (pat.endsWith('/*')) {
-      const base = pat.slice(0, -2);
-      try {
-        const entries = await node.fsp().readdir(path.join(repoPath, base), { withFileTypes: true });
-        for (const e of entries) {
-          if (e.isDirectory() && !e.name.startsWith('.')) out.push(base ? `${base}/${e.name}` : e.name);
-        }
-      } catch {
-        /* base dir missing — skip */
-      }
-    } else if (await isDir(path.join(repoPath, pat))) {
-      out.push(pat);
+  const fsp = node.fsp();
+  const found: string[] = [];
+
+  const walk = async (relDir: string): Promise<void> => {
+    const absDir = relDir === '.' ? repoPath : path.join(repoPath, relDir);
+    const entries = await fsp.readdir(absDir, { withFileTypes: true }).catch(() => []);
+    if (entries.some((e) => e.isFile() && e.name === WORKSPACE_MARKER)) {
+      found.push(relDir); // this folder is a workspace — don't descend (req 8)
+      return;
     }
-  }
-  return [...new Set(out)];
+    for (const e of entries) {
+      if (!e.isDirectory() || e.name.startsWith('.')) continue; // skip .git/.casewright/dot-folders (req 7)
+      await walk(relDir === '.' ? e.name : `${relDir}/${e.name}`);
+    }
+  };
+
+  await walk('.');
+  return found;
 }
 
-async function loadWorkspaceMeta(repoPath: string, rel: string): Promise<Workspace> {
+async function loadWorkspaceMeta(repoPath: string, rel: string, warnings: LintWarning[]): Promise<Workspace> {
   const path = node.path();
-  const raw = await readMaybe(path.join(repoPath, rel, 'workspace.yaml'));
+  const wsPath = rel === '.' ? '' : rel; // repo root is represented as '' (no './' prefix downstream)
+  const raw = await readMaybe(path.join(repoPath, wsPath, WORKSPACE_MARKER));
   const parsed = WorkspaceYamlSchema.safeParse(raw ? parseYamlDoc(raw) : {});
   const yaml = parsed.success ? parsed.data : WorkspaceYamlSchema.parse({});
   const baseName = rel === '.' ? path.basename(repoPath) : path.basename(rel);
+  const markerFile = relJoin(wsPath, WORKSPACE_MARKER);
+
+  let name = yaml.name.trim();
+  if (!name) {
+    name = baseName;
+    warnings.push({ code: 'ws-name', message: `Workspace at "${wsPath || '.'}" has no name; using "${baseName}".`, file: markerFile });
+  }
+  let prefix = yaml.displayIdPrefix.trim();
+  if (!prefix) {
+    prefix = derivePrefix(name);
+    warnings.push({ code: 'ws-prefix', message: `Workspace "${name}" has no displayIdPrefix; using "${prefix}".`, file: markerFile });
+  }
+
   return {
     id: slug(rel) || slug(baseName) || 'workspace',
-    name: yaml.name || baseName,
-    path: rel === '.' ? '' : rel, // repo root is represented as '' (no './' prefix downstream)
+    name,
+    path: wsPath,
     description: yaml.description ?? '',
-    prefix: yaml.displayIdPrefix,
-    runsDir: yaml.runsDir,
+    prefix,
   };
 }
 
 /**
- * Open a repository: validate the git worktree, read `casewright.json` (or fall back
- * to a single implicit workspace), and resolve the declared workspaces (PRD §5.1, §6.1).
+ * Open a repository: validate the Git worktree **and** the `.casewright/` folder,
+ * read `.casewright/config.yaml` tolerantly, and discover self-declaring workspaces
+ * (PRD §4 req 1–14). A missing `.casewright/` is reported via `needsInit` (not thrown).
  */
 export async function openRepo(repoPath: string): Promise<OpenedRepo> {
   const path = node.path();
@@ -106,36 +146,63 @@ export async function openRepo(repoPath: string): Promise<OpenedRepo> {
   }
   const branch = (await git.branchLocal()).current || 'main';
 
-  let patterns: string[] = [];
-  const configRaw = await readMaybe(path.join(repoPath, 'casewright.json'));
-  if (configRaw) {
-    try {
-      const cfg = RootConfigSchema.safeParse(JSON.parse(configRaw));
-      if (cfg.success) patterns = cfg.data.workspaces;
-      else warnings.push({ code: 'config', message: 'casewright.json was invalid; ignoring it.' });
-    } catch {
-      warnings.push({ code: 'config-json', message: 'casewright.json was not valid JSON; ignoring it.' });
-    }
-  } else {
-    warnings.push({ code: 'no-config', message: 'No casewright.json — treating the folder as a single workspace.' });
+  if (!(await isDir(path.join(repoPath, CASEWRIGHT_DIR)))) {
+    warnings.push({ code: 'needs-init', message: 'This repository has no .casewright/ folder yet.' });
+    return { repoPath, workspaces: [], branch, warnings, needsInit: true };
   }
 
-  const relPaths = patterns.length ? await resolveWorkspacePaths(repoPath, patterns) : ['.'];
+  const configRaw = await readMaybe(path.join(repoPath, CONFIG_REL));
+  if (configRaw && !ConfigYamlSchema.safeParse(parseYamlDoc(configRaw)).success) {
+    warnings.push({ code: 'config', message: '.casewright/config.yaml was invalid; using defaults.', file: CONFIG_REL });
+  }
+
+  const relPaths = await discoverWorkspaces(repoPath);
   const workspaces: Workspace[] = [];
-  for (const rel of relPaths) workspaces.push(await loadWorkspaceMeta(repoPath, rel));
+  for (const rel of relPaths) workspaces.push(await loadWorkspaceMeta(repoPath, rel, warnings));
+  workspaces.sort((a, b) => a.name.localeCompare(b.name) || a.path.localeCompare(b.path)); // req 10
+
   if (!workspaces.length) {
-    warnings.push({ code: 'no-workspaces', message: 'No workspaces matched; using the repo root.' });
-    workspaces.push(await loadWorkspaceMeta(repoPath, '.'));
+    warnings.push({ code: 'empty-repo', message: 'No workspaces found — create a casewright.yaml to declare one.' });
   }
 
-  return { repoPath, workspaces, branch, warnings };
+  // Duplicate displayIdPrefix → warn, load anyway (req 14).
+  const seenPrefix = new Map<string, string>();
+  for (const ws of workspaces) {
+    if (!ws.prefix) continue;
+    const prev = seenPrefix.get(ws.prefix);
+    if (prev) warnings.push({ code: 'dup-prefix', message: `Display ID prefix "${ws.prefix}" is shared by "${prev}" and "${ws.name}".` });
+    else seenPrefix.set(ws.prefix, ws.name);
+  }
+
+  return { repoPath, workspaces, branch, warnings, needsInit: false };
+}
+
+/**
+ * Scaffold `.casewright/` for a Git repo that doesn't have it yet (PRD §4 req 2, 4):
+ * writes `config.yaml`, creates `runs/` (tracked via `.gitkeep`), and writes the
+ * `.gitignore` that keeps `cache/` out of Git.
+ */
+export async function initRepo(repoPath: string): Promise<void> {
+  const path = node.path();
+  const fsp = node.fsp();
+  const dir = path.join(repoPath, CASEWRIGHT_DIR);
+  await fsp.mkdir(path.join(dir, 'runs'), { recursive: true });
+  await fsp.writeFile(path.join(dir, 'config.yaml'), serializeConfigYaml({ version: 1, name: path.basename(repoPath) }));
+  await fsp.writeFile(path.join(dir, '.gitignore'), CASEWRIGHT_GITIGNORE);
+  await fsp.writeFile(path.join(dir, 'runs', '.gitkeep'), '');
 }
 
 // ---------------------------------------------------------------------------
-// Load a workspace → tree + cases + runs
+// Load workspaces → tree + cases; load runs → repo-level
 // ---------------------------------------------------------------------------
 
 export interface LoadedWorkspace {
+  tree: TreeNode[];
+  cases: Case[];
+  warnings: LintWarning[];
+}
+
+export interface LoadedRepo {
   tree: TreeNode[];
   cases: Case[];
   runs: Run[];
@@ -151,8 +218,14 @@ async function suiteDisplayName(absDir: string, folderName: string): Promise<str
   return folderName;
 }
 
-async function loadRuns(runsAbs: string, ws: Workspace, warnings: LintWarning[]): Promise<Run[]> {
+/**
+ * Load all runs from `.casewright/runs/` once for the whole repo (PRD §4 req 16, 20).
+ * A run is repo-level; its rows may reference cases from any workspace, so `file`/`id`
+ * carry no workspace path.
+ */
+async function loadRuns(repoPath: string, warnings: LintWarning[]): Promise<Run[]> {
   const path = node.path();
+  const runsAbs = path.join(repoPath, RUNS_REL);
   const entries = await node
     .fsp()
     .readdir(runsAbs, { withFileTypes: true })
@@ -162,7 +235,7 @@ async function loadRuns(runsAbs: string, ws: Workspace, warnings: LintWarning[])
   for (const f of csvs) {
     const text = (await readMaybe(path.join(runsAbs, f.name))) ?? '';
     const { rows, warnings: w } = parseRunCsv(text);
-    const file = relJoin(ws.path, ws.runsDir, f.name); // full repo-relative path
+    const file = relJoin(RUNS_REL, f.name); // .casewright/runs/<name>.csv
     for (const x of w) warnings.push({ ...x, file });
 
     const stem = f.name.replace(/\.csv$/, '');
@@ -175,7 +248,7 @@ async function loadRuns(runsAbs: string, ws: Workspace, warnings: LintWarning[])
       status = sidecar.status;
     }
     runs.push({
-      id: relJoin(ws.path, ws.runsDir, stem),
+      id: relJoin(RUNS_REL, stem),
       name,
       file,
       created: stem.match(/^\d{4}-\d{2}-\d{2}/)?.[0] ?? '',
@@ -188,9 +261,9 @@ async function loadRuns(runsAbs: string, ws: Workspace, warnings: LintWarning[])
 }
 
 /**
- * Walk one workspace's folders → its suite/case subtree + cases + runs (PRD §5.3).
- * Suite `id`/`path` and run `file` are **full repo-relative** so multiple workspaces
- * can coexist in one combined tree (see `loadRepo`).
+ * Walk one workspace's folders → its suite/case subtree + cases (PRD §4). Suite
+ * `id`/`path` are **full repo-relative** so multiple workspaces coexist in one
+ * combined tree (see `loadRepo`). Runs are loaded separately at the repo level.
  */
 export async function loadWorkspace(repoPath: string, ws: Workspace): Promise<LoadedWorkspace> {
   const path = node.path();
@@ -200,7 +273,7 @@ export async function loadWorkspace(repoPath: string, ws: Workspace): Promise<Lo
   const cases: Case[] = [];
 
   // fullRel = the dir's full repo-relative path; cases at the workspace root belong
-  // to the workspace node (id = slug(ws.path)).
+  // to the workspace node (id = ws.id). Dot-folders (incl. `.casewright`) are skipped.
   const walk = async (absDir: string, fullRel: string): Promise<TreeNode[]> => {
     const entries = await fsp.readdir(absDir, { withFileTypes: true });
     const files = entries.filter((e) => e.isFile() && e.name.endsWith('.md') && e.name !== '_suite.md').sort(byName);
@@ -218,7 +291,6 @@ export async function loadWorkspace(repoPath: string, ws: Workspace): Promise<Lo
       for (const w of parsed.warnings) warnings.push({ ...w, file: relJoin(fullRel, f.name) });
     }
     for (const d of dirs) {
-      if (fullRel === ws.path && d.name === ws.runsDir) continue; // runs/ at the root isn't a suite
       const childFull = relJoin(fullRel, d.name);
       const children = await walk(path.join(absDir, d.name), childFull);
       nodes.push({
@@ -233,28 +305,51 @@ export async function loadWorkspace(repoPath: string, ws: Workspace): Promise<Lo
   };
 
   const tree = await walk(wsAbs, ws.path);
-  const runs = await loadRuns(path.join(wsAbs, ws.runsDir), ws, warnings);
-  return { tree, cases, runs, warnings };
+  return { tree, cases, warnings };
 }
 
 /**
  * Load every workspace and combine them into one tree where each workspace is a
  * top-level collapsible folder (a suite node with `isWorkspace: true`), with its
- * suite/case subtree nested underneath.
+ * suite/case subtree nested underneath. Runs are loaded once at the repo level.
  */
-export async function loadRepo(repoPath: string, workspaces: Workspace[]): Promise<LoadedWorkspace> {
+export async function loadRepo(repoPath: string, workspaces: Workspace[]): Promise<LoadedRepo> {
   const tree: TreeNode[] = [];
   const cases: Case[] = [];
-  const runs: Run[] = [];
   const warnings: LintWarning[] = [];
   for (const ws of workspaces) {
     const loaded = await loadWorkspace(repoPath, ws);
     tree.push({ type: 'suite', isWorkspace: true, id: ws.id, name: ws.name, path: ws.path, children: loaded.tree });
     cases.push(...loaded.cases);
-    runs.push(...loaded.runs);
     warnings.push(...loaded.warnings);
   }
+  const runs = await loadRuns(repoPath, warnings);
   return { tree, cases, runs, warnings };
+}
+
+// ---------------------------------------------------------------------------
+// Self-write tracking — lets the file watcher (services/watch.ts) ignore the
+// app's own writes so they don't trigger an external-change reload.
+// ---------------------------------------------------------------------------
+
+const SELF_WRITE_TTL = 4000; // ms a path stays "recently written by us"
+const recentWrites = new Map<string, number>();
+
+/** Record that we just wrote `rel` (and its parent dir, since fs.watch also fires for it). */
+export function markWrite(rel: string): void {
+  const norm = rel.replace(/\\/g, '/');
+  const now = Date.now();
+  recentWrites.set(norm, now);
+  const slash = norm.lastIndexOf('/');
+  if (slash > 0) recentWrites.set(norm.slice(0, slash), now);
+}
+
+/** True if `rel` was written by us within the TTL (prunes stale entries as it goes). */
+export function wasSelfWrite(rel: string): boolean {
+  const now = Date.now();
+  for (const [k, t] of recentWrites) if (now - t > SELF_WRITE_TTL) recentWrites.delete(k);
+  const t = recentWrites.get(rel.replace(/\\/g, '/'));
+  return t != null && now - t <= SELF_WRITE_TTL;
 }
 
 // ---------------------------------------------------------------------------
@@ -266,12 +361,14 @@ export async function loadRepo(repoPath: string, workspaces: Workspace[]): Promi
 export async function writeFileAt(repoPath: string, rel: string, content: string): Promise<void> {
   const path = node.path();
   const abs = path.join(repoPath, rel);
+  markWrite(rel);
   await node.fsp().mkdir(path.dirname(abs), { recursive: true });
   await node.fsp().writeFile(abs, content);
 }
 
 /** Delete `<repoPath>/<rel>` (file or directory, recursive). */
 export async function deletePath(repoPath: string, rel: string): Promise<void> {
+  markWrite(rel);
   await node.fsp().rm(node.path().join(repoPath, rel), { recursive: true, force: true });
 }
 
@@ -280,11 +377,14 @@ export async function renamePath(repoPath: string, fromRel: string, toRel: strin
   if (fromRel === toRel) return;
   const path = node.path();
   const to = path.join(repoPath, toRel);
+  markWrite(fromRel);
+  markWrite(toRel);
   await node.fsp().mkdir(path.dirname(to), { recursive: true });
   await node.fsp().rename(path.join(repoPath, fromRel), to);
 }
 
 /** Create directory `<repoPath>/<rel>` (recursive, idempotent). */
 export async function makeDir(repoPath: string, rel: string): Promise<void> {
+  markWrite(rel);
   await node.fsp().mkdir(node.path().join(repoPath, rel), { recursive: true });
 }

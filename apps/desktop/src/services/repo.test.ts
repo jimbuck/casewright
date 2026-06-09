@@ -1,10 +1,8 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { node } from '@/lib/node';
 import { parseCase, serializeCase, type ParsedCase } from './format/case';
 import { serializeRunCsv } from './format/run';
-import { deletePath, loadRepo, loadWorkspace, makeDir, openRepo, relJoin, renamePath, writeFileAt } from './repo';
-
-let repoPath: string;
+import { deletePath, initRepo, loadRepo, loadWorkspace, makeDir, markWrite, openRepo, relJoin, renamePath, wasSelfWrite, writeFileAt } from './repo';
 
 const c1: ParsedCase = {
   id: 'aaa1111aaaa',
@@ -32,87 +30,96 @@ const c2: ParsedCase = {
   expected: [],
 };
 
-beforeAll(async () => {
-  const fsp = node.fsp();
-  const path = node.path();
-  const os = node.os();
-  repoPath = await fsp.mkdtemp(path.join(os.tmpdir(), 'cw-repo-'));
+const SMOKE_ROW = {
+  case_id: 'aaa1111aaaa',
+  display_id: 'PAY-0001',
+  title: 'First case',
+  result: 'pass' as const,
+  tester: 'me',
+  executed_at: '2026-06-01 09:00',
+  notes: '',
+};
 
-  await fsp.writeFile(path.join(repoPath, 'casewright.json'), JSON.stringify({ workspaces: ['areas/*'] }, null, 2));
+async function mkRepo(prefix: string): Promise<string> {
+  return node.fsp().mkdtemp(node.path().join(node.os().tmpdir(), prefix));
+}
 
-  const ws = path.join(repoPath, 'areas', 'payments');
-  await fsp.mkdir(path.join(ws, 'Auth', 'Sessions'), { recursive: true });
-  await fsp.writeFile(path.join(ws, 'workspace.yaml'), 'name: Payments QA\ndisplayIdPrefix: PAY\nrunsDir: runs\n');
-  await fsp.writeFile(path.join(ws, 'Auth', 'PAY-0001-first-case.md'), serializeCase(c1));
-  await fsp.writeFile(path.join(ws, 'Auth', 'Sessions', 'PAY-0002-nested-case.md'), serializeCase(c2));
-  await fsp.mkdir(path.join(ws, 'runs'), { recursive: true });
-  await fsp.writeFile(
-    path.join(ws, 'runs', '2026-06-01-smoke.csv'),
-    serializeRunCsv([
-      { case_id: 'aaa1111aaaa', display_id: 'PAY-0001', title: 'First case', result: 'pass', tester: 'me', executed_at: '2026-06-01 09:00', notes: '' },
-    ]),
-  );
-
-  const git = node.simpleGit()(repoPath);
+async function gitInit(dir: string): Promise<void> {
+  const git = node.simpleGit()(dir);
   await git.init();
   await git.addConfig('user.email', 'test@casewright.dev', false, 'local');
   await git.addConfig('user.name', 'Test', false, 'local');
   await git.add('.');
   await git.commit('seed');
   await git.branch(['-M', 'main']);
-});
+}
 
-afterAll(async () => {
-  await node.fsp().rm(repoPath, { recursive: true, force: true });
-});
+// ---------------------------------------------------------------------------
+// Canonical repo: `.casewright/` + one declared workspace (areas/payments)
+// ---------------------------------------------------------------------------
+describe('openRepo / loadWorkspace / loadRepo', () => {
+  let repoPath: string;
 
-describe('openRepo', () => {
-  it('validates the worktree and resolves workspaces from casewright.json', async () => {
-    const { workspaces, branch, warnings } = await openRepo(repoPath);
+  beforeAll(async () => {
+    const fsp = node.fsp();
+    const path = node.path();
+    repoPath = await mkRepo('cw-repo-');
+
+    await fsp.mkdir(path.join(repoPath, '.casewright', 'runs'), { recursive: true });
+    await fsp.writeFile(path.join(repoPath, '.casewright', 'config.yaml'), 'version: 1\nname: QA\n');
+    await fsp.writeFile(path.join(repoPath, '.casewright', 'runs', '2026-06-01-smoke.csv'), serializeRunCsv([SMOKE_ROW]));
+
+    const ws = path.join(repoPath, 'areas', 'payments');
+    await fsp.mkdir(path.join(ws, 'Auth', 'Sessions'), { recursive: true });
+    await fsp.writeFile(path.join(ws, 'casewright.yaml'), 'name: Payments QA\ndisplayIdPrefix: PAY\n');
+    await fsp.writeFile(path.join(ws, 'Auth', 'PAY-0001-first-case.md'), serializeCase(c1));
+    await fsp.writeFile(path.join(ws, 'Auth', 'Sessions', 'PAY-0002-nested-case.md'), serializeCase(c2));
+
+    await gitInit(repoPath);
+  });
+
+  afterAll(async () => {
+    await node.fsp().rm(repoPath, { recursive: true, force: true });
+  });
+
+  it('validates the worktree and discovers the workspace from its casewright.yaml', async () => {
+    const { workspaces, branch, needsInit } = await openRepo(repoPath);
     expect(branch).toBe('main');
-    expect(warnings).toHaveLength(0);
+    expect(needsInit).toBe(false);
     expect(workspaces).toHaveLength(1);
-    expect(workspaces[0]).toMatchObject({ name: 'Payments QA', prefix: 'PAY', path: 'areas/payments', runsDir: 'runs' });
+    expect(workspaces[0]).toMatchObject({ name: 'Payments QA', prefix: 'PAY', path: 'areas/payments' });
+    expect('runsDir' in workspaces[0]).toBe(false);
   });
 
   it('throws for a non-repo path', async () => {
-    const tmp = await node.fsp().mkdtemp(node.path().join(node.os().tmpdir(), 'cw-norepo-'));
+    const tmp = await mkRepo('cw-norepo-');
     await expect(openRepo(tmp)).rejects.toThrow(/Not a Git repository/);
     await node.fsp().rm(tmp, { recursive: true, force: true });
   });
-});
 
-describe('loadWorkspace', () => {
-  it('builds the tree, cases, and runs from disk', async () => {
+  it('loadWorkspace builds the tree + cases (runs are repo-level, not here)', async () => {
     const { workspaces } = await openRepo(repoPath);
-    const { tree, cases, runs, warnings } = await loadWorkspace(repoPath, workspaces[0]);
+    const loaded = await loadWorkspace(repoPath, workspaces[0]);
+    expect('runs' in loaded).toBe(false);
+    expect(loaded.cases.map((c) => c.displayId).sort()).toEqual(['PAY-0001', 'PAY-0002']);
 
-    expect(warnings).toHaveLength(0);
-    expect(cases.map((c) => c.displayId).sort()).toEqual(['PAY-0001', 'PAY-0002']);
-
-    const first = cases.find((c) => c.displayId === 'PAY-0001')!;
+    const first = loaded.cases.find((c) => c.displayId === 'PAY-0001')!;
     expect(first.steps).toEqual(c1.steps);
-    expect(first.systems).toEqual(c1.systems);
     expect(first.modified).toBe(false);
 
-    // tree: an Auth suite containing a case + a nested Sessions suite
-    expect(tree).toHaveLength(1);
-    const auth = tree[0];
+    expect(loaded.tree).toHaveLength(1);
+    const auth = loaded.tree[0];
     expect(auth.type).toBe('suite');
     if (auth.type === 'suite') {
       expect(auth.name).toBe('Auth');
       expect(auth.children.some((n) => n.type === 'case')).toBe(true);
       expect(auth.children.some((n) => n.type === 'suite' && n.name === 'Sessions')).toBe(true);
     }
-
-    expect(runs).toHaveLength(1);
-    expect(runs[0].rows[0].result).toBe('pass');
-    expect(runs[0].file).toBe('areas/payments/runs/2026-06-01-smoke.csv');
   });
 
-  it('loadRepo combines workspaces as top-level folders', async () => {
+  it('loadRepo combines workspaces as top-level folders and loads central runs', async () => {
     const { workspaces } = await openRepo(repoPath);
-    const { tree, cases } = await loadRepo(repoPath, workspaces);
+    const { tree, cases, runs } = await loadRepo(repoPath, workspaces);
     expect(tree).toHaveLength(1);
     expect(tree[0].type).toBe('suite');
     if (tree[0].type === 'suite') {
@@ -121,6 +128,227 @@ describe('loadWorkspace', () => {
       expect(tree[0].path).toBe('areas/payments');
     }
     expect(cases).toHaveLength(2);
+
+    // runs come from .casewright/runs/ (repo-level), not per-workspace
+    expect(runs).toHaveLength(1);
+    expect(runs[0].rows[0].result).toBe('pass');
+    expect(runs[0].file).toBe('.casewright/runs/2026-06-01-smoke.csv');
+    expect(runs[0].id).toBe('.casewright/runs/2026-06-01-smoke');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Discovery walk: markers found, dot-folders skipped, alphabetical by name
+// ---------------------------------------------------------------------------
+describe('workspace discovery walk', () => {
+  let repoPath: string;
+
+  beforeAll(async () => {
+    const fsp = node.fsp();
+    const path = node.path();
+    repoPath = await mkRepo('cw-discover-');
+    await fsp.mkdir(path.join(repoPath, '.casewright'), { recursive: true });
+    await fsp.writeFile(path.join(repoPath, '.casewright', 'config.yaml'), 'version: 1\n');
+
+    // two real workspaces (names chosen so alphabetical-by-name ≠ path order)
+    await fsp.mkdir(path.join(repoPath, 'areas', 'alpha'), { recursive: true });
+    await fsp.writeFile(path.join(repoPath, 'areas', 'alpha', 'casewright.yaml'), 'name: Zeta\ndisplayIdPrefix: ZET\n');
+    await fsp.mkdir(path.join(repoPath, 'areas', 'beta'), { recursive: true });
+    await fsp.writeFile(path.join(repoPath, 'areas', 'beta', 'casewright.yaml'), 'name: Alpha\ndisplayIdPrefix: ALP\n');
+    // a dot-folder marker (must be skipped) and a plain folder (no marker)
+    await fsp.mkdir(path.join(repoPath, '.hidden'), { recursive: true });
+    await fsp.writeFile(path.join(repoPath, '.hidden', 'casewright.yaml'), 'name: Hidden\ndisplayIdPrefix: HID\n');
+    await fsp.mkdir(path.join(repoPath, 'docs'), { recursive: true });
+
+    await gitInit(repoPath);
+  });
+
+  afterAll(async () => {
+    await node.fsp().rm(repoPath, { recursive: true, force: true });
+  });
+
+  it('finds every casewright.yaml, skips dot-folders, sorts by display name', async () => {
+    const { workspaces } = await openRepo(repoPath);
+    expect(workspaces).toHaveLength(2); // .hidden is skipped
+    expect(workspaces.map((w) => w.name)).toEqual(['Alpha', 'Zeta']);
+    expect(workspaces.map((w) => w.path)).toEqual(['areas/beta', 'areas/alpha']);
+    expect(workspaces.some((w) => w.name === 'Hidden')).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// No nesting: a marker inside a workspace is a suite, not a second workspace
+// ---------------------------------------------------------------------------
+describe('no nested workspaces', () => {
+  let repoPath: string;
+
+  beforeAll(async () => {
+    const fsp = node.fsp();
+    const path = node.path();
+    repoPath = await mkRepo('cw-nest-');
+    await fsp.mkdir(path.join(repoPath, '.casewright'), { recursive: true });
+    await fsp.writeFile(path.join(repoPath, '.casewright', 'config.yaml'), 'version: 1\n');
+
+    const ws = path.join(repoPath, 'areas', 'payments');
+    await fsp.mkdir(path.join(ws, 'Deep'), { recursive: true });
+    await fsp.writeFile(path.join(ws, 'casewright.yaml'), 'name: Payments\ndisplayIdPrefix: PAY\n');
+    // a (mistaken) marker nested inside the workspace — must be treated as a suite, not a workspace
+    await fsp.writeFile(path.join(ws, 'Deep', 'casewright.yaml'), 'name: Deep\ndisplayIdPrefix: DEP\n');
+    await fsp.writeFile(path.join(ws, 'Deep', 'PAY-0009-deep.md'), serializeCase({ ...c1, id: 'ccc3333cccc', displayId: 'PAY-0009' }));
+
+    await gitInit(repoPath);
+  });
+
+  afterAll(async () => {
+    await node.fsp().rm(repoPath, { recursive: true, force: true });
+  });
+
+  it('does not descend into a workspace to find more workspaces', async () => {
+    const { workspaces } = await openRepo(repoPath);
+    expect(workspaces).toHaveLength(1);
+    expect(workspaces[0].path).toBe('areas/payments');
+
+    const { tree } = await loadWorkspace(repoPath, workspaces[0]);
+    const deep = tree.find((n) => n.type === 'suite' && n.name === 'Deep');
+    expect(deep).toBeTruthy(); // Deep is a suite within the workspace
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Root as a single workspace (replaces the old implicit-fallback case)
+// ---------------------------------------------------------------------------
+describe('repo root as a single workspace', () => {
+  let repoPath: string;
+
+  beforeAll(async () => {
+    const fsp = node.fsp();
+    const path = node.path();
+    repoPath = await mkRepo('cw-root-');
+    await fsp.mkdir(path.join(repoPath, '.casewright', 'runs'), { recursive: true });
+    await fsp.writeFile(path.join(repoPath, '.casewright', 'config.yaml'), 'version: 1\n');
+    await fsp.writeFile(path.join(repoPath, '.casewright', 'runs', '2026-06-02-smoke.csv'), serializeRunCsv([SMOKE_ROW]));
+    // root-level marker → the whole repo is one workspace
+    await fsp.writeFile(path.join(repoPath, 'casewright.yaml'), 'name: Root WS\ndisplayIdPrefix: RT\n');
+    await fsp.writeFile(path.join(repoPath, 'CW-0002-root-case.md'), serializeCase(c2)); // case at the workspace root
+    await fsp.mkdir(path.join(repoPath, 'Auth'), { recursive: true });
+    await fsp.writeFile(path.join(repoPath, 'Auth', 'CW-0001-nested.md'), serializeCase(c1));
+
+    await gitInit(repoPath);
+  });
+
+  afterAll(async () => {
+    await node.fsp().rm(repoPath, { recursive: true, force: true });
+  });
+
+  it('declares a single workspace at path "" with no further discovery', async () => {
+    const { workspaces, needsInit } = await openRepo(repoPath);
+    expect(needsInit).toBe(false);
+    expect(workspaces).toHaveLength(1);
+    expect(workspaces[0].path).toBe('');
+    expect(workspaces[0].name).toBe('Root WS');
+    expect(workspaces[0].id).not.toBe('');
+  });
+
+  it('emits non-empty suite ids and no "./"-prefixed paths', async () => {
+    const { workspaces } = await openRepo(repoPath);
+    const ws = workspaces[0];
+    const { tree, cases, runs } = await loadRepo(repoPath, workspaces);
+
+    const wsNode = tree[0];
+    expect(wsNode.type === 'suite' && wsNode.id).toBe(ws.id);
+
+    if (wsNode.type === 'suite') {
+      const auth = wsNode.children.find((n) => n.type === 'suite');
+      expect(auth && auth.type === 'suite' && auth.path).toBe('Auth'); // not "./Auth"
+    }
+
+    const rootCase = cases.find((c) => c.id === c2.id)!;
+    expect(rootCase.suite).toBe(ws.id);
+    expect(rootCase.suite).not.toBe('');
+
+    expect(runs).toHaveLength(1);
+    expect(runs[0].file).toBe('.casewright/runs/2026-06-02-smoke.csv');
+    expect(runs[0].file.startsWith('./')).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Missing `.casewright/` → needsInit; present but empty → empty-repo warning
+// ---------------------------------------------------------------------------
+describe('missing and empty .casewright/', () => {
+  it('reports needsInit (without throwing) when .casewright/ is absent', async () => {
+    const repoPath = await mkRepo('cw-noinit-');
+    await node.fsp().writeFile(node.path().join(repoPath, 'README.md'), 'x\n');
+    await gitInit(repoPath);
+
+    const opened = await openRepo(repoPath);
+    expect(opened.needsInit).toBe(true);
+    expect(opened.workspaces).toHaveLength(0);
+    expect(opened.warnings.some((w) => w.code === 'needs-init')).toBe(true);
+
+    await node.fsp().rm(repoPath, { recursive: true, force: true });
+  });
+
+  it('reports an empty-repo warning when .casewright/ exists but no markers', async () => {
+    const repoPath = await mkRepo('cw-empty-');
+    await node.fsp().mkdir(node.path().join(repoPath, '.casewright'), { recursive: true });
+    await node.fsp().writeFile(node.path().join(repoPath, '.casewright', 'config.yaml'), 'version: 1\n');
+    await gitInit(repoPath);
+
+    const opened = await openRepo(repoPath);
+    expect(opened.needsInit).toBe(false);
+    expect(opened.workspaces).toHaveLength(0);
+    expect(opened.warnings.some((w) => w.code === 'empty-repo')).toBe(true);
+
+    await node.fsp().rm(repoPath, { recursive: true, force: true });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// initRepo scaffold
+// ---------------------------------------------------------------------------
+describe('initRepo scaffold', () => {
+  it('writes config.yaml, runs/, and a .gitignore that ignores cache/', async () => {
+    const fsp = node.fsp();
+    const path = node.path();
+    const repoPath = await mkRepo('cw-scaffold-');
+    await fsp.writeFile(path.join(repoPath, 'README.md'), 'x\n');
+    await gitInit(repoPath);
+
+    await initRepo(repoPath);
+
+    const config = await fsp.readFile(path.join(repoPath, '.casewright', 'config.yaml'), 'utf8');
+    expect(config).toMatch(/version:\s*1/);
+    expect((await fsp.stat(path.join(repoPath, '.casewright', 'runs'))).isDirectory()).toBe(true);
+    const ignore = await fsp.readFile(path.join(repoPath, '.casewright', '.gitignore'), 'utf8');
+    expect(ignore).toMatch(/cache\//);
+
+    // a freshly-initialized repo opens cleanly with no workspaces yet
+    const opened = await openRepo(repoPath);
+    expect(opened.needsInit).toBe(false);
+    expect(opened.workspaces).toHaveLength(0);
+    expect(opened.warnings.some((w) => w.code === 'empty-repo')).toBe(true);
+
+    await fsp.rm(repoPath, { recursive: true, force: true });
+  });
+});
+
+describe('self-write echo suppression', () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it('flags a recently self-written path, expiring after the TTL', () => {
+    markWrite('areas/payments/Auth/PAY-0001-first.md');
+    expect(wasSelfWrite('areas/payments/Auth/PAY-0001-first.md')).toBe(true);
+    expect(wasSelfWrite('areas/payments/Other.md')).toBe(false);
+    vi.advanceTimersByTime(5000); // past the 4s TTL
+    expect(wasSelfWrite('areas/payments/Auth/PAY-0001-first.md')).toBe(false);
+  });
+
+  it('normalizes backslashes and also marks the parent dir (fs.watch fires for both)', () => {
+    markWrite('areas/payments/Billing/PAY-0088.md');
+    expect(wasSelfWrite('areas\\payments\\Billing\\PAY-0088.md')).toBe(true);
+    expect(wasSelfWrite('areas/payments/Billing')).toBe(true);
   });
 });
 
@@ -134,76 +362,6 @@ describe('relJoin', () => {
   });
 });
 
-describe('root (implicit) workspace normalization', () => {
-  let rootRepo: string;
-
-  beforeAll(async () => {
-    const fsp = node.fsp();
-    const path = node.path();
-    const os = node.os();
-    rootRepo = await fsp.mkdtemp(path.join(os.tmpdir(), 'cw-root-'));
-    // No casewright.json and no workspace.yaml → implicit single workspace at the repo root.
-    await fsp.writeFile(path.join(rootRepo, 'CW-0002-root-case.md'), serializeCase(c2)); // case at the workspace root
-    await fsp.mkdir(path.join(rootRepo, 'Auth'), { recursive: true });
-    await fsp.writeFile(path.join(rootRepo, 'Auth', 'CW-0001-nested.md'), serializeCase(c1));
-    await fsp.mkdir(path.join(rootRepo, 'runs'), { recursive: true });
-    await fsp.writeFile(
-      path.join(rootRepo, 'runs', '2026-06-02-smoke.csv'),
-      serializeRunCsv([
-        { case_id: 'aaa1111aaaa', display_id: 'PAY-0001', title: 'First case', result: 'pass', tester: 'me', executed_at: '2026-06-02 09:00', notes: '' },
-      ]),
-    );
-    const git = node.simpleGit()(rootRepo);
-    await git.init();
-    await git.addConfig('user.email', 'test@casewright.dev', false, 'local');
-    await git.addConfig('user.name', 'Test', false, 'local');
-    await git.add('.');
-    await git.commit('seed');
-    await git.branch(['-M', 'main']);
-  });
-
-  afterAll(async () => {
-    await node.fsp().rm(rootRepo, { recursive: true, force: true });
-  });
-
-  it('treats the repo root as a single workspace with path ""', async () => {
-    const { workspaces, warnings } = await openRepo(rootRepo);
-    expect(workspaces).toHaveLength(1);
-    expect(workspaces[0].path).toBe('');
-    expect(workspaces[0].id).not.toBe('');
-    expect(warnings.some((w) => w.code === 'no-config')).toBe(true);
-  });
-
-  it('emits non-empty suite ids and no "./"-prefixed paths (Copilot #1–#3)', async () => {
-    const { workspaces } = await openRepo(rootRepo);
-    const ws = workspaces[0];
-    const { tree, cases, runs } = await loadRepo(rootRepo, workspaces);
-
-    // workspace wrapper node id matches the (non-empty) workspace id
-    expect(tree).toHaveLength(1);
-    const wsNode = tree[0];
-    expect(wsNode.type === 'suite' && wsNode.id).toBe(ws.id);
-    expect(ws.id).not.toBe('');
-
-    // a nested suite's path is "Auth", not "./Auth"
-    if (wsNode.type === 'suite') {
-      const auth = wsNode.children.find((n) => n.type === 'suite');
-      expect(auth && auth.type === 'suite' && auth.path).toBe('Auth');
-    }
-
-    // the root-level case belongs to the (non-empty) workspace-root suite id
-    const rootCase = cases.find((c) => c.id === c2.id)!;
-    expect(rootCase.suite).toBe(ws.id);
-    expect(rootCase.suite).not.toBe('');
-
-    // run file/id carry no "./" prefix
-    expect(runs).toHaveLength(1);
-    expect(runs[0].file).toBe('runs/2026-06-02-smoke.csv');
-    expect(runs[0].id).toBe('runs/2026-06-02-smoke');
-    expect(runs[0].file.startsWith('./')).toBe(false);
-  });
-});
-
 describe('write primitives', () => {
   let dir: string;
   const exists = async (rel: string) =>
@@ -214,7 +372,7 @@ describe('write primitives', () => {
       .catch(() => false);
 
   beforeAll(async () => {
-    dir = await node.fsp().mkdtemp(node.path().join(node.os().tmpdir(), 'cw-write-'));
+    dir = await mkRepo('cw-write-');
   });
   afterAll(async () => {
     await node.fsp().rm(dir, { recursive: true, force: true });
@@ -234,8 +392,8 @@ describe('write primitives', () => {
   });
 
   it('creates a directory and deletes a path', async () => {
-    await makeDir(dir, 'areas/payments/runs');
-    expect(await exists('areas/payments/runs')).toBe(true);
+    await makeDir(dir, '.casewright/runs');
+    expect(await exists('.casewright/runs')).toBe(true);
     await deletePath(dir, 'areas/payments/Billing/PAY-0001-first.md');
     expect(await exists('areas/payments/Billing/PAY-0001-first.md')).toBe(false);
   });

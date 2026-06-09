@@ -18,8 +18,10 @@ function timeAgo(iso: string): string {
   return `${w} week${w > 1 ? 's' : ''} ago`;
 }
 
+const repoName = (p: string): string => p.replace(/[/\\]+$/, '').split(/[/\\]/).pop() || p;
+
 export function Launcher() {
-  const { openRepo, recents, loadRecents, loading } = useApp();
+  const { openRepo, recents, loadRecents, loading, needsInit, emptyRepo, initRepo, repoPath } = useApp();
 
   useEffect(() => {
     void loadRecents();
@@ -51,6 +53,37 @@ export function Launcher() {
       </div>
 
       <div className="flex min-h-0 flex-col px-[42px] py-10">
+        {needsInit && (
+          <div className="mb-6 rounded-lg border border-accent-line bg-accent-soft p-4">
+            <div className="flex items-center gap-2 text-[13px] font-semibold">{I.repo({ size: 15 })} Not a Casewright repository yet</div>
+            <div className="mt-1.5 text-[12.5px] text-ink-3">
+              <span className="font-mono">{repoName(repoPath)}</span> is a Git repo but has no{' '}
+              <span className="font-mono">.casewright/</span> folder.
+            </div>
+            <div className="mt-3 flex gap-2">
+              <Button variant="primary" disabled={loading} onClick={() => void initRepo()}>
+                {I.plus({ size: 14 })} {loading ? 'Initializing…' : 'Initialize .casewright/'}
+              </Button>
+              <Button disabled={loading} onClick={() => void openRepo()}>
+                Choose another folder
+              </Button>
+            </div>
+          </div>
+        )}
+        {emptyRepo && (
+          <div className="mb-6 rounded-lg border border-border bg-panel-2 p-4">
+            <div className="flex items-center gap-2 text-[13px] font-semibold">{I.layers({ size: 15 })} No workspaces yet</div>
+            <div className="mt-1.5 text-[12.5px] text-ink-3">
+              <span className="font-mono">{repoName(repoPath)}</span> has a <span className="font-mono">.casewright/</span> folder but no
+              workspaces. Add a <span className="font-mono">casewright.yaml</span> to a folder to declare one, then reload.
+            </div>
+            <div className="mt-3 flex gap-2">
+              <Button variant="primary" disabled={loading} onClick={() => void openRepo(repoPath)}>
+                {loading ? 'Reloading…' : 'Reload'}
+              </Button>
+            </div>
+          </div>
+        )}
         <h2 className="m-0 mb-1 text-[13px] font-semibold uppercase tracking-[0.06em] text-ink-3">Open a repository</h2>
         <div className="mb-[26px] mt-4 flex gap-2.5">
           <Button variant="primary" disabled={loading} onClick={() => void openRepo()}>
