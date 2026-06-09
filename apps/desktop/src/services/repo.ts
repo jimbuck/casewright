@@ -142,7 +142,7 @@ async function suiteDisplayName(absDir: string, folderName: string): Promise<str
   return folderName;
 }
 
-async function loadRuns(runsAbs: string, runsDirName: string, warnings: LintWarning[]): Promise<Run[]> {
+async function loadRuns(runsAbs: string, ws: Workspace, warnings: LintWarning[]): Promise<Run[]> {
   const path = node.path();
   const entries = await node
     .fsp()
@@ -153,7 +153,8 @@ async function loadRuns(runsAbs: string, runsDirName: string, warnings: LintWarn
   for (const f of csvs) {
     const text = (await readMaybe(path.join(runsAbs, f.name))) ?? '';
     const { rows, warnings: w } = parseRunCsv(text);
-    for (const x of w) warnings.push({ ...x, file: `${runsDirName}/${f.name}` });
+    const file = `${ws.path}/${ws.runsDir}/${f.name}`; // full repo-relative path
+    for (const x of w) warnings.push({ ...x, file });
 
     const stem = f.name.replace(/\.csv$/, '');
     let name = stem;
@@ -165,9 +166,9 @@ async function loadRuns(runsAbs: string, runsDirName: string, warnings: LintWarn
       status = sidecar.status;
     }
     runs.push({
-      id: stem,
+      id: `${ws.path}/${ws.runsDir}/${stem}`,
       name,
-      file: `${runsDirName}/${f.name}`,
+      file,
       created: stem.match(/^\d{4}-\d{2}-\d{2}/)?.[0] ?? '',
       status,
       scope: '',
@@ -177,7 +178,11 @@ async function loadRuns(runsAbs: string, runsDirName: string, warnings: LintWarn
   return runs;
 }
 
-/** Walk a workspace's folders → the suite/case tree + all parsed cases + runs (PRD §5.3). */
+/**
+ * Walk one workspace's folders → its suite/case subtree + cases + runs (PRD §5.3).
+ * Suite `id`/`path` and run `file` are **full repo-relative** so multiple workspaces
+ * can coexist in one combined tree (see `loadRepo`).
+ */
 export async function loadWorkspace(repoPath: string, ws: Workspace): Promise<LoadedWorkspace> {
   const path = node.path();
   const fsp = node.fsp();
@@ -185,37 +190,59 @@ export async function loadWorkspace(repoPath: string, ws: Workspace): Promise<Lo
   const warnings: LintWarning[] = [];
   const cases: Case[] = [];
 
-  const walk = async (absDir: string, relWithin: string): Promise<TreeNode[]> => {
+  // fullRel = the dir's full repo-relative path; cases at the workspace root belong
+  // to the workspace node (id = slug(ws.path)).
+  const walk = async (absDir: string, fullRel: string): Promise<TreeNode[]> => {
     const entries = await fsp.readdir(absDir, { withFileTypes: true });
     const files = entries.filter((e) => e.isFile() && e.name.endsWith('.md') && e.name !== '_suite.md').sort(byName);
     const dirs = entries.filter((e) => e.isDirectory() && !e.name.startsWith('.')).sort(byName);
     const nodes: TreeNode[] = [];
-    const suiteId = relWithin ? slug(relWithin) : '';
+    const suiteId = slug(fullRel);
 
     for (const f of files) {
       const text = (await readMaybe(path.join(absDir, f.name))) ?? '';
       const parsed = parseCase(text);
       cases.push({ ...parsed.case, suite: suiteId, modified: false });
       nodes.push({ type: 'case', id: parsed.case.id });
-      for (const w of parsed.warnings) warnings.push({ ...w, file: path.posix.join(ws.path, relWithin, f.name) });
+      for (const w of parsed.warnings) warnings.push({ ...w, file: `${fullRel}/${f.name}` });
     }
     for (const d of dirs) {
-      if (!relWithin && d.name === ws.runsDir) continue; // runs/ at the workspace root isn't a suite
-      const childRel = relWithin ? `${relWithin}/${d.name}` : d.name;
-      const children = await walk(path.join(absDir, d.name), childRel);
+      if (fullRel === ws.path && d.name === ws.runsDir) continue; // runs/ at the root isn't a suite
+      const childFull = `${fullRel}/${d.name}`;
+      const children = await walk(path.join(absDir, d.name), childFull);
       nodes.push({
         type: 'suite',
-        id: slug(childRel),
+        id: slug(childFull),
         name: await suiteDisplayName(path.join(absDir, d.name), d.name),
-        path: childRel,
+        path: childFull,
         children,
       });
     }
     return nodes;
   };
 
-  const tree = await walk(wsAbs, '');
-  const runs = await loadRuns(path.join(wsAbs, ws.runsDir), ws.runsDir, warnings);
+  const tree = await walk(wsAbs, ws.path);
+  const runs = await loadRuns(path.join(wsAbs, ws.runsDir), ws, warnings);
+  return { tree, cases, runs, warnings };
+}
+
+/**
+ * Load every workspace and combine them into one tree where each workspace is a
+ * top-level collapsible folder (a suite node with `isWorkspace: true`), with its
+ * suite/case subtree nested underneath.
+ */
+export async function loadRepo(repoPath: string, workspaces: Workspace[]): Promise<LoadedWorkspace> {
+  const tree: TreeNode[] = [];
+  const cases: Case[] = [];
+  const runs: Run[] = [];
+  const warnings: LintWarning[] = [];
+  for (const ws of workspaces) {
+    const loaded = await loadWorkspace(repoPath, ws);
+    tree.push({ type: 'suite', isWorkspace: true, id: slug(ws.path), name: ws.name, path: ws.path, children: loaded.tree });
+    cases.push(...loaded.cases);
+    runs.push(...loaded.runs);
+    warnings.push(...loaded.warnings);
+  }
   return { tree, cases, runs, warnings };
 }
 

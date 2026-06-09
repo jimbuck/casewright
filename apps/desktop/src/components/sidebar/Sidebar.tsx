@@ -39,6 +39,7 @@ export function Sidebar() {
     sel,
     view,
     openCase,
+    openSuite,
     openRunsList,
     collapsed,
     setCollapsed,
@@ -233,6 +234,20 @@ export function Sidebar() {
         { icon: I.trash, label: 'Delete', danger: true, on: () => deleteCase(c.id) },
       ];
     }
+    if (node.isWorkspace) {
+      return [
+        { icon: I.file, label: 'New case', on: () => createCase(node.id) },
+        { icon: I.folder, label: 'New suite', on: () => createSuite(node.id) },
+        {
+          icon: collapsed[node.id] ? I.chevronDown : I.chevron,
+          label: collapsed[node.id] ? 'Expand' : 'Collapse',
+          on: () => setCollapsed((s) => ({ ...s, [node.id]: !collapsed[node.id] })),
+        },
+        { sep: true },
+        { icon: I.link, label: 'Copy workspace path', sub: node.path, on: () => toast('Copied ' + node.path) },
+        { icon: I.folderOpen, label: 'Reveal in File Explorer', desktop: true, on: () => toast('nw.Shell.showItemInFolder — ' + node.name) },
+      ];
+    }
     return [
       { icon: I.file, label: 'New case', on: () => createCase(node.id) },
       { icon: I.folder, label: 'New nested suite', on: () => createSuite(node.id) },
@@ -300,15 +315,16 @@ export function Sidebar() {
     const isOpen = !collapsed[node.id];
     const count = node.children.filter((n) => n.type === 'case').length;
     const isRenaming = !!renaming && renaming.id === node.id;
+    const suiteActive = view === 'suite' && sel.suiteId === node.id;
     return (
       <div key={node.id}>
         <RowContextMenu items={menuItems(node)}>
           <div
-            className={cn(rowBase, drag === node.id && 'opacity-40')}
+            className={cn(rowBase, suiteActive && cn('bg-accent-soft', selBefore), drag === node.id && 'opacity-40')}
             style={{ paddingLeft: 6 + depth * 15 }}
-            draggable={!filtering && !isRenaming}
+            draggable={!filtering && !isRenaming && !node.isWorkspace}
             onDragStart={(e) => {
-              if (filtering || isRenaming) {
+              if (filtering || isRenaming || node.isWorkspace) {
                 e.preventDefault();
                 return;
               }
@@ -318,13 +334,20 @@ export function Sidebar() {
             onDragEnd={endDrag}
             onDragOver={onRowDragOver(node)}
             onDrop={doDrop}
-            onClick={() => !isRenaming && setCollapsed((s) => ({ ...s, [node.id]: isOpen }))}
+            onClick={() => !isRenaming && openSuite(node.id)}
           >
-            <span className="grid size-4 shrink-0 place-items-center text-ink-faint">
+            <span
+              className="-ml-0.5 grid size-[18px] shrink-0 place-items-center rounded-sm text-ink-faint hover:bg-accent-line/40 hover:text-ink-2"
+              title={isOpen ? 'Collapse' : 'Expand'}
+              onClick={(e) => {
+                e.stopPropagation();
+                setCollapsed((s) => ({ ...s, [node.id]: isOpen }));
+              }}
+            >
               {isOpen ? I.chevronDown({ size: 13 }) : I.chevron({ size: 13 })}
             </span>
-            <span className="grid shrink-0 place-items-center text-ink-3">
-              {isOpen ? I.folderOpen({ size: 15 }) : I.folder({ size: 15 })}
+            <span className={cn('grid shrink-0 place-items-center', node.isWorkspace ? 'text-accent' : 'text-ink-3')}>
+              {node.isWorkspace ? I.workspace({ size: 15 }) : isOpen ? I.folderOpen({ size: 15 }) : I.folder({ size: 15 })}
             </span>
             {isRenaming ? (
               <input
@@ -341,37 +364,46 @@ export function Sidebar() {
               />
             ) : (
               <span
-                className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-[13px] font-medium"
-                onDoubleClick={(e) => {
-                  e.stopPropagation();
-                  setRenaming({ id: node.id, value: node.name });
-                }}
+                className={cn(
+                  'min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-[13px]',
+                  node.isWorkspace ? 'font-semibold' : 'font-medium',
+                )}
+                onDoubleClick={
+                  node.isWorkspace
+                    ? undefined
+                    : (e) => {
+                        e.stopPropagation();
+                        setRenaming({ id: node.id, value: node.name });
+                      }
+                }
               >
                 {node.name}
               </span>
             )}
-            <span className="ml-auto hidden shrink-0 items-center gap-px group-hover:flex">
+            <span className="ml-auto hidden shrink-0 items-center gap-0.5 group-hover:flex">
               <button
-                className="relative grid h-[22px] w-6 place-items-center rounded-sm border-0 bg-transparent text-ink-3 hover:bg-accent-soft hover:text-accent-ink"
-                title="New case in this suite"
+                className="flex h-[22px] items-center gap-0.5 rounded-sm border-0 bg-transparent px-1 text-ink-3 hover:bg-accent-soft hover:text-accent-ink"
+                title="Add case"
+                aria-label="Add case"
                 onClick={(e) => {
                   e.stopPropagation();
                   createCase(node.id);
                 }}
               >
+                {I.plus({ size: 12 })}
                 {I.file({ size: 13 })}
-                <span className="absolute bottom-px right-0.5 rounded-full bg-panel-2 text-[10px] font-bold leading-none group-hover:bg-raise">+</span>
               </button>
               <button
-                className="relative grid h-[22px] w-6 place-items-center rounded-sm border-0 bg-transparent text-ink-3 hover:bg-accent-soft hover:text-accent-ink"
-                title="New nested suite"
+                className="flex h-[22px] items-center gap-0.5 rounded-sm border-0 bg-transparent px-1 text-ink-3 hover:bg-accent-soft hover:text-accent-ink"
+                title={node.isWorkspace ? 'Add suite' : 'Add nested suite'}
+                aria-label={node.isWorkspace ? 'Add suite' : 'Add nested suite'}
                 onClick={(e) => {
                   e.stopPropagation();
                   createSuite(node.id);
                 }}
               >
+                {I.plus({ size: 12 })}
                 {I.folder({ size: 13 })}
-                <span className="absolute bottom-px right-0.5 rounded-full bg-panel-2 text-[10px] font-bold leading-none group-hover:bg-raise">+</span>
               </button>
             </span>
             {!isRenaming && <span className="font-mono text-[11px] text-ink-faint group-hover:hidden">{count || ''}</span>}
@@ -455,7 +487,7 @@ export function Sidebar() {
       <div className="min-h-0 flex-1 overflow-auto px-2 pb-[14px] pt-1.5" ref={treeRef} onDragOver={onTreeDragOver} onDrop={doDrop}>
         <div className="relative" ref={innerRef}>
           <div className="tree-section-h flex items-center justify-between px-1.5 pb-1 pt-2">
-            <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-ink-faint">Suites</span>
+            <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-ink-faint">Workspaces</span>
             <span className="flex gap-0.5">
               <Button size="sm" variant="ghost" className="h-[22px] gap-1 px-[7px] text-[11.5px] text-ink-3 hover:bg-accent-soft hover:text-accent-ink" title="New top-level case" onClick={() => createCase(null)}>
                 {I.file({ size: 13 })} Case

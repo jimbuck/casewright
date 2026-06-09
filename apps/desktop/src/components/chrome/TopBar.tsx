@@ -1,18 +1,11 @@
 import { I } from '@/components/icons';
-import {
-  Button,
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui';
+import { Button } from '@/components/ui';
 import { useApp } from '@/store/app-store';
 
 const baseName = (p: string): string => p.replace(/[/\\]+$/, '').split(/[/\\]/).pop() || 'repository';
 
 export function TopBar() {
-  const { workspace, workspaces, repoPath, branch, ahead, behind, changes, gitBusy, setWorkspace, goHome, doPush, doPull, setModal, toast } =
-    useApp();
+  const { workspace, workspaces, repoPath, branch, ahead, behind, changes, gitBusy, goHome, doPush, doPull, setModal } = useApp();
   const dirty = changes.length;
   if (!workspace) return null;
   const repoName = baseName(repoPath);
@@ -23,45 +16,17 @@ export function TopBar() {
         {I.repo({ size: 16 })}
       </Button>
 
-      <div className="relative flex min-w-0 items-center gap-2">
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button className="flex max-w-[280px] items-center gap-2 rounded-md border border-border bg-panel py-1 pl-[9px] pr-2 text-[13px] hover:bg-raise data-[state=open]:bg-raise">
-              <span className="grid size-[26px] shrink-0 place-items-center rounded-[7px] bg-[oklch(0.55_0.13_256)] shadow-[inset_0_1px_0_oklch(1_0_0/0.25)]">
-                <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M4 5h11l5 5v9H4z" />
-                  <path d="M15 5v5h5" />
-                </svg>
-              </span>
-              <span className="whitespace-nowrap font-mono text-[12px] text-ink-3">{repoName} /</span>
-              <span className="whitespace-nowrap font-semibold">{workspace.name}</span>
-              {I.chevronDown({ size: 13 })}
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="min-w-[240px]">
-            <div className="px-1.5 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-[0.05em] text-ink-faint">
-              Workspaces · casewright.json
-            </div>
-            {workspaces.map((w) => (
-              <DropdownMenuItem
-                key={w.id}
-                onSelect={() => {
-                  setWorkspace(w);
-                  toast('Switched to ' + w.name);
-                }}
-              >
-                <span className="grid shrink-0 place-items-center text-ink-3 group-data-[highlighted]:text-accent-ink">
-                  {I.folder({ size: 14 })}
-                </span>
-                <div className="flex-1">
-                  <div className="font-semibold">{w.name}</div>
-                  <div className="font-mono text-[11px] text-ink-faint">{w.path}</div>
-                </div>
-                {w.id === workspace.id && <span className="text-accent">{I.check({ size: 13 })}</span>}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
+      <div className="flex min-w-0 items-center gap-2" title={`${workspaces.length} workspace(s) · casewright.json`}>
+        <span className="grid size-[26px] shrink-0 place-items-center rounded-[7px] bg-[oklch(0.55_0.13_256)] shadow-[inset_0_1px_0_oklch(1_0_0/0.25)]">
+          <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round">
+            <path d="M4 5h11l5 5v9H4z" />
+            <path d="M15 5v5h5" />
+          </svg>
+        </span>
+        <span className="whitespace-nowrap font-semibold">{repoName}</span>
+        <span className="whitespace-nowrap font-mono text-[12px] text-ink-3">
+          {workspaces.length} workspace{workspaces.length === 1 ? '' : 's'}
+        </span>
       </div>
 
       <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-panel px-[9px] py-[3px] font-mono text-[12px] text-ink-2">

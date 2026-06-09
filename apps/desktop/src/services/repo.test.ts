@@ -107,7 +107,21 @@ describe('loadWorkspace', () => {
 
     expect(runs).toHaveLength(1);
     expect(runs[0].rows[0].result).toBe('pass');
-    expect(runs[0].file).toBe('runs/2026-06-01-smoke.csv');
+    expect(runs[0].file).toBe('areas/payments/runs/2026-06-01-smoke.csv');
+  });
+
+  it('loadRepo combines workspaces as top-level folders', async () => {
+    const { workspaces } = await openRepo(repoPath);
+    const { loadRepo } = await import('./repo');
+    const { tree, cases } = await loadRepo(repoPath, workspaces);
+    expect(tree).toHaveLength(1);
+    expect(tree[0].type).toBe('suite');
+    if (tree[0].type === 'suite') {
+      expect(tree[0].isWorkspace).toBe(true);
+      expect(tree[0].name).toBe('Payments QA');
+      expect(tree[0].path).toBe('areas/payments');
+    }
+    expect(cases).toHaveLength(2);
   });
 });
 

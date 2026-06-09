@@ -14,9 +14,11 @@ import { CreateRunModal } from './runs/CreateRunModal';
 import { CommitModal } from './common/CommitModal';
 import { EmptyCenter } from './common/EmptyCenter';
 import { MergeResolver } from './merge/MergeResolver';
+import { SuiteSummary } from './summary/SuiteSummary';
 
 function Center() {
   const { view, sel } = useApp();
+  if (view === 'suite') return <SuiteSummary />;
   if (view === 'runs') return <RunsList />;
   if (view === 'guide') return <RunGuide />;
   if (view === 'run') return <RunGrid />;

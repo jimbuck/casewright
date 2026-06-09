@@ -4,9 +4,10 @@ import { create } from 'zustand';
 import { serializeCase } from '@/services/format/case';
 import { caseFileName, runFileStem } from '@/services/format/filename';
 import { serializeRunCsv, serializeRunSidecar } from '@/services/format/run';
+import { serializeWorkspaceYaml } from '@/services/format/workspace';
 import {
   deletePath,
-  loadWorkspace,
+  loadRepo,
   makeDir,
   openRepo as openRepoSvc,
   renamePath,
@@ -23,7 +24,7 @@ import {
   status as gitStatus,
 } from '@/services/git';
 import type { LintWarning } from '@/schemas';
-import { randomId } from '@/utils/ids';
+import { randomId, slug } from '@/utils/ids';
 import { pickDirectory } from '@/lib/nwjs';
 import type {
   Case,
@@ -115,7 +116,9 @@ export interface AppState {
   openRepo: (path?: string) => Promise<void>;
   goHome: () => void;
   setWorkspace: (w: Workspace) => Promise<void>;
+  updateWorkspace: (wsId: string, patch: Partial<Workspace>) => void;
   openCase: (id: string) => void;
+  openSuite: (suiteId: string) => void;
   openRunsList: () => void;
   openRun: (runId: string) => void;
   openCreateRun: () => void;
@@ -176,25 +179,20 @@ export interface AppState {
 const changeKey = (c: Change) => c.kind + ':' + c.refId;
 
 export const useAppStore = create<AppState>()((set, get) => {
+  // suite paths in the tree are full repo-relative (workspaces are top-level folders)
   const casePath = (c: Case): string => {
-    const { tree, workspace } = get();
-    if (!workspace) return caseFileName(c);
-    const idx = buildSuiteIndex(tree);
-    const suitePath = idx.path[c.suite] ?? '';
-    const dir = [workspace.path, suitePath].filter(Boolean).join('/');
-    return `${dir}/${caseFileName(c)}`;
+    const dir = buildSuiteIndex(get().tree).path[c.suite] ?? '';
+    return dir ? `${dir}/${caseFileName(c)}` : caseFileName(c);
   };
 
   /* ---- disk persistence (optimistic in-memory + write; reload on error) ---- */
-  const suiteRel = (suiteId: string): string => {
-    const { tree, workspace } = get();
-    if (!workspace) return '';
-    const sp = buildSuiteIndex(tree).path[suiteId] ?? '';
-    return [workspace.path, sp].filter(Boolean).join('/');
-  };
-  const runRel = (run: Run): string => {
-    const ws = get().workspace;
-    return ws ? `${ws.path}/${run.file}` : run.file;
+  const suiteRel = (suiteId: string): string => buildSuiteIndex(get().tree).path[suiteId] ?? '';
+  const runRel = (run: Run): string => run.file; // already full repo-relative
+
+  /** The workspace owning a given repo-relative path (longest matching prefix). */
+  const workspaceOfPath = (full: string): Workspace | null => {
+    const matches = get().workspaces.filter((w) => full === w.path || full.startsWith(w.path + '/'));
+    return matches.sort((a, b) => b.path.length - a.path.length)[0] ?? null;
   };
 
   // the path each case was last written to — drives rename-on-write cleanup
@@ -212,10 +210,10 @@ export const useAppStore = create<AppState>()((set, get) => {
   };
 
   const reloadFromDisk = async () => {
-    const { repoPath, workspace } = get();
-    if (!repoPath || !workspace) return;
+    const { repoPath, workspaces } = get();
+    if (!repoPath || !workspaces.length) return;
     try {
-      const loaded = await loadWorkspace(repoPath, workspace);
+      const loaded = await loadRepo(repoPath, workspaces);
       set({ tree: loaded.tree, cases: loaded.cases, runs: loaded.runs, warnings: loaded.warnings });
       seedPaths();
     } catch {
@@ -264,6 +262,18 @@ export const useAppStore = create<AppState>()((set, get) => {
     if (!repoPath || !run) return;
     try {
       await writeFileAt(repoPath, runRel(run), serializeRunCsv(run.rows));
+      scheduleRefresh();
+    } catch (e) {
+      onWriteError(e);
+    }
+  };
+
+  const writeWsYaml = async (wsId: string) => {
+    const rp = get().repoPath;
+    const ws = get().workspaces.find((w) => w.id === wsId);
+    if (!rp || !ws) return;
+    try {
+      await writeFileAt(rp, `${ws.path}/workspace.yaml`, serializeWorkspaceYaml(ws));
       scheduleRefresh();
     } catch (e) {
       onWriteError(e);
@@ -384,10 +394,14 @@ export const useAppStore = create<AppState>()((set, get) => {
       set({ loading: true, error: null });
       try {
         const opened = await openRepoSvc(target);
-        const ws = opened.workspaces[0] ?? null;
-        const loaded = ws
-          ? await loadWorkspace(opened.repoPath, ws)
-          : { tree: [], cases: [], runs: [], warnings: [] };
+        const loaded = await loadRepo(opened.repoPath, opened.workspaces);
+        // active workspace = the one holding the initially-selected case (else the first)
+        const firstCase = loaded.cases[0];
+        const firstCasePath = firstCase ? buildSuiteIndex(loaded.tree).path[firstCase.suite] ?? '' : '';
+        const ws =
+          opened.workspaces.find((w) => firstCasePath === w.path || firstCasePath.startsWith(w.path + '/')) ??
+          opened.workspaces[0] ??
+          null;
         set({
           repoPath: opened.repoPath,
           workspaces: opened.workspaces,
@@ -430,31 +444,49 @@ export const useAppStore = create<AppState>()((set, get) => {
       set({ screen: 'launcher' });
     },
 
+    // all workspaces are loaded eagerly; this just sets the active context for new items
     setWorkspace: async (w) => {
-      const { repoPath } = get();
-      set({ loading: true, error: null });
-      try {
-        const loaded = await loadWorkspace(repoPath, w);
-        set({
-          workspace: w,
-          tree: loaded.tree,
-          cases: loaded.cases,
-          runs: loaded.runs,
-          warnings: loaded.warnings,
-          changes: [],
-          sel: { kind: 'case', id: loaded.cases[0]?.id, runId: null },
-          view: 'editor',
-          loading: false,
-        });
-        seedPaths();
-      } catch (e) {
-        set({ loading: false, error: e instanceof Error ? e.message : String(e) });
-        get().toast('Could not load workspace');
+      set({ workspace: w });
+    },
+
+    updateWorkspace: (wsId, patch) => {
+      const ws = get().workspaces.find((w) => w.id === wsId);
+      if (!ws) return;
+      const next: Workspace = { ...ws, ...patch };
+      set((s) => {
+        let tree = s.tree;
+        if (patch.name !== undefined) {
+          tree = clone(s.tree);
+          const n = findSuiteNode(tree, wsId);
+          if (n) n.name = next.name;
+        }
+        return {
+          workspaces: s.workspaces.map((w) => (w.id === wsId ? next : w)),
+          workspace: s.workspace?.id === wsId ? next : s.workspace,
+          tree,
+        };
+      });
+      schedulePersist('ws:' + wsId, () => writeWsYaml(wsId));
+      const rp = get().repoPath;
+      if (rp && patch.runsDir !== undefined && next.runsDir.trim() !== '' && next.runsDir !== ws.runsDir) {
+        void (async () => {
+          await renamePath(rp, `${ws.path}/${ws.runsDir}`, `${ws.path}/${next.runsDir}`).catch(() => {});
+          await reloadFromDisk();
+          scheduleRefresh();
+        })();
       }
     },
     openCase: (id) => {
       void flushPersist();
-      set((s) => ({ sel: { ...s.sel, kind: 'case', id }, view: 'editor' }));
+      const c = get().cases.find((x) => x.id === id);
+      const ws = c ? workspaceOfPath(buildSuiteIndex(get().tree).path[c.suite] ?? '') : null;
+      set((s) => ({ sel: { ...s.sel, kind: 'case', id }, view: 'editor', workspace: ws ?? s.workspace }));
+    },
+    openSuite: (suiteId) => {
+      void flushPersist();
+      const node = findSuiteNode(get().tree, suiteId);
+      const ws = node ? workspaceOfPath(node.path) : null;
+      set((s) => ({ sel: { ...s.sel, kind: 'suite', suiteId }, view: 'suite', workspace: ws ?? s.workspace }));
     },
     openRunsList: () => {
       void flushPersist();
@@ -537,12 +569,22 @@ export const useAppStore = create<AppState>()((set, get) => {
 
     createCase: (parentSuiteId) => {
       const { cases, tree, workspace } = get();
-      if (!workspace) return;
+      const idx = buildSuiteIndex(tree);
+      // default target: the active workspace's root folder (cases always live in a workspace)
+      const suite = parentSuiteId ?? (workspace ? slug(workspace.path) : tree.find((n) => n.type === 'suite')?.id);
+      if (!suite) return;
+      const ws = workspaceOfPath(idx.path[suite] ?? '') ?? workspace;
+      if (!ws) return;
       const newId = randomId();
-      const num = Math.max(0, ...cases.map((c) => parseInt(c.displayId.split('-')[1] ?? '0', 10) || 0)) + 1;
-      const displayId = `${workspace.prefix}-${String(num).padStart(4, '0')}`;
-      const firstSuite = tree.find((n) => n.type === 'suite');
-      const suite = parentSuiteId ?? (firstSuite ? firstSuite.id : '');
+      const prefix = ws.prefix || 'CW';
+      const num =
+        Math.max(
+          0,
+          ...cases
+            .filter((c) => c.displayId.startsWith(prefix + '-'))
+            .map((c) => parseInt(c.displayId.split('-')[1] ?? '0', 10) || 0),
+        ) + 1;
+      const displayId = `${prefix}-${String(num).padStart(4, '0')}`;
       const kase: Case = {
         id: newId,
         displayId,
@@ -558,15 +600,14 @@ export const useAppStore = create<AppState>()((set, get) => {
       };
       set((s) => {
         const nextTree = clone(s.tree);
-        const target = findSuiteNode(nextTree, suite);
-        if (target) target.children.push({ type: 'case', id: newId });
-        else nextTree.push({ type: 'case', id: newId });
+        findSuiteNode(nextTree, suite)?.children.push({ type: 'case', id: newId });
         return {
           cases: [...s.cases, kase],
           tree: nextTree,
-          collapsed: suite ? { ...s.collapsed, [suite]: false } : s.collapsed,
+          collapsed: { ...s.collapsed, [suite]: false },
           sel: { kind: 'case', id: newId, runId: null },
           view: 'editor',
+          workspace: ws,
         };
       });
       upsertChange({ kind: 'case', refId: newId, path: casePath(kase), status: 'A', label: kase.title });
@@ -575,23 +616,24 @@ export const useAppStore = create<AppState>()((set, get) => {
     },
 
     createSuite: (parentId) => {
-      const parent = parentId ? findSuiteNode(get().tree, parentId) : null;
+      const { tree, workspace } = get();
+      const targetId = parentId ?? (workspace ? slug(workspace.path) : null);
+      const parent = targetId ? findSuiteNode(tree, targetId) : null;
+      if (!parent || !targetId) return; // suites live inside a workspace
       const id = 'suite-' + randomId(6);
       const name = 'New Suite';
-      const path = parent ? parent.path + '/' + name : name;
+      const path = parent.path + '/' + name;
       set((s) => {
         const nextTree = clone(s.tree);
-        const node: TreeNode = { type: 'suite', id, name, path, children: [] };
-        if (parentId == null) nextTree.push(node);
-        else findSuiteNode(nextTree, parentId)?.children.push(node);
+        findSuiteNode(nextTree, targetId)?.children.push({ type: 'suite', id, name, path, children: [] });
         return {
           tree: nextTree,
-          collapsed: parentId ? { ...s.collapsed, [parentId]: false } : s.collapsed,
+          collapsed: { ...s.collapsed, [targetId]: false },
           renaming: { id, value: name },
         };
       });
       if (get().repoPath) void makeDir(get().repoPath, suiteRel(id)).then(scheduleRefresh).catch(onWriteError);
-      get().toast(parent ? `New suite in ${parent.name}` : 'New top-level suite');
+      get().toast(`New suite in ${parent.name}`);
     },
 
     renameSuite: (id, name) => {
@@ -653,7 +695,9 @@ export const useAppStore = create<AppState>()((set, get) => {
     // moves a node and reassigns moved cases' suite — atomically, in one update
     moveNodeToParent: (dragId, parentId, index) => {
       if (dragId === parentId) return;
-      if (parentId && isDescendant(get().tree, dragId, parentId)) return;
+      if (findSuiteNode(get().tree, dragId)?.isWorkspace) return; // can't move a workspace folder
+      if (parentId == null) return; // items must stay inside a workspace
+      if (isDescendant(get().tree, dragId, parentId)) return;
       const draggedCase = get().cases.find((c) => c.id === dragId);
       const oldRel = draggedCase ? lastCasePath.get(dragId) ?? casePath(draggedCase) : suiteRel(dragId);
       set((s) => {
@@ -711,54 +755,39 @@ export const useAppStore = create<AppState>()((set, get) => {
           r.id !== runId ? r : { ...r, rows: r.rows.map((row, j) => (j === i ? { ...row, ...patch } : row)) },
         ),
       }));
-      if (run)
-        upsertChange({
-          kind: 'run',
-          refId: runId,
-          path: (get().workspace?.path ?? '') + '/' + run.file,
-          status: 'M',
-          label: run.name,
-        });
+      if (run) upsertChange({ kind: 'run', refId: runId, path: run.file, status: 'M', label: run.name });
       schedulePersist('run:' + runId, () => writeRunNow(runId));
     },
 
     createRun: ({ name, scope, tag, suite }) => {
-      const { cases, workspace } = get();
+      const { cases, workspace, tree } = get();
       if (!workspace) return;
+      const idx = buildSuiteIndex(tree);
+      const inWs = (c: Case) => {
+        const p = idx.path[c.suite] ?? '';
+        return p === workspace.path || p.startsWith(workspace.path + '/');
+      };
       const ids =
         scope === 'tag'
-          ? cases.filter((c) => c.tags.includes(tag)).map((c) => c.id)
+          ? cases.filter((c) => inWs(c) && c.tags.includes(tag)).map((c) => c.id)
           : scope === 'suite'
-            ? buildSuiteIndex(get().tree).inSuite(suite)
-            : cases.map((c) => c.id);
+            ? idx.inSuite(suite)
+            : cases.filter(inWs).map((c) => c.id);
       const rows: RunRow[] = ids.map((id) => {
         const c = cases.find((x) => x.id === id)!;
         return { case_id: id, display_id: c.displayId, title: c.title, result: 'not_run', tester: '', executed_at: '', notes: '' };
       });
       const date = new Date().toISOString().slice(0, 10);
       const stem = runFileStem(name, date);
-      const run: Run = {
-        id: stem,
-        name,
-        file: `${workspace.runsDir}/${stem}.csv`,
-        created: date,
-        status: 'open',
-        scope,
-        rows,
-      };
+      const file = `${workspace.path}/${workspace.runsDir}/${stem}.csv`; // full repo-relative
+      const run: Run = { id: file.replace(/\.csv$/, ''), name, file, created: date, status: 'open', scope, rows };
       set((s) => ({ runs: [run, ...s.runs], modal: null, sel: { ...s.sel, kind: 'run', runId: run.id, guideIndex: 0 }, view: 'guide' }));
-      upsertChange({
-        kind: 'run',
-        refId: run.id,
-        path: `${workspace.path}/${run.file}`,
-        status: 'A',
-        label: run.name,
-      });
+      upsertChange({ kind: 'run', refId: run.id, path: run.file, status: 'A', label: run.name });
       const rp = get().repoPath;
       if (rp) {
         void Promise.all([
-          writeFileAt(rp, runRel(run), serializeRunCsv(run.rows)),
-          writeFileAt(rp, runRel(run).replace(/\.csv$/, '.md'), serializeRunSidecar({ name, status: 'open' })),
+          writeFileAt(rp, run.file, serializeRunCsv(run.rows)),
+          writeFileAt(rp, run.file.replace(/\.csv$/, '.md'), serializeRunSidecar({ name, status: 'open' })),
         ])
           .then(scheduleRefresh)
           .catch(onWriteError);
