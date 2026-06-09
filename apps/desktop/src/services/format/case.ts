@@ -14,7 +14,12 @@ export interface ParseCaseResult {
   warnings: LintWarning[];
 }
 
-const RESERVED = ['Objective', 'Systems in Scope', 'Setup', 'Steps', 'Expected Results'] as const;
+const RESERVED = ['Objective', 'Systems in Scope', 'Setup', 'Steps', 'Acceptance Criteria'] as const;
+
+// Legacy headings that map onto a current reserved section. Files written before a rename keep
+// their content (and migrate to the new heading on the next save). 'Expected Results' was the
+// original name of the 'Acceptance Criteria' section.
+const HEADING_ALIASES: Record<string, string> = { 'Expected Results': 'Acceptance Criteria' };
 
 // ---------------------------------------------------------------------------
 // Serialize
@@ -73,7 +78,7 @@ export function serializeCase(c: ParsedCase, extra = ''): string {
     sectionBlock('## Systems in Scope', c.systems.map((s) => `- ${s}`).join('\n')),
     sectionBlock('## Setup', serializeSetup(c.setup)),
     sectionBlock('## Steps', serializeSteps(c.steps)),
-    sectionBlock('## Expected Results', c.expected.map((s) => `- ${s}`).join('\n')),
+    sectionBlock('## Acceptance Criteria', c.expected.map((s) => `- ${s}`).join('\n')),
   ];
 
   let body = blocks.join('\n\n');
@@ -105,7 +110,8 @@ function splitSections(content: string, warnings: LintWarning[]): { sections: Re
   for (const line of lines) {
     const h = /^##\s+(.+?)\s*$/.exec(line);
     if (h) {
-      const name = h[1].trim();
+      const raw = h[1].trim();
+      const name = HEADING_ALIASES[raw] ?? raw;
       if ((RESERVED as readonly string[]).includes(name)) {
         current = name;
         acc[name] ??= [];
@@ -203,7 +209,7 @@ export function parseCase(input: string): ParseCaseResult {
       systems: parseBullets(sections['Systems in Scope'] ?? ''),
       setup: parseSetup(sections['Setup'] ?? ''),
       steps: parseSteps(sections['Steps'] ?? ''),
-      expected: parseBullets(sections['Expected Results'] ?? ''),
+      expected: parseBullets(sections['Acceptance Criteria'] ?? ''),
     },
     extra,
     warnings,

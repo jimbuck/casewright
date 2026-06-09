@@ -483,7 +483,7 @@ export const conflict: Conflict = {
         },
         {
           key: 'expected',
-          label: 'Expected Results',
+          label: 'Acceptance Criteria',
           kind: 'list',
           base: ['A reset email is delivered within one minute.', 'The reset link allows setting a new password.', 'The user can log in with the new password.'],
           ours: ['A reset email is delivered within one minute.', 'The reset link allows setting a new password.', 'The user can log in with the new password.'],
@@ -504,7 +504,7 @@ export const conflict: Conflict = {
         { key: 'status', label: 'Status', kind: 'field', base: 'draft', ours: 'active', theirs: 'draft', auto: 'ours', reason: 'Changed only locally (ours) to active.' },
         {
           key: 'expected',
-          label: 'Expected Results',
+          label: 'Acceptance Criteria',
           kind: 'list',
           conflict: true,
           base: ['The discount is applied to the subtotal.', 'The receipt itemizes the coupon.', 'The billing ledger records the net charge.'],
