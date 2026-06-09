@@ -44,6 +44,18 @@ export function relJoin(...parts: string[]): string {
   return parts.flatMap((p) => (p === '.' || p === '' ? [] : p.split('/'))).join('/');
 }
 
+/**
+ * Convert an absolute path to a repo-relative, forward-slash path (the form workspaces
+ * use). Returns `''` for the repo root itself, or `null` if `abs` lies outside the repo.
+ */
+export function toRepoRelative(repoPath: string, abs: string): string | null {
+  const path = node.path();
+  const rel = path.relative(repoPath, abs);
+  if (rel === '') return ''; // the repo root itself
+  if (rel === '..' || rel.startsWith('..' + path.sep) || path.isAbsolute(rel)) return null;
+  return rel.split(path.sep).join('/');
+}
+
 /** Parse a standalone YAML document (e.g. `casewright.yaml`) by wrapping it as front matter. */
 function parseYamlDoc(raw: string): Record<string, unknown> {
   const wrapped = `---\n${raw.replace(/\r\n/g, '\n').trim()}\n---\n`;
@@ -51,7 +63,7 @@ function parseYamlDoc(raw: string): Record<string, unknown> {
 }
 
 /** Derive a placeholder display-ID prefix from a workspace name (PRD §4 req 13). */
-function derivePrefix(name: string): string {
+export function derivePrefix(name: string): string {
   const initials = name
     .split(/\s+/)
     .filter(Boolean)
