@@ -126,7 +126,9 @@ export function SuiteSummary() {
   myCases.forEach((c) => (counts[c.status] += 1));
 
   const relevantRuns = runs
-    .filter((r) => (isWorkspace ? (ws ? r.file.startsWith(ws.path + '/') : false) : r.rows.some((row) => idSet.has(row.case_id))))
+    .filter((r) =>
+      isWorkspace ? (ws ? ws.path === '' || r.file.startsWith(ws.path + '/') : false) : r.rows.some((row) => idSet.has(row.case_id)),
+    )
     .slice(0, 6);
 
   return (

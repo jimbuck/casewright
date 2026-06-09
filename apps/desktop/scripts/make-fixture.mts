@@ -19,6 +19,7 @@ import { simpleGit } from 'simple-git';
 import { cases, rootConfig, runs, tree, workspaces } from '@/data/sample';
 import { serializeCase } from '@/services/format/case';
 import { serializeRunCsv, serializeRunSidecar } from '@/services/format/run';
+import { serializeWorkspaceYaml } from '@/services/format/workspace';
 import { caseFileName } from '@/services/format/filename';
 import type { TreeNode } from '@/types';
 
@@ -37,10 +38,8 @@ writeFileSync(join(repoRoot, 'casewright.json'), JSON.stringify(rootConfig, null
 for (const ws of workspaces) {
   const dir = join(repoRoot, ...ws.path.split('/'));
   mkdirSync(dir, { recursive: true });
-  writeFileSync(
-    join(dir, 'workspace.yaml'),
-    `name: ${ws.name}\ndescription: ${ws.description}\ndisplayIdPrefix: ${ws.prefix}\nrunsDir: ${ws.runsDir}\n`,
-  );
+  // Use the app's canonical serializer so the fixture round-trips (handles quoting).
+  writeFileSync(join(dir, 'workspace.yaml'), serializeWorkspaceYaml(ws));
 }
 
 // --- the active workspace (Payments QA) holds the sample suite/case tree ---

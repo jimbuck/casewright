@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { node } from '@/lib/node';
 import { parseCase, serializeCase, type ParsedCase } from './format/case';
 import { serializeRunCsv } from './format/run';
-import { deletePath, loadWorkspace, makeDir, openRepo, renamePath, writeFileAt } from './repo';
+import { deletePath, loadRepo, loadWorkspace, makeDir, openRepo, relJoin, renamePath, writeFileAt } from './repo';
 
 let repoPath: string;
 
@@ -112,7 +112,6 @@ describe('loadWorkspace', () => {
 
   it('loadRepo combines workspaces as top-level folders', async () => {
     const { workspaces } = await openRepo(repoPath);
-    const { loadRepo } = await import('./repo');
     const { tree, cases } = await loadRepo(repoPath, workspaces);
     expect(tree).toHaveLength(1);
     expect(tree[0].type).toBe('suite');
@@ -122,6 +121,86 @@ describe('loadWorkspace', () => {
       expect(tree[0].path).toBe('areas/payments');
     }
     expect(cases).toHaveLength(2);
+  });
+});
+
+describe('relJoin', () => {
+  it('treats the repo root ("." or "") as empty — no "./" prefix or leading slash', () => {
+    expect(relJoin('', 'runs', 'x.csv')).toBe('runs/x.csv');
+    expect(relJoin('.', 'Auth')).toBe('Auth');
+    expect(relJoin('areas/payments', 'runs', 'x.csv')).toBe('areas/payments/runs/x.csv');
+    expect(relJoin('Auth', 'file.md')).toBe('Auth/file.md');
+    expect(relJoin('.')).toBe('');
+  });
+});
+
+describe('root (implicit) workspace normalization', () => {
+  let rootRepo: string;
+
+  beforeAll(async () => {
+    const fsp = node.fsp();
+    const path = node.path();
+    const os = node.os();
+    rootRepo = await fsp.mkdtemp(path.join(os.tmpdir(), 'cw-root-'));
+    // No casewright.json and no workspace.yaml → implicit single workspace at the repo root.
+    await fsp.writeFile(path.join(rootRepo, 'CW-0002-root-case.md'), serializeCase(c2)); // case at the workspace root
+    await fsp.mkdir(path.join(rootRepo, 'Auth'), { recursive: true });
+    await fsp.writeFile(path.join(rootRepo, 'Auth', 'CW-0001-nested.md'), serializeCase(c1));
+    await fsp.mkdir(path.join(rootRepo, 'runs'), { recursive: true });
+    await fsp.writeFile(
+      path.join(rootRepo, 'runs', '2026-06-02-smoke.csv'),
+      serializeRunCsv([
+        { case_id: 'aaa1111aaaa', display_id: 'PAY-0001', title: 'First case', result: 'pass', tester: 'me', executed_at: '2026-06-02 09:00', notes: '' },
+      ]),
+    );
+    const git = node.simpleGit()(rootRepo);
+    await git.init();
+    await git.addConfig('user.email', 'test@casewright.dev', false, 'local');
+    await git.addConfig('user.name', 'Test', false, 'local');
+    await git.add('.');
+    await git.commit('seed');
+    await git.branch(['-M', 'main']);
+  });
+
+  afterAll(async () => {
+    await node.fsp().rm(rootRepo, { recursive: true, force: true });
+  });
+
+  it('treats the repo root as a single workspace with path ""', async () => {
+    const { workspaces, warnings } = await openRepo(rootRepo);
+    expect(workspaces).toHaveLength(1);
+    expect(workspaces[0].path).toBe('');
+    expect(workspaces[0].id).not.toBe('');
+    expect(warnings.some((w) => w.code === 'no-config')).toBe(true);
+  });
+
+  it('emits non-empty suite ids and no "./"-prefixed paths (Copilot #1–#3)', async () => {
+    const { workspaces } = await openRepo(rootRepo);
+    const ws = workspaces[0];
+    const { tree, cases, runs } = await loadRepo(rootRepo, workspaces);
+
+    // workspace wrapper node id matches the (non-empty) workspace id
+    expect(tree).toHaveLength(1);
+    const wsNode = tree[0];
+    expect(wsNode.type === 'suite' && wsNode.id).toBe(ws.id);
+    expect(ws.id).not.toBe('');
+
+    // a nested suite's path is "Auth", not "./Auth"
+    if (wsNode.type === 'suite') {
+      const auth = wsNode.children.find((n) => n.type === 'suite');
+      expect(auth && auth.type === 'suite' && auth.path).toBe('Auth');
+    }
+
+    // the root-level case belongs to the (non-empty) workspace-root suite id
+    const rootCase = cases.find((c) => c.id === c2.id)!;
+    expect(rootCase.suite).toBe(ws.id);
+    expect(rootCase.suite).not.toBe('');
+
+    // run file/id carry no "./" prefix
+    expect(runs).toHaveLength(1);
+    expect(runs[0].file).toBe('runs/2026-06-02-smoke.csv');
+    expect(runs[0].id).toBe('runs/2026-06-02-smoke');
+    expect(runs[0].file.startsWith('./')).toBe(false);
   });
 });
 

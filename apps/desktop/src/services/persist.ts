@@ -22,7 +22,14 @@ export function schedulePersist(key: string, job: Job, ms = 400): void {
   jobs.set(key, job);
   const existing = timers.get(key);
   if (existing) clearTimeout(existing);
-  timers.set(key, setTimeout(() => void fire(key), ms));
+  // Catch here so a failing job doesn't surface as an unhandled rejection (the
+  // timer callback isn't awaited anywhere).
+  timers.set(
+    key,
+    setTimeout(() => {
+      fire(key).catch((err) => console.error(`persist job "${key}" failed:`, err));
+    }, ms),
+  );
 }
 
 /** Run all pending jobs now (call before reads/commits/navigation). Drains jobs

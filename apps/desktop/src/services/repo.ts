@@ -28,6 +28,15 @@ async function isDir(p: string): Promise<boolean> {
   }
 }
 
+/**
+ * Join repo-relative path segments, treating the repo root (`'.'` or `''`) as empty
+ * so we never emit a `./foo` prefix or a leading slash. Returns `''` for the root
+ * itself — which is also how the store represents "no parent dir" (see `casePath`).
+ */
+export function relJoin(...parts: string[]): string {
+  return parts.flatMap((p) => (p === '.' || p === '' ? [] : p.split('/'))).join('/');
+}
+
 /** Parse a standalone YAML document (e.g. `workspace.yaml`) by wrapping it as front matter. */
 function parseYamlDoc(raw: string): Record<string, unknown> {
   const wrapped = `---\n${raw.replace(/\r\n/g, '\n').trim()}\n---\n`;
@@ -76,7 +85,7 @@ async function loadWorkspaceMeta(repoPath: string, rel: string): Promise<Workspa
   return {
     id: slug(rel) || slug(baseName) || 'workspace',
     name: yaml.name || baseName,
-    path: rel,
+    path: rel === '.' ? '' : rel, // repo root is represented as '' (no './' prefix downstream)
     description: yaml.description ?? '',
     prefix: yaml.displayIdPrefix,
     runsDir: yaml.runsDir,
@@ -153,7 +162,7 @@ async function loadRuns(runsAbs: string, ws: Workspace, warnings: LintWarning[])
   for (const f of csvs) {
     const text = (await readMaybe(path.join(runsAbs, f.name))) ?? '';
     const { rows, warnings: w } = parseRunCsv(text);
-    const file = `${ws.path}/${ws.runsDir}/${f.name}`; // full repo-relative path
+    const file = relJoin(ws.path, ws.runsDir, f.name); // full repo-relative path
     for (const x of w) warnings.push({ ...x, file });
 
     const stem = f.name.replace(/\.csv$/, '');
@@ -166,7 +175,7 @@ async function loadRuns(runsAbs: string, ws: Workspace, warnings: LintWarning[])
       status = sidecar.status;
     }
     runs.push({
-      id: `${ws.path}/${ws.runsDir}/${stem}`,
+      id: relJoin(ws.path, ws.runsDir, stem),
       name,
       file,
       created: stem.match(/^\d{4}-\d{2}-\d{2}/)?.[0] ?? '',
@@ -197,18 +206,20 @@ export async function loadWorkspace(repoPath: string, ws: Workspace): Promise<Lo
     const files = entries.filter((e) => e.isFile() && e.name.endsWith('.md') && e.name !== '_suite.md').sort(byName);
     const dirs = entries.filter((e) => e.isDirectory() && !e.name.startsWith('.')).sort(byName);
     const nodes: TreeNode[] = [];
-    const suiteId = slug(fullRel);
+    // The workspace-root level reuses the (already-normalized, never-empty) workspace
+    // id so a root workspace (`ws.path === ''`) doesn't get an empty suite id.
+    const suiteId = fullRel === ws.path ? ws.id : slug(fullRel);
 
     for (const f of files) {
       const text = (await readMaybe(path.join(absDir, f.name))) ?? '';
       const parsed = parseCase(text);
       cases.push({ ...parsed.case, suite: suiteId, modified: false });
       nodes.push({ type: 'case', id: parsed.case.id });
-      for (const w of parsed.warnings) warnings.push({ ...w, file: `${fullRel}/${f.name}` });
+      for (const w of parsed.warnings) warnings.push({ ...w, file: relJoin(fullRel, f.name) });
     }
     for (const d of dirs) {
       if (fullRel === ws.path && d.name === ws.runsDir) continue; // runs/ at the root isn't a suite
-      const childFull = `${fullRel}/${d.name}`;
+      const childFull = relJoin(fullRel, d.name);
       const children = await walk(path.join(absDir, d.name), childFull);
       nodes.push({
         type: 'suite',
@@ -238,7 +249,7 @@ export async function loadRepo(repoPath: string, workspaces: Workspace[]): Promi
   const warnings: LintWarning[] = [];
   for (const ws of workspaces) {
     const loaded = await loadWorkspace(repoPath, ws);
-    tree.push({ type: 'suite', isWorkspace: true, id: slug(ws.path), name: ws.name, path: ws.path, children: loaded.tree });
+    tree.push({ type: 'suite', isWorkspace: true, id: ws.id, name: ws.name, path: ws.path, children: loaded.tree });
     cases.push(...loaded.cases);
     runs.push(...loaded.runs);
     warnings.push(...loaded.warnings);

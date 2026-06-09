@@ -10,6 +10,7 @@ import {
   loadRepo,
   makeDir,
   openRepo as openRepoSvc,
+  relJoin,
   renamePath,
   writeFileAt,
 } from '@/services/repo';
@@ -189,9 +190,10 @@ export const useAppStore = create<AppState>()((set, get) => {
   const suiteRel = (suiteId: string): string => buildSuiteIndex(get().tree).path[suiteId] ?? '';
   const runRel = (run: Run): string => run.file; // already full repo-relative
 
-  /** The workspace owning a given repo-relative path (longest matching prefix). */
+  /** The workspace owning a given repo-relative path (longest matching prefix). The
+   *  repo-root workspace (`path === ''`) owns everything; a more specific workspace wins. */
   const workspaceOfPath = (full: string): Workspace | null => {
-    const matches = get().workspaces.filter((w) => full === w.path || full.startsWith(w.path + '/'));
+    const matches = get().workspaces.filter((w) => w.path === '' || full === w.path || full.startsWith(w.path + '/'));
     return matches.sort((a, b) => b.path.length - a.path.length)[0] ?? null;
   };
 
@@ -765,7 +767,7 @@ export const useAppStore = create<AppState>()((set, get) => {
       const idx = buildSuiteIndex(tree);
       const inWs = (c: Case) => {
         const p = idx.path[c.suite] ?? '';
-        return p === workspace.path || p.startsWith(workspace.path + '/');
+        return workspace.path === '' || p === workspace.path || p.startsWith(workspace.path + '/');
       };
       const ids =
         scope === 'tag'
@@ -779,7 +781,7 @@ export const useAppStore = create<AppState>()((set, get) => {
       });
       const date = new Date().toISOString().slice(0, 10);
       const stem = runFileStem(name, date);
-      const file = `${workspace.path}/${workspace.runsDir}/${stem}.csv`; // full repo-relative
+      const file = relJoin(workspace.path, workspace.runsDir, `${stem}.csv`); // full repo-relative
       const run: Run = { id: file.replace(/\.csv$/, ''), name, file, created: date, status: 'open', scope, rows };
       set((s) => ({ runs: [run, ...s.runs], modal: null, sel: { ...s.sel, kind: 'run', runId: run.id, guideIndex: 0 }, view: 'guide' }));
       upsertChange({ kind: 'run', refId: run.id, path: run.file, status: 'A', label: run.name });

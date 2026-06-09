@@ -25,6 +25,8 @@ export async function listRecents(): Promise<Recent[]> {
 async function write(list: Recent[]): Promise<void> {
   const file = recentsFile();
   if (!file) return;
+  // The OS data dir may not exist yet (fresh install / portable mode).
+  await node.fsp().mkdir(node.path().dirname(file), { recursive: true });
   await node.fsp().writeFile(file, JSON.stringify(list, null, 2) + '\n');
 }
 
