@@ -3,6 +3,9 @@
  * repository under apps/desktop/.fixture, using the same serializers the app uses.
  * This is the canonical dev/test target for the on-disk + Git backend.
  *
+ * Layout (PRD §4): `.casewright/config.yaml` + `.casewright/.gitignore` + a flat
+ * central `.casewright/runs/`, plus a `casewright.yaml` inside each workspace folder.
+ *
  * Run via `pnpm --filter @casewright/desktop fixture` (uses vite-node so the `@`
  * alias + TS resolve). Pass `--with-origin` to also create a bare `.fixture-origin.git`
  * remote and push to it (for the Git-loop tests).
@@ -16,12 +19,13 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { simpleGit } from 'simple-git';
 
-import { cases, rootConfig, runs, tree, workspaces } from '@/data/sample';
+import { cases, runs, trees, workspaces } from '@/data/sample';
 import { serializeCase } from '@/services/format/case';
+import { CASEWRIGHT_GITIGNORE, serializeConfigYaml } from '@/services/format/config';
 import { serializeRunCsv, serializeRunSidecar } from '@/services/format/run';
 import { serializeWorkspaceYaml } from '@/services/format/workspace';
 import { caseFileName } from '@/services/format/filename';
-import type { TreeNode } from '@/types';
+import type { Case, TreeNode } from '@/types';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(here, '..', '.fixture');
@@ -31,20 +35,13 @@ const withOrigin = process.argv.includes('--with-origin');
 rmSync(repoRoot, { recursive: true, force: true });
 mkdirSync(repoRoot, { recursive: true });
 
-// --- root config ---
-writeFileSync(join(repoRoot, 'casewright.json'), JSON.stringify(rootConfig, null, 2) + '\n');
+// --- .casewright/ scaffold (repo-wide config + central runs + gitignore) ---
+const cwDir = join(repoRoot, '.casewright');
+mkdirSync(join(cwDir, 'runs'), { recursive: true });
+writeFileSync(join(cwDir, 'config.yaml'), serializeConfigYaml({ version: 1, name: 'Casewright Fixture' }));
+writeFileSync(join(cwDir, '.gitignore'), CASEWRIGHT_GITIGNORE);
 
-// --- one workspace.yaml per declared workspace ---
-for (const ws of workspaces) {
-  const dir = join(repoRoot, ...ws.path.split('/'));
-  mkdirSync(dir, { recursive: true });
-  // Use the app's canonical serializer so the fixture round-trips (handles quoting).
-  writeFileSync(join(dir, 'workspace.yaml'), serializeWorkspaceYaml(ws));
-}
-
-// --- the active workspace (Payments QA) holds the sample suite/case tree ---
-const active = workspaces[0];
-const wsRoot = join(repoRoot, ...active.path.split('/'));
+// --- one casewright.yaml + suite/case subtree per workspace ---
 const byId = new Map(cases.map((c) => [c.id, c]));
 
 function walk(nodes: TreeNode[], parentDir: string) {
@@ -56,16 +53,22 @@ function walk(nodes: TreeNode[], parentDir: string) {
     } else {
       const c = byId.get(n.id);
       if (!c) continue;
-      const { suite: _s, modified: _m, ...parsed } = c;
+      const { suite: _s, modified: _m, ...parsed } = c as Case;
       writeFileSync(join(parentDir, caseFileName(c)), serializeCase(parsed));
     }
   }
 }
-walk(tree, wsRoot);
 
-// --- runs (CSV + sidecar) under the workspace runs dir ---
-const runsDir = join(wsRoot, active.runsDir);
-mkdirSync(runsDir, { recursive: true });
+for (const ws of workspaces) {
+  const dir = join(repoRoot, ...ws.path.split('/'));
+  mkdirSync(dir, { recursive: true });
+  // Use the app's canonical serializer so the fixture round-trips (handles quoting).
+  writeFileSync(join(dir, 'casewright.yaml'), serializeWorkspaceYaml(ws));
+  walk(trees[ws.id] ?? [], dir);
+}
+
+// --- runs (CSV + sidecar) flat under .casewright/runs/ ---
+const runsDir = join(cwDir, 'runs');
 for (const run of runs) {
   const csvName = run.file.split('/').pop() ?? 'run.csv';
   writeFileSync(join(runsDir, csvName), serializeRunCsv(run.rows));
@@ -91,5 +94,5 @@ if (withOrigin) {
   console.log('Bare origin:', originDir);
 }
 
-const fileCount = cases.length + runs.length * 2 + workspaces.length + 1;
-console.log(`Fixture written to ${repoRoot} (~${fileCount} files, ${cases.length} cases, ${runs.length} runs).`);
+const fileCount = cases.length + runs.length * 2 + workspaces.length + 2;
+console.log(`Fixture written to ${repoRoot} (~${fileCount} files, ${cases.length} cases, ${runs.length} runs, ${workspaces.length} workspaces).`);

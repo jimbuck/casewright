@@ -132,7 +132,7 @@ the `.casewright/` init/scaffold flow. (PRD FR 2, 11, 15, 19, 21.)
 
 ---
 
-### [ ] 0500 - Fixture & sample data regeneration to the new layout
+### [x] 0500 - Fixture & sample data regeneration to the new layout
 
 **Overview:** Regenerate the dev/test fixture and the in-memory seed to the new layout:
 `.casewright/config.yaml`, `.casewright/runs/` (flat, central), `.casewright/.gitignore`, and a
@@ -145,10 +145,10 @@ cross-workspace run is demonstrable. (PRD FR 22, 23; §8.)
 - `apps/desktop/scripts/make-fixture.mts` - Write the `.casewright/` layout + per-workspace `casewright.yaml`.
 
 **Sub-Tasks:**
-- [ ] 0501 In `sample.ts`: delete the `rootConfig` export and the `runsDir` field on every `Workspace`; rewrite each run's `file`/`id` to `.casewright/runs/<stem>`; update the `conflict` run `path` to `.casewright/runs/…` (FR 22, 23).
-- [ ] 0502 In `sample.ts`, associate suites/cases with **more than one** workspace (e.g. give a second workspace its own suite + cases) and add a run whose rows reference cases from ≥2 workspaces, so the cross-workspace summary metric (PRD §8) is exercised. Adjust the `tree` shape so each workspace's subtree is materializable.
-- [ ] 0503 In `make-fixture.mts`: stop writing `casewright.json`/`workspace.yaml`/per-workspace `runs/`; instead write `.casewright/config.yaml` (`serializeConfigYaml`), `.casewright/.gitignore` (`CASEWRIGHT_GITIGNORE`), and the flat `.casewright/runs/` CSV+sidecars; write a `casewright.yaml` per workspace (`serializeWorkspaceYaml`) and materialize each workspace's suite/case subtree under its path (FR 23).
-- [ ] 0504 Regenerate via `pnpm --filter @casewright/desktop fixture` and verify `git status` inside `.fixture` shows `.casewright/config.yaml`, `.casewright/runs/`, and `.casewright/.gitignore` tracked while `.casewright/cache/` would be ignored (PRD §8 success metric).
+- [x] 0501 In `sample.ts`: deleted the `rootConfig` export and the `runsDir` field on every `Workspace`; rewrote each run's `file`/`id` to `.casewright/runs/<stem>`; updated the `conflict` run `path` to `.casewright/runs/…` (FR 22, 23).
+- [x] 0502 In `sample.ts`, added an **Onboarding** workspace with its own Activation/Invites suites + ONB cases, replaced the single `tree` with a per-workspace `trees` map, and added a "Release readiness — cross-team" run whose rows reference both PAY and ONB cases — exercising the cross-workspace metric (PRD §8).
+- [x] 0503 In `make-fixture.mts`: stopped writing `casewright.json`/`workspace.yaml`/per-workspace `runs/`; now writes `.casewright/config.yaml` (`serializeConfigYaml`), `.casewright/.gitignore` (`CASEWRIGHT_GITIGNORE`), and flat `.casewright/runs/` CSV+sidecars; writes a `casewright.yaml` per workspace and materializes each workspace's subtree from `trees[ws.id]` (FR 23).
+- [x] 0504 Regenerated via `pnpm fixture` and verified: `.casewright/config.yaml`, `.casewright/.gitignore`, and `.casewright/runs/*` are git-tracked; per-workspace `casewright.yaml` + multi-workspace trees on disk; a `.casewright/cache/probe` left `git status` clean (ignored). Format round-trip tests stay green (17/17) (PRD §8).
 
 **Notes:**
 - Depends on 0100 (types) + 0200 (serializers). The current script only materializes
