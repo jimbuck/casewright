@@ -31,7 +31,9 @@ export function CreateRunModal() {
   const [suite, setSuite] = useState(suites[0]?.id ?? '');
   const [name, setName] = useState('');
 
-  const wsCount = ctx.cases.filter((c) => ctx.caseWorkspace(c.id)?.id === ctx.workspace?.id).length;
+  // The workspace wrapper node's id is a suite id, so this collects the workspace's
+  // cases in one pass (avoids an O(n^2) per-case caseWorkspace lookup).
+  const wsCount = ctx.workspace ? ctx.casesInSuite(ctx.workspace.id).length : 0;
   const count =
     scope === 'tag'
       ? ctx.cases.filter((c) => c.tags.includes(tag)).length

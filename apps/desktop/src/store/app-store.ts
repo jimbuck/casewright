@@ -418,8 +418,27 @@ export const useAppStore = create<AppState>()((set, get) => {
       try {
         const opened = await openRepoSvc(target);
         // No `.casewright/` yet — stay on the launcher and offer to scaffold it (req 2).
+        // Clear any previously-open repo's slices so the launcher never reads stale data.
         if (opened.needsInit) {
-          set({ loading: false, repoPath: opened.repoPath, branch: opened.branch, needsInit: true, warnings: opened.warnings, screen: 'launcher' });
+          set({
+            loading: false,
+            repoPath: opened.repoPath,
+            branch: opened.branch,
+            needsInit: true,
+            emptyRepo: false,
+            warnings: opened.warnings,
+            screen: 'launcher',
+            workspaces: [],
+            workspace: null,
+            tree: [],
+            cases: [],
+            runs: [],
+            changes: [],
+            conflict: null,
+            ahead: 0,
+            behind: 0,
+            sel: { kind: 'case', id: undefined, runId: null },
+          });
           return;
         }
         const loaded = await loadRepo(opened.repoPath, opened.workspaces);
