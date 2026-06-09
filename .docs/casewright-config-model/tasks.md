@@ -77,7 +77,7 @@ serializers. (PRD FR 1, 2, 4, 5, 6–11, 14, 16, 20.)
 
 ---
 
-### [ ] 0300 - Store rewiring: repo-level runs, scope-based create, `casewright.yaml` writes, init action
+### [x] 0300 - Store rewiring: repo-level runs, scope-based create, `casewright.yaml` writes, init action
 
 **Overview:** Update `app-store.ts` so run paths target `.casewright/runs/`, `createRun` seeds rows
 by Repo / Workspace / Suite scope across **all** workspaces, `updateWorkspace` writes
@@ -90,12 +90,12 @@ un-initialized repo. (PRD FR 15, 17–21, 2.)
 - `apps/desktop/src/services/recents.ts` - Verify recents still records `workspaces`/`lastWorkspaceId` (no schema change expected).
 
 **Sub-Tasks:**
-- [ ] 0301 Repoint run paths to `.casewright/runs/`: in `createRun`, build `file = '.casewright/runs/' + stem + '.csv'` (+ matching `.md` sidecar) and `id` from the stem; `runRel` returns `run.file` unchanged; delete all `relJoin(workspace.path, workspace.runsDir, …)` usage (FR 16, 20).
-- [ ] 0302 Make `createRun` scope-based across the whole repo: `'all'` → every case in the repo; `'workspace'` → cases in the active workspace; `'suite'` → the suite subtree (`casesInSuite`); `'tag'` → cases carrying the tag (repo-wide). Record a human-readable `scope` label (e.g. `"workspace: Payments QA"`). Drop the old `workspace`-gated `inWs` filter (FR 17, 19).
-- [ ] 0303 In `updateWorkspace`, write `<workspace>/casewright.yaml` (rename `writeWsYaml`'s target from `workspace.yaml`) and **remove** the entire `runsDir` rename branch + any `next.runsDir` references (FR 15).
-- [ ] 0304 Add a `caseWorkspace(caseId)` helper (resolve a case → its suite path → owning `Workspace` via `workspaceOfPath`) and expose it for summaries; this is the read-time owning-workspace derivation (FR 18) that replaces file-path-prefix bucketing.
-- [ ] 0305 Add an `initRepo` store action that calls the service scaffold (0207) then loads the repo, plus state flags (e.g. `needsInit: boolean`) set from the service warnings so the UI can branch (FR 2).
-- [ ] 0306 Update the `openRepo` action to consume the `needs-init` / empty-repo warnings without crashing: set the flags, keep `screen`/`workspace` in a safe state, and surface a toast/banner instead of opening a broken workbench (FR 1, 11).
+- [x] 0301 Repoint run paths to `.casewright/runs/`: in `createRun`, build `file = relJoin(RUNS_REL, stem + '.csv')` (+ matching `.md` sidecar) and `id` from the stem; `runRel` returns `run.file` unchanged; deleted all `relJoin(workspace.path, workspace.runsDir, …)` usage (FR 16, 20).
+- [x] 0302 Made `createRun` scope-based across the whole repo: `'all'` → every case in the repo; `'workspace'` → cases in the active workspace; `'suite'` → the suite subtree (`idx.inSuite`); `'tag'` → cases carrying the tag (repo-wide). Records a human-readable `scope` label (e.g. `"workspace: Payments QA"`, `"repo"`). Dropped the old `workspace`-gated filter (FR 17, 19).
+- [x] 0303 In `updateWorkspace`, `writeWsYaml` now writes `<workspace>/casewright.yaml` (via `relJoin`, root-safe) and the entire `runsDir` rename branch is removed (FR 15).
+- [x] 0304 Added a `caseWorkspace(caseId)` helper (resolve a case → its suite path → owning `Workspace` via `workspaceOfPath`), exposed on the store for summaries — the read-time owning-workspace derivation (FR 18) that replaces file-path-prefix bucketing.
+- [x] 0305 Added an `initRepo` store action that calls the service scaffold (0207) then re-opens the repo, plus `needsInit`/`emptyRepo` state flags set from the open result so the UI can branch (FR 2).
+- [x] 0306 Updated the `openRepo` action to consume `needsInit` / empty-repo without crashing: sets the flags, keeps `screen: 'launcher'` + `workspace: null` in those states instead of opening a broken workbench (FR 1, 11).
 
 **Notes:**
 - Depends on 0100 + 0200. The `caseWorkspace` lookup is reused by the summary pages (0402, FR 18,

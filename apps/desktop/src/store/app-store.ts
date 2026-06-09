@@ -7,6 +7,7 @@ import { serializeRunCsv, serializeRunSidecar } from '@/services/format/run';
 import { serializeWorkspaceYaml } from '@/services/format/workspace';
 import {
   deletePath,
+  initRepo as initRepoSvc,
   loadRepo,
   makeDir,
   openRepo as openRepoSvc,
@@ -109,6 +110,11 @@ export interface AppState {
   warnings: LintWarning[];
   recents: Recent[];
   loadRecents: () => Promise<void>;
+  /** Opened a Git repo that has no `.casewright/` yet — offer to scaffold it. */
+  needsInit: boolean;
+  /** Opened a `.casewright/` repo with zero workspaces — invite creating the first. */
+  emptyRepo: boolean;
+  initRepo: () => Promise<void>;
 
   /* navigation / selection */
   screen: Screen;
@@ -152,6 +158,8 @@ export interface AppState {
   /* derived helpers */
   casePath: (c: Case) => string;
   casesInSuite: (suiteId: string) => string[];
+  /** The workspace owning a case (derived from its suite path) — for repo-level run bucketing. */
+  caseWorkspace: (caseId: string) => Workspace | null;
   toast: (msg: string) => void;
   toasts: Toast[];
 
@@ -177,6 +185,9 @@ export interface AppState {
   setModal: (modal: ModalKind) => void;
 }
 
+/** Repo-level runs live flat under `.casewright/runs/` (PRD §4 req 16). */
+const RUNS_REL = '.casewright/runs';
+
 const changeKey = (c: Change) => c.kind + ':' + c.refId;
 
 export const useAppStore = create<AppState>()((set, get) => {
@@ -195,6 +206,13 @@ export const useAppStore = create<AppState>()((set, get) => {
   const workspaceOfPath = (full: string): Workspace | null => {
     const matches = get().workspaces.filter((w) => w.path === '' || full === w.path || full.startsWith(w.path + '/'));
     return matches.sort((a, b) => b.path.length - a.path.length)[0] ?? null;
+  };
+
+  /** Derive a case's owning workspace from its suite path (PRD §4 req 18). */
+  const caseWorkspace = (caseId: string): Workspace | null => {
+    const c = get().cases.find((x) => x.id === caseId);
+    if (!c) return null;
+    return workspaceOfPath(buildSuiteIndex(get().tree).path[c.suite] ?? '');
   };
 
   // the path each case was last written to — drives rename-on-write cleanup
@@ -275,7 +293,7 @@ export const useAppStore = create<AppState>()((set, get) => {
     const ws = get().workspaces.find((w) => w.id === wsId);
     if (!rp || !ws) return;
     try {
-      await writeFileAt(rp, `${ws.path}/workspace.yaml`, serializeWorkspaceYaml(ws));
+      await writeFileAt(rp, relJoin(ws.path, 'casewright.yaml'), serializeWorkspaceYaml(ws));
       scheduleRefresh();
     } catch (e) {
       onWriteError(e);
@@ -360,6 +378,8 @@ export const useAppStore = create<AppState>()((set, get) => {
     error: null,
     warnings: [],
     recents: [],
+    needsInit: false,
+    emptyRepo: false,
     conflict: null,
     screen: 'launcher',
     view: 'editor',
@@ -379,6 +399,7 @@ export const useAppStore = create<AppState>()((set, get) => {
     /* ---- derived helpers ---- */
     casePath,
     casesInSuite: (suiteId) => buildSuiteIndex(get().tree).inSuite(suiteId),
+    caseWorkspace,
     toast: (msg) => {
       const id = Math.random();
       set((s) => ({ toasts: [...s.toasts, { id, msg }] }));
@@ -393,9 +414,14 @@ export const useAppStore = create<AppState>()((set, get) => {
     openRepo: async (path) => {
       const target = path ?? (await pickDirectory());
       if (!target) return;
-      set({ loading: true, error: null });
+      set({ loading: true, error: null, needsInit: false, emptyRepo: false });
       try {
         const opened = await openRepoSvc(target);
+        // No `.casewright/` yet — stay on the launcher and offer to scaffold it (req 2).
+        if (opened.needsInit) {
+          set({ loading: false, repoPath: opened.repoPath, branch: opened.branch, needsInit: true, warnings: opened.warnings, screen: 'launcher' });
+          return;
+        }
         const loaded = await loadRepo(opened.repoPath, opened.workspaces);
         // active workspace = the one holding the initially-selected case (else the first)
         const firstCase = loaded.cases[0];
@@ -404,6 +430,7 @@ export const useAppStore = create<AppState>()((set, get) => {
           opened.workspaces.find((w) => firstCasePath === w.path || firstCasePath.startsWith(w.path + '/')) ??
           opened.workspaces[0] ??
           null;
+        const empty = opened.workspaces.length === 0; // `.casewright/` present but no markers (req 11)
         set({
           repoPath: opened.repoPath,
           workspaces: opened.workspaces,
@@ -417,7 +444,9 @@ export const useAppStore = create<AppState>()((set, get) => {
           conflict: null,
           ahead: 0,
           behind: 0,
-          screen: 'main',
+          needsInit: false,
+          emptyRepo: empty,
+          screen: empty ? 'launcher' : 'main',
           view: 'editor',
           sel: { kind: 'case', id: loaded.cases[0]?.id, runId: null },
           loading: false,
@@ -438,6 +467,21 @@ export const useAppStore = create<AppState>()((set, get) => {
       } catch (e) {
         set({ loading: false, error: e instanceof Error ? e.message : String(e) });
         get().toast('Could not open repository');
+      }
+    },
+
+    initRepo: async () => {
+      const target = get().repoPath;
+      if (!target) return;
+      set({ loading: true, error: null });
+      try {
+        await initRepoSvc(target);
+        set({ needsInit: false });
+        await get().openRepo(target); // re-open the now-initialized repo
+        get().toast('Initialized .casewright/');
+      } catch (e) {
+        set({ loading: false, error: e instanceof Error ? e.message : String(e) });
+        get().toast('Could not initialize repository');
       }
     },
 
@@ -469,14 +513,6 @@ export const useAppStore = create<AppState>()((set, get) => {
         };
       });
       schedulePersist('ws:' + wsId, () => writeWsYaml(wsId));
-      const rp = get().repoPath;
-      if (rp && patch.runsDir !== undefined && next.runsDir.trim() !== '' && next.runsDir !== ws.runsDir) {
-        void (async () => {
-          await renamePath(rp, `${ws.path}/${ws.runsDir}`, `${ws.path}/${next.runsDir}`).catch(() => {});
-          await reloadFromDisk();
-          scheduleRefresh();
-        })();
-      }
     },
     openCase: (id) => {
       void flushPersist();
@@ -763,26 +799,37 @@ export const useAppStore = create<AppState>()((set, get) => {
 
     createRun: ({ name, scope, tag, suite }) => {
       const { cases, workspace, tree } = get();
-      if (!workspace) return;
       const idx = buildSuiteIndex(tree);
-      const inWs = (c: Case) => {
+      // Seed rows by scope across the whole repo (runs are repo-level, PRD §4 req 17, 19).
+      const inActiveWs = (c: Case) => {
+        if (!workspace) return true;
         const p = idx.path[c.suite] ?? '';
         return workspace.path === '' || p === workspace.path || p.startsWith(workspace.path + '/');
       };
       const ids =
         scope === 'tag'
-          ? cases.filter((c) => inWs(c) && c.tags.includes(tag)).map((c) => c.id)
+          ? cases.filter((c) => c.tags.includes(tag)).map((c) => c.id)
           : scope === 'suite'
             ? idx.inSuite(suite)
-            : cases.filter(inWs).map((c) => c.id);
+            : scope === 'workspace'
+              ? cases.filter(inActiveWs).map((c) => c.id)
+              : cases.map((c) => c.id); // 'all' → whole repo
       const rows: RunRow[] = ids.map((id) => {
         const c = cases.find((x) => x.id === id)!;
         return { case_id: id, display_id: c.displayId, title: c.title, result: 'not_run', tester: '', executed_at: '', notes: '' };
       });
       const date = new Date().toISOString().slice(0, 10);
       const stem = runFileStem(name, date);
-      const file = relJoin(workspace.path, workspace.runsDir, `${stem}.csv`); // full repo-relative
-      const run: Run = { id: file.replace(/\.csv$/, ''), name, file, created: date, status: 'open', scope, rows };
+      const file = relJoin(RUNS_REL, `${stem}.csv`); // .casewright/runs/<stem>.csv
+      const scopeLabel =
+        scope === 'tag'
+          ? `tag: ${tag}`
+          : scope === 'suite'
+            ? `suite: ${findSuiteNode(tree, suite)?.name ?? suite}`
+            : scope === 'workspace'
+              ? `workspace: ${workspace?.name ?? ''}`
+              : 'repo';
+      const run: Run = { id: file.replace(/\.csv$/, ''), name, file, created: date, status: 'open', scope: scopeLabel, rows };
       set((s) => ({ runs: [run, ...s.runs], modal: null, sel: { ...s.sel, kind: 'run', runId: run.id, guideIndex: 0 }, view: 'guide' }));
       upsertChange({ kind: 'run', refId: run.id, path: run.file, status: 'A', label: run.name });
       const rp = get().repoPath;
