@@ -7,12 +7,14 @@ import { serializeRunCsv, serializeRunSidecar } from '@/services/format/run';
 import { serializeWorkspaceYaml } from '@/services/format/workspace';
 import {
   deletePath,
+  derivePrefix,
   initRepo as initRepoSvc,
   loadRepo,
   makeDir,
   openRepo as openRepoSvc,
   relJoin,
   renamePath,
+  toRepoRelative,
   wasSelfWrite,
   writeFileAt,
 } from '@/services/repo';
@@ -126,6 +128,14 @@ export interface AppState {
   goHome: () => void;
   setWorkspace: (w: Workspace) => Promise<void>;
   updateWorkspace: (wsId: string, patch: Partial<Workspace>) => void;
+  /** Pick a folder, declare it a workspace (write its `casewright.yaml`), then open the edit modal. */
+  addWorkspace: () => Promise<void>;
+  /** Open the workspace edit modal, pre-selecting the active workspace. */
+  editWorkspace: () => void;
+  /** Confirm, then drop the active workspace's `casewright.yaml` (leaving its files untouched). */
+  removeWorkspace: () => Promise<void>;
+  /** Workspace pre-selected in the edit modal's dropdown (set by add/edit). */
+  wsModalId: string | null;
   openCase: (id: string) => void;
   openSuite: (suiteId: string) => void;
   openRunsList: () => void;
@@ -241,6 +251,35 @@ export const useAppStore = create<AppState>()((set, get) => {
     } catch {
       /* keep optimistic state if even the reload fails */
     }
+  };
+
+  /** Re-discover workspaces + rebuild the tree after we add/remove a `casewright.yaml`
+   *  ourselves. Preserves the active workspace + case selection when they survive. */
+  const refreshWorkspaces = async () => {
+    const repoPath = get().repoPath;
+    if (!repoPath) return;
+    await flushPersist();
+    const opened = await openRepoSvc(repoPath);
+    const loaded = await loadRepo(repoPath, opened.workspaces);
+    set((s) => {
+      const ws = opened.workspaces.find((w) => w.id === s.workspace?.id) ?? opened.workspaces[0] ?? null;
+      const empty = opened.workspaces.length === 0;
+      const keepSel = s.sel.kind === 'case' && !!s.sel.id && loaded.cases.some((c) => c.id === s.sel.id);
+      return {
+        workspaces: opened.workspaces,
+        workspace: ws,
+        branch: opened.branch,
+        tree: loaded.tree,
+        cases: loaded.cases,
+        runs: loaded.runs,
+        warnings: [...opened.warnings, ...loaded.warnings],
+        emptyRepo: empty,
+        screen: empty ? 'launcher' : 'main',
+        sel: keepSel ? s.sel : { ...s.sel, id: loaded.cases[0]?.id },
+      };
+    });
+    seedPaths();
+    void get().refreshStatus();
   };
 
   /* ---- external-change watcher: live-reload when files change outside the app ---- */
@@ -474,6 +513,7 @@ export const useAppStore = create<AppState>()((set, get) => {
     branch: 'main',
     lastTester: '',
     modal: null,
+    wsModalId: null,
     toasts: [],
     collapsed: {},
     renaming: null,
@@ -618,6 +658,70 @@ export const useAppStore = create<AppState>()((set, get) => {
       });
       schedulePersist('ws:' + wsId, () => writeWsYaml(wsId));
     },
+
+    addWorkspace: async () => {
+      const { repoPath, workspaces } = get();
+      if (!repoPath) return;
+      const picked = await pickDirectory();
+      if (!picked) return;
+      const rel = toRepoRelative(repoPath, picked);
+      if (rel == null) {
+        get().toast('Pick a folder inside this repository');
+        return;
+      }
+      // Already a workspace → just open it for editing.
+      const existing = workspaces.find((w) => w.path === rel);
+      if (existing) {
+        set({ modal: 'workspace', wsModalId: existing.id });
+        return;
+      }
+      // Workspaces can't nest (PRD §4 req 8).
+      const within = (a: string, b: string) => b === '' || a === b || a.startsWith(b + '/');
+      if (workspaces.some((w) => within(rel, w.path) || within(w.path, rel))) {
+        get().toast('Workspaces cannot be nested inside one another');
+        return;
+      }
+      const name = baseName(rel) || baseName(repoPath);
+      const ws: Workspace = { id: slug(rel) || 'workspace', name, path: rel, description: '', prefix: derivePrefix(name) };
+      try {
+        await writeFileAt(repoPath, relJoin(rel, 'casewright.yaml'), serializeWorkspaceYaml(ws));
+      } catch (e) {
+        onWriteError(e);
+        return;
+      }
+      await refreshWorkspaces();
+      const added = get().workspaces.find((w) => w.path === rel) ?? ws;
+      set({ modal: 'workspace', wsModalId: added.id, workspace: added });
+      get().toast(`Added workspace "${added.name}"`);
+    },
+
+    editWorkspace: () => {
+      const ws = get().workspace;
+      if (!ws) return;
+      set({ modal: 'workspace', wsModalId: ws.id });
+    },
+
+    removeWorkspace: async () => {
+      const { repoPath, workspace } = get();
+      if (!repoPath || !workspace) return;
+      if (
+        !window.confirm(
+          `Remove workspace "${workspace.name}"?\n\n` +
+            'This deletes only its casewright.yaml marker — the case and suite files in the folder are left untouched.',
+        )
+      )
+        return;
+      try {
+        await deletePath(repoPath, relJoin(workspace.path, 'casewright.yaml'));
+      } catch (e) {
+        onWriteError(e);
+        return;
+      }
+      const name = workspace.name;
+      await refreshWorkspaces();
+      get().toast(`Removed workspace "${name}"`);
+    },
+
     openCase: (id) => {
       void flushPersist();
       const c = get().cases.find((x) => x.id === id);

@@ -2,7 +2,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { node } from '@/lib/node';
 import { parseCase, serializeCase, type ParsedCase } from './format/case';
 import { serializeRunCsv } from './format/run';
-import { deletePath, initRepo, loadRepo, loadWorkspace, makeDir, markWrite, openRepo, relJoin, renamePath, wasSelfWrite, writeFileAt } from './repo';
+import { deletePath, initRepo, loadRepo, loadWorkspace, makeDir, markWrite, openRepo, relJoin, renamePath, toRepoRelative, wasSelfWrite, writeFileAt } from './repo';
 
 const c1: ParsedCase = {
   id: 'aaa1111aaaa',
@@ -349,6 +349,27 @@ describe('self-write echo suppression', () => {
     markWrite('areas/payments/Billing/PAY-0088.md');
     expect(wasSelfWrite('areas\\payments\\Billing\\PAY-0088.md')).toBe(true);
     expect(wasSelfWrite('areas/payments/Billing')).toBe(true);
+  });
+});
+
+describe('toRepoRelative', () => {
+  const path = node.path();
+  // `path.resolve` yields a genuinely absolute, platform-native path (the contract the
+  // helper documents), so these exercise real `path.isAbsolute`/root handling.
+  const repo = path.resolve('home', 'user', 'casewright');
+
+  it('returns "" for the repo root itself', () => {
+    expect(toRepoRelative(repo, repo)).toBe('');
+  });
+
+  it('returns a forward-slash relative path for a folder inside the repo', () => {
+    expect(toRepoRelative(repo, path.join(repo, 'areas', 'payments'))).toBe('areas/payments');
+    expect(toRepoRelative(repo, path.join(repo, 'Auth'))).toBe('Auth');
+  });
+
+  it('returns null for a folder outside the repo', () => {
+    expect(toRepoRelative(repo, path.resolve('home', 'user', 'elsewhere'))).toBeNull();
+    expect(toRepoRelative(repo, path.resolve('home', 'user'))).toBeNull();
   });
 });
 

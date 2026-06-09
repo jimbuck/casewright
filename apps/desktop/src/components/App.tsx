@@ -12,6 +12,7 @@ import { RunGrid } from './runs/RunGrid';
 import { RunGuide } from './guide/RunGuide';
 import { CreateRunModal } from './runs/CreateRunModal';
 import { CommitModal } from './common/CommitModal';
+import { WorkspaceModal } from './common/WorkspaceModal';
 import { EmptyCenter } from './common/EmptyCenter';
 import { MergeResolver } from './merge/MergeResolver';
 import { SuiteSummary } from './summary/SuiteSummary';
@@ -53,6 +54,7 @@ function Workbench() {
             </div>
           </div>
           {modal === 'commit' && <CommitModal />}
+          {modal === 'workspace' && <WorkspaceModal />}
           {modal === 'createRun' && <CreateRunModal />}
           {modal === 'merge' && <MergeResolver />}
           <Toasts />
