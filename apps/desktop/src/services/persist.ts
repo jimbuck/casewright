@@ -32,6 +32,14 @@ export function schedulePersist(key: string, job: Job, ms = 400): void {
   );
 }
 
+/** Drop a pending job for `key` without running it (e.g. when discarding local edits). */
+export function clearPersist(key: string): void {
+  jobs.delete(key);
+  const t = timers.get(key);
+  if (t) clearTimeout(t);
+  timers.delete(key);
+}
+
 /** Run all pending jobs now (call before reads/commits/navigation). Drains jobs
  * enqueued while flushing (e.g. a post-write status refresh). */
 export async function flushPersist(): Promise<void> {

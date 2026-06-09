@@ -105,7 +105,9 @@ External changes are picked up **live** — `services/watch.ts` watches the work
 recursive `fs.watch`) and, on a debounced tick, re-runs discovery + load so cases / suites /
 workspaces created or edited outside the app (an editor, Claude Code, `git pull`/`checkout`) appear
 automatically. The app's own writes are filtered out (self-write tracking in `repo.ts`) so saves
-don't self-trigger, and the active selection is preserved across a reload.
+don't self-trigger, and the active selection is preserved across a reload. If a case you've edited
+in-app changed on disk to a different version, a VS Code–style prompt asks whether to keep your
+version (overwrite the file) or use the version on disk (discard your edits).
 
 The window is **frameless** (`window.frame: false`) with a custom VS Code–style **titlebar**
 (`chrome/TitleBar.tsx`): an app-region drag bar with a File/View/Go/Help menu bar (wired to app
