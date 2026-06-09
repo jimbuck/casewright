@@ -411,7 +411,13 @@ export const useAppStore = create<AppState>()((set, get) => {
     }
   };
 
-  /** Build a per-case sidecar from a run row + its live case (falls back to the snapshot). */
+  /**
+   * Build a per-case sidecar from a run row. The row's `itemText` snapshot — captured
+   * when the run was seeded — is authoritative, so editing a case after a run exists never
+   * silently rewrites that run's recorded checklist (PRD: runs are immune to later case
+   * edits). We only fall back to deriving from the live `kase` for a brand-new run whose
+   * snapshot hasn't been populated yet.
+   */
   const buildRunCaseFile = (row: RunRow, kase: Case | undefined): RunCaseFile => {
     const overlay = (key: string, text: string): RunCaseItem => ({
       key,
@@ -419,25 +425,23 @@ export const useAppStore = create<AppState>()((set, get) => {
       state: row.checks[key] ?? 'none',
       failNote: row.failNotes[key] ?? '',
     });
-    let setup: RunCaseItem[];
-    let steps: RunCaseItem[];
-    let accept: RunCaseItem[];
-    if (kase) {
-      const d = deriveItems(kase);
-      setup = d.setup.map((it) => overlay(it.key, it.text));
-      steps = d.steps.map((it) => overlay(it.key, it.text));
-      accept = d.accept.map((it) => overlay(it.key, it.text));
-    } else {
-      // Live case is gone — reconstruct items from the recorded snapshot text.
-      const group = (prefix: string) =>
-        Object.keys(row.itemText ?? {})
+    const snapshot = row.itemText ?? {};
+    const hasSnapshot = Object.keys(snapshot).length > 0;
+    const group = (prefix: string): RunCaseItem[] => {
+      if (hasSnapshot) {
+        return Object.keys(snapshot)
           .filter((k) => k.startsWith(`${prefix}:`))
           .sort((a, b) => Number(a.split(':')[1]) - Number(b.split(':')[1]))
-          .map((k) => overlay(k, (row.itemText ?? {})[k]));
-      setup = group('setup');
-      steps = group('step');
-      accept = group('accept');
-    }
+          .map((k) => overlay(k, snapshot[k]));
+      }
+      if (!kase) return [];
+      const d = deriveItems(kase);
+      const arr = prefix === 'setup' ? d.setup : prefix === 'step' ? d.steps : d.accept;
+      return arr.map((it) => overlay(it.key, it.text));
+    };
+    const setup = group('setup');
+    const steps = group('step');
+    const accept = group('accept');
     return {
       caseId: row.case_id,
       displayId: row.display_id,
@@ -450,6 +454,16 @@ export const useAppStore = create<AppState>()((set, get) => {
       steps,
       accept,
     };
+  };
+
+  /** Snapshot a case's current checklist item text, keyed by position — frozen into a new run. */
+  const snapshotItemText = (caseId: string): Record<string, string> => {
+    const kase = get().cases.find((c) => c.id === caseId);
+    const text: Record<string, string> = {};
+    if (!kase) return text;
+    const { setup, steps, accept } = deriveItems(kase);
+    [...setup, ...steps, ...accept].forEach((it) => (text[it.key] = it.text));
+    return text;
   };
 
   const runDetailsOf = (run: Run) => ({
@@ -1152,7 +1166,7 @@ export const useAppStore = create<AppState>()((set, get) => {
           notes: '',
           checks: {},
           failNotes: {},
-          itemText: {},
+          itemText: snapshotItemText(id),
           file: relJoin(dir, runCaseFileName(i, { display_id, title })),
         };
       });
@@ -1235,19 +1249,23 @@ export const useAppStore = create<AppState>()((set, get) => {
       const name = `${src.name} (rerun)`;
       const date = new Date().toISOString().slice(0, 10);
       const dir = relJoin(RUNS_REL, runFileStem(name, date));
-      const rows: RunRow[] = src.rows.map((r, i) => ({
-        case_id: r.case_id,
-        display_id: r.display_id,
-        title: r.title,
-        result: 'not_run',
-        tester: '',
-        executed_at: '',
-        notes: '',
-        checks: {},
-        failNotes: {},
-        itemText: {},
-        file: relJoin(dir, runCaseFileName(i, { display_id: r.display_id, title: r.title })),
-      }));
+      const rows: RunRow[] = src.rows.map((r, i) => {
+        // Re-snapshot from the live case where possible; otherwise carry the source snapshot.
+        const snap = snapshotItemText(r.case_id);
+        return {
+          case_id: r.case_id,
+          display_id: r.display_id,
+          title: r.title,
+          result: 'not_run',
+          tester: '',
+          executed_at: '',
+          notes: '',
+          checks: {},
+          failNotes: {},
+          itemText: Object.keys(snap).length ? snap : { ...(r.itemText ?? {}) },
+          file: relJoin(dir, runCaseFileName(i, { display_id: r.display_id, title: r.title })),
+        };
+      });
       const run: Run = {
         id: dir,
         name,

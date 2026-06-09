@@ -69,7 +69,12 @@ export function RunGuide() {
   const showDefect = effResult === 'fail' || effResult === 'blocked' || effResult === 'skipped';
   const defectText = showDefect ? buildDefectText(run, { ...row, result: effResult, tester, notes }, kase) : '';
   const copyDefect = () => {
-    void navigator.clipboard?.writeText(defectText).then(
+    const writing = navigator.clipboard?.writeText(defectText);
+    if (!writing) {
+      ctx.toast('Clipboard unavailable');
+      return;
+    }
+    void writing.then(
       () => ctx.toast('Defect copied to clipboard'),
       () => ctx.toast('Could not copy'),
     );

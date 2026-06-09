@@ -35,9 +35,23 @@ export function CreateRunModal() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set(ctx.tree.map((n) => (n.type === 'suite' ? n.id : ''))));
 
+  // Precompute suite id → all descendant case ids once (avoids rebuilding the suite
+  // index on every node visit, which was O(N²) across the whole tree render).
+  const caseIdsBySuite = useMemo(() => {
+    const map = new Map<string, string[]>();
+    const collect = (node: TreeNode): string[] => {
+      if (node.type === 'case') return [node.id];
+      const ids = node.children.flatMap(collect);
+      map.set(node.id, ids);
+      return ids;
+    };
+    ctx.tree.forEach(collect);
+    return map;
+  }, [ctx.tree]);
+
   // Case ids beneath a suite/workspace node (recurses into sub-suites).
   const caseIdsUnder = (node: TreeNode): string[] =>
-    node.type === 'case' ? [node.id] : ctx.casesInSuite(node.id);
+    node.type === 'case' ? [node.id] : (caseIdsBySuite.get(node.id) ?? []);
 
   const nodeState = (node: TreeNode): NodeState => {
     if (node.type === 'case') return selected.has(node.id) ? 'on' : 'off';
