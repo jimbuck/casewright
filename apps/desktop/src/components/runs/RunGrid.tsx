@@ -1,11 +1,49 @@
 import { useState } from 'react';
 import { I } from '@/components/icons';
-import { Button, RES, RESULTS } from '@/components/ui';
+import { Button, Input, RES, RESULTS, Textarea } from '@/components/ui';
 import { cn } from '@/lib/utils';
 import { useApp } from '@/store/app-store';
 import { firstUnrun, nowStamp } from '@/utils/ids';
-import type { Result, RunRow } from '@/types';
+import type { Approval, Result, RunRow } from '@/types';
 import { NotesCell } from './NotesCell';
+
+/** A tester/reviewer approval control: shows the stamp when set, else a name + approve button. */
+function ApprovalCard({
+  label,
+  approval,
+  defaultName,
+  onApprove,
+  onClear,
+}: {
+  label: string;
+  approval: Approval | null;
+  defaultName: string;
+  onApprove: (name: string) => void;
+  onClear: () => void;
+}) {
+  const [name, setName] = useState(defaultName);
+  return (
+    <div className="flex flex-col gap-2 rounded-lg border border-border bg-panel p-[14px]">
+      <div className="text-[11px] font-bold uppercase tracking-[0.06em] text-ink-2">{label}</div>
+      {approval ? (
+        <div className="flex items-center gap-2.5">
+          <span className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-pass">{I.check({ size: 14 })} {approval.name}</span>
+          <span className="font-mono text-[11.5px] text-ink-faint">{approval.at}</span>
+          <Button variant="ghost" size="sm" className="ml-auto" onClick={onClear}>
+            {I.x({ size: 12 })} Clear
+          </Button>
+        </div>
+      ) : (
+        <div className="flex items-center gap-2">
+          <Input className="flex-1" mono value={name} placeholder="Your name" onChange={(e) => setName(e.target.value)} />
+          <Button variant="primary" size="sm" disabled={!name.trim()} onClick={() => onApprove(name.trim())}>
+            {I.check({ size: 13 })} Approve
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
 
 type Tally = Record<Result, number>;
 const SEGS: Result[] = ['pass', 'fail', 'blocked', 'skipped', 'not_run'];
@@ -80,6 +118,9 @@ export function RunGrid() {
             </div>
             <div className="text-[10.5px] uppercase tracking-[0.05em] text-ink-faint">pass rate</div>
           </div>
+          <Button variant="ghost" onClick={() => ctx.rerunRun(run.id)} title="Create a fresh run from this one">
+            {I.sync({ size: 13 })} Rerun
+          </Button>
           <Button variant="primary" onClick={() => ctx.startGuide(run.id, firstUnrun(run))}>
             {I.play({ size: 13 })} Start testing
           </Button>
@@ -88,6 +129,7 @@ export function RunGrid() {
 
       <div className="min-h-0 flex-1 overflow-auto">
         <table className="w-full border-separate border-spacing-0 text-[13px]">
+          <caption className="sr-only">Test cases in this run</caption>
           <thead>
             <tr className="[&>th]:sticky [&>th]:top-0 [&>th]:z-[2] [&>th]:whitespace-nowrap [&>th]:border-b [&>th]:border-border-2 [&>th]:bg-panel-2 [&>th]:px-3 [&>th]:py-[9px] [&>th]:text-left [&>th]:text-[11px] [&>th]:font-semibold [&>th]:uppercase [&>th]:tracking-[0.05em] [&>th]:text-ink-faint">
               <th style={{ width: 90 }}>Case</th>
@@ -183,6 +225,48 @@ export function RunGrid() {
             })}
           </tbody>
         </table>
+
+        <div className="mx-auto flex max-w-[880px] flex-col gap-4 px-[26px] py-[22px]">
+          <section className="flex flex-col gap-2">
+            <div className="text-[11px] font-bold uppercase tracking-[0.06em] text-ink-2">Summary</div>
+            <Textarea
+              className="min-h-[64px] text-[13px] leading-[1.5]"
+              value={run.summary}
+              placeholder="A short summary of this run — scope, outcome, anything notable."
+              onChange={(e) => ctx.setRunSummary(run.id, e.target.value)}
+            />
+          </section>
+
+          <section className="flex flex-col gap-2">
+            <div className="text-[11px] font-bold uppercase tracking-[0.06em] text-ink-2">Approvals</div>
+            <div className="grid grid-cols-2 gap-3">
+              <ApprovalCard
+                label="Tester"
+                approval={run.testerApproval}
+                defaultName={ctx.lastTester}
+                onApprove={(name) => ctx.setRunApproval(run.id, 'tester', name)}
+                onClear={() => ctx.setRunApproval(run.id, 'tester', '')}
+              />
+              <ApprovalCard
+                label="Reviewer"
+                approval={run.reviewerApproval}
+                defaultName=""
+                onApprove={(name) => ctx.setRunApproval(run.id, 'reviewer', name)}
+                onClear={() => ctx.setRunApproval(run.id, 'reviewer', '')}
+              />
+            </div>
+          </section>
+
+          <section className="flex flex-col gap-2">
+            <div className="text-[11px] font-bold uppercase tracking-[0.06em] text-ink-2">Notes</div>
+            <Textarea
+              className="min-h-[64px] text-[13px] leading-[1.5]"
+              value={run.notes}
+              placeholder="General notes about this run."
+              onChange={(e) => ctx.setRunNotes(run.id, e.target.value)}
+            />
+          </section>
+        </div>
       </div>
     </div>
   );

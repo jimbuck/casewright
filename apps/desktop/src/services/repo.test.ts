@@ -1,7 +1,7 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { node } from '@/lib/node';
 import { parseCase, serializeCase, type ParsedCase } from './format/case';
-import { serializeRunCsv } from './format/run';
+import { serializeRunCase, serializeRunDetails } from './format/run';
 import { deletePath, initRepo, loadRepo, loadWorkspace, makeDir, markWrite, openRepo, relJoin, renamePath, toRepoRelative, wasSelfWrite, writeFileAt } from './repo';
 
 const c1: ParsedCase = {
@@ -32,15 +32,41 @@ const c2: ParsedCase = {
   expected: [],
 };
 
-const SMOKE_ROW = {
-  case_id: 'aaa1111aaaa',
-  display_id: 'PAY-0001',
-  title: 'First case',
-  result: 'pass' as const,
-  tester: 'me',
-  executed_at: '2026-06-01 09:00',
-  notes: '',
-};
+/** Write a run folder (`_run.md` + one passing case sidecar) under `.casewright/runs/<folder>/`. */
+async function writeSmokeRun(repoPath: string, folder: string): Promise<void> {
+  const fsp = node.fsp();
+  const path = node.path();
+  const dir = path.join(repoPath, '.casewright', 'runs', folder);
+  await fsp.mkdir(dir, { recursive: true });
+  await fsp.writeFile(
+    path.join(dir, '_run.md'),
+    serializeRunDetails({
+      name: 'Smoke',
+      status: 'open',
+      created: folder.slice(0, 10),
+      scope: 'repo',
+      testerApproval: { name: 'me', at: '2026-06-01 09:05' },
+      reviewerApproval: null,
+      summary: 'quick smoke',
+      notes: '',
+    }),
+  );
+  await fsp.writeFile(
+    path.join(dir, '001-PAY-0001-first-case.md'),
+    serializeRunCase({
+      caseId: 'aaa1111aaaa',
+      displayId: 'PAY-0001',
+      title: 'First case',
+      result: 'pass',
+      tester: 'me',
+      executedAt: '2026-06-01 09:00',
+      notes: '',
+      setup: [{ key: 'setup:0', text: 'Confirm Web app is available and reachable.', state: 'pass', failNote: '' }],
+      steps: [{ key: 'step:0', text: 'Open the app.', state: 'pass', failNote: '' }],
+      accept: [{ key: 'accept:0', text: 'It works.', state: 'pass', failNote: '' }],
+    }),
+  );
+}
 
 async function mkRepo(prefix: string): Promise<string> {
   return node.fsp().mkdtemp(node.path().join(node.os().tmpdir(), prefix));
@@ -51,6 +77,7 @@ async function gitInit(dir: string): Promise<void> {
   await git.init();
   await git.addConfig('user.email', 'test@casewright.dev', false, 'local');
   await git.addConfig('user.name', 'Test', false, 'local');
+  await git.addConfig('commit.gpgsign', 'false', false, 'local');
   await git.add('.');
   await git.commit('seed');
   await git.branch(['-M', 'main']);
@@ -69,7 +96,7 @@ describe('openRepo / loadWorkspace / loadRepo', () => {
 
     await fsp.mkdir(path.join(repoPath, '.casewright', 'runs'), { recursive: true });
     await fsp.writeFile(path.join(repoPath, '.casewright', 'config.yaml'), 'version: 1\nname: QA\n');
-    await fsp.writeFile(path.join(repoPath, '.casewright', 'runs', '2026-06-01-smoke.csv'), serializeRunCsv([SMOKE_ROW]));
+    await writeSmokeRun(repoPath, '2026-06-01-smoke');
 
     const ws = path.join(repoPath, 'areas', 'payments');
     await fsp.mkdir(path.join(ws, 'Auth', 'Sessions'), { recursive: true });
@@ -131,11 +158,16 @@ describe('openRepo / loadWorkspace / loadRepo', () => {
     }
     expect(cases).toHaveLength(2);
 
-    // runs come from .casewright/runs/ (repo-level), not per-workspace
+    // runs come from .casewright/runs/ (repo-level folders), not per-workspace
     expect(runs).toHaveLength(1);
     expect(runs[0].rows[0].result).toBe('pass');
-    expect(runs[0].file).toBe('.casewright/runs/2026-06-01-smoke.csv');
+    expect(runs[0].file).toBe('.casewright/runs/2026-06-01-smoke');
     expect(runs[0].id).toBe('.casewright/runs/2026-06-01-smoke');
+    // per-case checklist state and run-level approval are parsed from the folder
+    expect(runs[0].rows[0].checks['step:0']).toBe('pass');
+    expect(runs[0].rows[0].file).toBe('.casewright/runs/2026-06-01-smoke/001-PAY-0001-first-case.md');
+    expect(runs[0].testerApproval).toEqual({ name: 'me', at: '2026-06-01 09:05' });
+    expect(runs[0].summary).toBe('quick smoke');
   });
 });
 
@@ -228,7 +260,7 @@ describe('repo root as a single workspace', () => {
     repoPath = await mkRepo('cw-root-');
     await fsp.mkdir(path.join(repoPath, '.casewright', 'runs'), { recursive: true });
     await fsp.writeFile(path.join(repoPath, '.casewright', 'config.yaml'), 'version: 1\n');
-    await fsp.writeFile(path.join(repoPath, '.casewright', 'runs', '2026-06-02-smoke.csv'), serializeRunCsv([SMOKE_ROW]));
+    await writeSmokeRun(repoPath, '2026-06-02-smoke');
     // root-level marker → the whole repo is one workspace
     await fsp.writeFile(path.join(repoPath, 'casewright.yaml'), 'name: Root WS\ndisplayIdPrefix: RT\n');
     await fsp.writeFile(path.join(repoPath, 'CW-0002-root-case.md'), serializeCase(c2)); // case at the workspace root
@@ -269,7 +301,7 @@ describe('repo root as a single workspace', () => {
     expect(rootCase.suite).not.toBe('');
 
     expect(runs).toHaveLength(1);
-    expect(runs[0].file).toBe('.casewright/runs/2026-06-02-smoke.csv');
+    expect(runs[0].file).toBe('.casewright/runs/2026-06-02-smoke');
     expect(runs[0].file.startsWith('./')).toBe(false);
   });
 });

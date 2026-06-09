@@ -1,84 +1,132 @@
 import { describe, expect, it } from 'vitest';
-import { runs } from '@/data/sample';
-import type { RunRow } from '@/types';
-import { parseRunCsv, serializeRunCsv, parseRunSidecar, serializeRunSidecar } from './run';
+import {
+  parseRunCase,
+  parseRunDetails,
+  serializeRunCase,
+  serializeRunDetails,
+  type RunCaseFile,
+  type RunDetails,
+} from './run';
 
-const SAMPLE_ROWS: RunRow[] = [
-  {
-    case_id: '9f3a7c1e8b',
-    display_id: 'PAY-0042',
-    title: 'User can reset password from the login screen',
-    result: 'pass',
-    tester: 'amartin',
-    executed_at: '2026-06-01 09:14',
-    notes: 'clean run',
-  },
-  {
-    case_id: 'a1b2c3d4e5',
-    display_id: 'PAY-0088',
-    title: 'Coupon applies a percentage discount, at checkout',
-    result: 'fail',
-    tester: 'jpatel',
-    executed_at: '2026-06-01 10:02',
-    notes: 'DEF-2291 — discount rounds down by 1 cent',
-  },
-];
+const SAMPLE_CASE: RunCaseFile = {
+  caseId: '9f3a7c1e8b',
+  displayId: 'PAY-0042',
+  title: 'User can reset password — from the login screen',
+  result: 'fail',
+  tester: 'amartin',
+  executedAt: '2026-06-01 09:14',
+  notes: 'See defect DEF-2291.',
+  setup: [{ key: 'setup:0', text: 'Confirm Auth service is available and reachable.', state: 'pass', failNote: '' }],
+  steps: [
+    { key: 'step:0', text: 'Navigate to the login screen', state: 'pass', failNote: '' },
+    { key: 'step:1', text: 'Click "Forgot password"', state: 'fail', failNote: 'button 500s, no email sent' },
+    { key: 'step:2', text: 'Enter the emailed token', state: 'none', failNote: '' },
+  ],
+  accept: [{ key: 'accept:0', text: 'A reset email arrives within 60s', state: 'fail', failNote: 'never arrived' }],
+};
 
-describe('run CSV', () => {
-  it('round-trips rows exactly', () => {
-    const { rows, warnings } = parseRunCsv(serializeRunCsv(SAMPLE_ROWS));
+describe('run-case sidecar', () => {
+  it('round-trips tri-state checks and a failure note', () => {
+    const { runCase, warnings } = parseRunCase(serializeRunCase(SAMPLE_CASE));
     expect(warnings).toHaveLength(0);
-    expect(rows).toEqual(SAMPLE_ROWS);
+    expect(runCase).toEqual(SAMPLE_CASE);
   });
 
-  it('emits the 7 columns in canonical order with a header', () => {
-    const csv = serializeRunCsv(SAMPLE_ROWS);
-    expect(csv.split('\n')[0]).toBe('case_id,display_id,title,result,tester,executed_at,notes');
-    expect(csv.endsWith('\n')).toBe(true);
+  it('encodes checkbox states as [ ] / [x] / [-]', () => {
+    const md = serializeRunCase(SAMPLE_CASE);
+    expect(md).toContain('- [x] Navigate to the login screen');
+    expect(md).toContain('- [-] Click "Forgot password" — button 500s, no email sent');
+    expect(md).toContain('- [ ] Enter the emailed token');
   });
 
-  it('quotes cells containing commas (round-trips the comma)', () => {
-    const { rows } = parseRunCsv(serializeRunCsv(SAMPLE_ROWS));
-    expect(rows[1].title).toBe('Coupon applies a percentage discount, at checkout');
+  it('omits the failure note when a fail item has none', () => {
+    const one: RunCaseFile = { ...SAMPLE_CASE, steps: [{ key: 'step:0', text: 'Do a thing', state: 'fail', failNote: '' }] };
+    const md = serializeRunCase(one);
+    expect(md).toContain('- [-] Do a thing\n');
+    const { runCase } = parseRunCase(md);
+    expect(runCase.steps[0]).toEqual({ key: 'step:0', text: 'Do a thing', state: 'fail', failNote: '' });
   });
 
-  it('coerces an invalid result to not_run with a warning', () => {
-    const csv =
-      'case_id,display_id,title,result,tester,executed_at,notes\n' + 'x1,PAY-1,Some case,banana,me,,\n';
-    const { rows, warnings } = parseRunCsv(csv);
-    expect(rows[0].result).toBe('not_run');
-    // zod .catch coerces silently; the row still parses, just defaulted
-    expect(rows[0].case_id).toBe('x1');
-    expect(warnings).toBeDefined();
+  it('tolerates a numbered ordinal on a step line', () => {
+    const md = '---\ncase_id: x1\n---\n\n## Steps\n\n1. [x] First step\n- [x] 2. Second step\n';
+    const { runCase } = parseRunCase(md);
+    expect(runCase.steps.map((s) => s.text)).toEqual(['First step', 'Second step']);
+    expect(runCase.steps.every((s) => s.state === 'pass')).toBe(true);
   });
 
-  it('warns when a required column is missing', () => {
-    const csv = 'case_id,display_id,title,result,tester\n' + 'x1,PAY-1,Some case,pass,me\n';
-    const { rows, warnings } = parseRunCsv(csv);
-    expect(rows[0].executed_at).toBe('');
-    expect(rows[0].notes).toBe('');
-    expect(warnings.some((w) => w.code === 'csv-columns')).toBe(true);
+  it('splits the failure note on the first separator only', () => {
+    const md = '---\ncase_id: x1\n---\n\n## Steps\n\n- [-] A — B — C\n';
+    const { runCase } = parseRunCase(md);
+    expect(runCase.steps[0].text).toBe('A');
+    expect(runCase.steps[0].failNote).toBe('B — C');
   });
 
-  it('round-trips every sample run', () => {
-    for (const run of runs) {
-      const { rows } = parseRunCsv(serializeRunCsv(run.rows));
-      expect(rows).toEqual(run.rows);
-    }
+  it('keeps an em-dash inside a passing item as text', () => {
+    const md = '---\ncase_id: x1\n---\n\n## Steps\n\n- [x] Title — with dash\n';
+    const { runCase } = parseRunCase(md);
+    expect(runCase.steps[0]).toMatchObject({ text: 'Title — with dash', state: 'pass', failNote: '' });
+  });
+
+  it('coerces an unknown checkbox glyph to none with a warning', () => {
+    const md = '---\ncase_id: x1\n---\n\n## Steps\n\n- [?] Mystery\n';
+    const { runCase, warnings } = parseRunCase(md);
+    expect(runCase.steps[0]).toMatchObject({ text: 'Mystery', state: 'none' });
+    expect(warnings.some((w) => w.code === 'checkbox')).toBe(true);
+  });
+
+  it('preserves out-of-schema sections verbatim', () => {
+    const md = serializeRunCase(SAMPLE_CASE, '## Custom\n\nkept');
+    const { extra } = parseRunCase(md);
+    expect(extra).toContain('## Custom');
+    expect(extra).toContain('kept');
+  });
+
+  it('is round-trip stable', () => {
+    const once = parseRunCase(serializeRunCase(SAMPLE_CASE)).runCase;
+    const twice = parseRunCase(serializeRunCase(once)).runCase;
+    expect(twice).toEqual(once);
   });
 });
 
-describe('run sidecar', () => {
-  it('round-trips name/description/status', () => {
-    const md = serializeRunSidecar({ name: 'Regression — Sprint 12', description: 'Sprint review', status: 'open' });
-    const { sidecar } = parseRunSidecar(md);
-    expect(sidecar.name).toBe('Regression — Sprint 12');
-    expect(sidecar.description).toBe('Sprint review');
-    expect(sidecar.status).toBe('open');
+const SAMPLE_DETAILS: RunDetails = {
+  name: 'Regression — Sprint 13',
+  status: 'open',
+  created: '2026-06-09',
+  scope: 'custom (4 cases)',
+  testerApproval: { name: 'amartin', at: '2026-06-09 14:22' },
+  reviewerApproval: { name: 'okeefe', at: '2026-06-09 16:01' },
+  summary: 'All payment flows verified.',
+  notes: 'Gateway sandbox was flaky.',
+};
+
+describe('run-details sidecar', () => {
+  it('round-trips with both approvals', () => {
+    const { details, warnings } = parseRunDetails(serializeRunDetails(SAMPLE_DETAILS));
+    expect(warnings).toHaveLength(0);
+    expect(details).toEqual(SAMPLE_DETAILS);
+  });
+
+  it('round-trips with no approvals', () => {
+    const bare: RunDetails = { ...SAMPLE_DETAILS, testerApproval: null, reviewerApproval: null };
+    const md = serializeRunDetails(bare);
+    expect(md).not.toContain('tester_approval');
+    expect(md).not.toContain('reviewer_approval');
+    expect(parseRunDetails(md).details).toEqual(bare);
+  });
+
+  it('round-trips with only a tester approval', () => {
+    const half: RunDetails = { ...SAMPLE_DETAILS, reviewerApproval: null };
+    expect(parseRunDetails(serializeRunDetails(half)).details).toEqual(half);
   });
 
   it('defaults a missing status to open', () => {
-    const { sidecar } = parseRunSidecar('---\nname: Bare\n---\n');
-    expect(sidecar.status).toBe('open');
+    const { details } = parseRunDetails('---\nname: Bare\n---\n');
+    expect(details.status).toBe('open');
+    expect(details.testerApproval).toBeNull();
+  });
+
+  it('coerces a malformed approval to null', () => {
+    const { details } = parseRunDetails('---\nname: X\ntester_approval: not-a-map\n---\n');
+    expect(details.testerApproval).toBeNull();
   });
 });

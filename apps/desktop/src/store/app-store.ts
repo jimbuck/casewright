@@ -2,8 +2,8 @@ import type { Dispatch, SetStateAction } from 'react';
 import { create } from 'zustand';
 
 import { serializeCase } from '@/services/format/case';
-import { caseFileName, runFileStem } from '@/services/format/filename';
-import { serializeRunCsv, serializeRunSidecar } from '@/services/format/run';
+import { caseFileName, runCaseFileName, runFileStem } from '@/services/format/filename';
+import { serializeRunCase, serializeRunDetails, type RunCaseFile, type RunCaseItem } from '@/services/format/run';
 import { serializeWorkspaceYaml } from '@/services/format/workspace';
 import {
   deletePath,
@@ -30,17 +30,21 @@ import {
   status as gitStatus,
 } from '@/services/git';
 import type { LintWarning } from '@/schemas';
-import { randomId, slug } from '@/utils/ids';
+import { nowStamp, randomId, slug } from '@/utils/ids';
+import { deriveItems } from '@/utils/run-items';
 import { isNwjs, pickDirectory } from '@/lib/nwjs';
 import type {
+  Approval,
   Case,
   Change,
+  CheckState,
   Conflict,
   CreateRunArgs,
   ModalKind,
   Recent,
   Renaming,
   Resolutions,
+  Result,
   Run,
   RunRow,
   Screen,
@@ -158,6 +162,17 @@ export interface AppState {
   /* runs */
   updateRunRow: (runId: string, i: number, patch: Partial<RunRow>) => void;
   createRun: (args: CreateRunArgs) => void;
+  /** Cycle one checklist item: none → pass → fail → none (persisted to the case sidecar). */
+  cycleRunCheck: (runId: string, i: number, key: string) => void;
+  setRunFailNote: (runId: string, i: number, key: string, note: string) => void;
+  setRunGroupChecks: (runId: string, i: number, keys: string[], state: CheckState) => void;
+  recordRunResult: (runId: string, i: number, patch: { result: Result; tester: string; notes: string }) => void;
+  setRunSummary: (runId: string, summary: string) => void;
+  setRunNotes: (runId: string, notes: string) => void;
+  /** Save (name + now) or clear (empty name → null) a tester/reviewer approval. */
+  setRunApproval: (runId: string, who: 'tester' | 'reviewer', name: string) => void;
+  /** Create a fresh run from an existing one: copy cases, reset results/checks/approvals. */
+  rerunRun: (runId: string) => void;
   lastTester: string;
   setLastTester: (v: string) => void;
 
@@ -211,7 +226,6 @@ export const useAppStore = create<AppState>()((set, get) => {
 
   /* ---- disk persistence (optimistic in-memory + write; reload on error) ---- */
   const suiteRel = (suiteId: string): string => buildSuiteIndex(get().tree).path[suiteId] ?? '';
-  const runRel = (run: Run): string => run.file; // already full repo-relative
 
   /** The workspace owning a given repo-relative path (longest matching prefix). The
    *  repo-root workspace (`path === ''`) owns everything; a more specific workspace wins. */
@@ -397,17 +411,120 @@ export const useAppStore = create<AppState>()((set, get) => {
     }
   };
 
-  const writeRunNow = async (runId: string) => {
+  /** Build a per-case sidecar from a run row + its live case (falls back to the snapshot). */
+  const buildRunCaseFile = (row: RunRow, kase: Case | undefined): RunCaseFile => {
+    const overlay = (key: string, text: string): RunCaseItem => ({
+      key,
+      text,
+      state: row.checks[key] ?? 'none',
+      failNote: row.failNotes[key] ?? '',
+    });
+    let setup: RunCaseItem[];
+    let steps: RunCaseItem[];
+    let accept: RunCaseItem[];
+    if (kase) {
+      const d = deriveItems(kase);
+      setup = d.setup.map((it) => overlay(it.key, it.text));
+      steps = d.steps.map((it) => overlay(it.key, it.text));
+      accept = d.accept.map((it) => overlay(it.key, it.text));
+    } else {
+      // Live case is gone — reconstruct items from the recorded snapshot text.
+      const group = (prefix: string) =>
+        Object.keys(row.itemText ?? {})
+          .filter((k) => k.startsWith(`${prefix}:`))
+          .sort((a, b) => Number(a.split(':')[1]) - Number(b.split(':')[1]))
+          .map((k) => overlay(k, (row.itemText ?? {})[k]));
+      setup = group('setup');
+      steps = group('step');
+      accept = group('accept');
+    }
+    return {
+      caseId: row.case_id,
+      displayId: row.display_id,
+      title: row.title,
+      result: row.result,
+      tester: row.tester,
+      executedAt: row.executed_at,
+      notes: row.notes,
+      setup,
+      steps,
+      accept,
+    };
+  };
+
+  const runDetailsOf = (run: Run) => ({
+    name: run.name,
+    status: run.status,
+    created: run.created,
+    scope: run.scope,
+    testerApproval: run.testerApproval,
+    reviewerApproval: run.reviewerApproval,
+    summary: run.summary,
+    notes: run.notes,
+  });
+
+  const writeRunDetailsNow = async (runId: string) => {
     const { repoPath } = get();
     const run = get().runs.find((r) => r.id === runId);
     if (!repoPath || !run) return;
     try {
-      await writeFileAt(repoPath, runRel(run), serializeRunCsv(run.rows));
+      await writeFileAt(repoPath, relJoin(run.file, '_run.md'), serializeRunDetails(runDetailsOf(run)));
       scheduleRefresh();
     } catch (e) {
       onWriteError(e);
     }
   };
+
+  const writeRunCaseNow = async (runId: string, i: number) => {
+    const { repoPath } = get();
+    const run = get().runs.find((r) => r.id === runId);
+    const row = run?.rows[i];
+    if (!repoPath || !run || !row) return;
+    const kase = get().cases.find((c) => c.id === row.case_id);
+    try {
+      await writeFileAt(repoPath, row.file, serializeRunCase(buildRunCaseFile(row, kase)));
+      scheduleRefresh();
+    } catch (e) {
+      onWriteError(e);
+    }
+  };
+
+  /** Fan-out write of a brand-new run folder: `_run.md` + every case sidecar. */
+  const writeWholeRun = (run: Run) => {
+    const rp = get().repoPath;
+    if (!rp) return;
+    void makeDir(rp, run.file)
+      .then(() =>
+        Promise.all([
+          writeFileAt(rp, relJoin(run.file, '_run.md'), serializeRunDetails(runDetailsOf(run))),
+          ...run.rows.map((row) =>
+            writeFileAt(rp, row.file, serializeRunCase(buildRunCaseFile(row, get().cases.find((c) => c.id === row.case_id)))),
+          ),
+        ]),
+      )
+      .then(scheduleRefresh)
+      .catch(onWriteError);
+  };
+
+  /** Persist one case sidecar (debounced) + flag the run as modified. */
+  const persistRunCase = (runId: string, i: number) => {
+    const run = get().runs.find((r) => r.id === runId);
+    if (run) upsertChange({ kind: 'run', refId: runId, path: run.file, status: 'M', label: run.name });
+    schedulePersist(`runcase:${runId}:${i}`, () => writeRunCaseNow(runId, i));
+  };
+
+  /** Persist the run-details sidecar (debounced) + flag the run as modified. */
+  const persistRunDetails = (runId: string) => {
+    const run = get().runs.find((r) => r.id === runId);
+    if (run) upsertChange({ kind: 'run', refId: runId, path: run.file, status: 'M', label: run.name });
+    schedulePersist(`rundetails:${runId}`, () => writeRunDetailsNow(runId));
+  };
+
+  /** Replace one row in a run, immutably. */
+  const patchRow = (runId: string, i: number, patch: Partial<RunRow>) =>
+    set((s) => ({
+      runs: s.runs.map((r) => (r.id !== runId ? r : { ...r, rows: r.rows.map((row, j) => (j === i ? { ...row, ...patch } : row)) })),
+    }));
 
   const writeWsYaml = async (wsId: string) => {
     const rp = get().repoPath;
@@ -1013,61 +1130,141 @@ export const useAppStore = create<AppState>()((set, get) => {
 
     /* ---- runs ---- */
     updateRunRow: (runId, i, patch) => {
-      const run = get().runs.find((r) => r.id === runId);
-      set((s) => ({
-        runs: s.runs.map((r) =>
-          r.id !== runId ? r : { ...r, rows: r.rows.map((row, j) => (j === i ? { ...row, ...patch } : row)) },
-        ),
-      }));
-      if (run) upsertChange({ kind: 'run', refId: runId, path: run.file, status: 'M', label: run.name });
-      schedulePersist('run:' + runId, () => writeRunNow(runId));
+      patchRow(runId, i, patch);
+      persistRunCase(runId, i);
     },
 
-    createRun: ({ name, scope, tag, suite }) => {
-      const { cases, workspace, tree } = get();
-      const idx = buildSuiteIndex(tree);
-      // Seed rows by scope across the whole repo (runs are repo-level, PRD §4 req 17, 19).
-      const inActiveWs = (c: Case) => {
-        if (!workspace) return true;
-        const p = idx.path[c.suite] ?? '';
-        return workspace.path === '' || p === workspace.path || p.startsWith(workspace.path + '/');
-      };
-      const ids =
-        scope === 'tag'
-          ? cases.filter((c) => c.tags.includes(tag)).map((c) => c.id)
-          : scope === 'suite'
-            ? idx.inSuite(suite)
-            : scope === 'workspace'
-              ? cases.filter(inActiveWs).map((c) => c.id)
-              : cases.map((c) => c.id); // 'all' → whole repo
-      const rows: RunRow[] = ids.map((id) => {
-        const c = cases.find((x) => x.id === id)!;
-        return { case_id: id, display_id: c.displayId, title: c.title, result: 'not_run', tester: '', executed_at: '', notes: '' };
-      });
+    createRun: ({ name, caseIds, scopeLabel }) => {
+      const { cases } = get();
       const date = new Date().toISOString().slice(0, 10);
-      const stem = runFileStem(name, date);
-      const file = relJoin(RUNS_REL, `${stem}.csv`); // .casewright/runs/<stem>.csv
-      const scopeLabel =
-        scope === 'tag'
-          ? `tag: ${tag}`
-          : scope === 'suite'
-            ? `suite: ${findSuiteNode(tree, suite)?.name ?? suite}`
-            : scope === 'workspace'
-              ? `workspace: ${workspace?.name ?? ''}`
-              : 'repo';
-      const run: Run = { id: file.replace(/\.csv$/, ''), name, file, created: date, status: 'open', scope: scopeLabel, rows };
-      set((s) => ({ runs: [run, ...s.runs], modal: null, sel: { ...s.sel, kind: 'run', runId: run.id, guideIndex: 0 }, view: 'guide' }));
+      const dir = relJoin(RUNS_REL, runFileStem(name, date));
+      const rows: RunRow[] = caseIds.map((id, i) => {
+        const c = cases.find((x) => x.id === id);
+        const display_id = c?.displayId ?? id;
+        const title = c?.title ?? '';
+        return {
+          case_id: id,
+          display_id,
+          title,
+          result: 'not_run',
+          tester: '',
+          executed_at: '',
+          notes: '',
+          checks: {},
+          failNotes: {},
+          itemText: {},
+          file: relJoin(dir, runCaseFileName(i, { display_id, title })),
+        };
+      });
+      const run: Run = {
+        id: dir,
+        name,
+        file: dir,
+        created: date,
+        status: 'open',
+        scope: scopeLabel ?? '',
+        rows,
+        summary: '',
+        notes: '',
+        testerApproval: null,
+        reviewerApproval: null,
+      };
+      set((s) => ({ runs: [run, ...s.runs], modal: null, sel: { ...s.sel, kind: 'run', runId: run.id, guideIndex: 0 }, view: 'run' }));
       upsertChange({ kind: 'run', refId: run.id, path: run.file, status: 'A', label: run.name });
-      const rp = get().repoPath;
-      if (rp) {
-        void Promise.all([
-          writeFileAt(rp, run.file, serializeRunCsv(run.rows)),
-          writeFileAt(rp, run.file.replace(/\.csv$/, '.md'), serializeRunSidecar({ name, status: 'open' })),
-        ])
-          .then(scheduleRefresh)
-          .catch(onWriteError);
-      }
+      writeWholeRun(run);
       get().toast(`Created run · ${rows.length} cases seeded`);
+    },
+
+    cycleRunCheck: (runId, i, key) => {
+      const row = get().runs.find((r) => r.id === runId)?.rows[i];
+      if (!row) return;
+      const cur = row.checks[key] ?? 'none';
+      const next: CheckState = cur === 'none' ? 'pass' : cur === 'pass' ? 'fail' : 'none';
+      const checks = { ...row.checks, [key]: next };
+      const failNotes = { ...row.failNotes };
+      if (next !== 'fail') delete failNotes[key]; // a note only belongs to a failed item
+      patchRow(runId, i, { checks, failNotes });
+      persistRunCase(runId, i);
+    },
+
+    setRunFailNote: (runId, i, key, note) => {
+      const row = get().runs.find((r) => r.id === runId)?.rows[i];
+      if (!row) return;
+      patchRow(runId, i, { failNotes: { ...row.failNotes, [key]: note } });
+      persistRunCase(runId, i);
+    },
+
+    setRunGroupChecks: (runId, i, keys, state) => {
+      const row = get().runs.find((r) => r.id === runId)?.rows[i];
+      if (!row) return;
+      const checks = { ...row.checks };
+      const failNotes = { ...row.failNotes };
+      for (const k of keys) {
+        checks[k] = state;
+        if (state !== 'fail') delete failNotes[k];
+      }
+      patchRow(runId, i, { checks, failNotes });
+      persistRunCase(runId, i);
+    },
+
+    recordRunResult: (runId, i, { result, tester, notes }) => {
+      patchRow(runId, i, { result, tester, notes, executed_at: result === 'not_run' ? '' : nowStamp() });
+      persistRunCase(runId, i);
+    },
+
+    setRunSummary: (runId, summary) => {
+      set((s) => ({ runs: s.runs.map((r) => (r.id === runId ? { ...r, summary } : r)) }));
+      persistRunDetails(runId);
+    },
+
+    setRunNotes: (runId, notes) => {
+      set((s) => ({ runs: s.runs.map((r) => (r.id === runId ? { ...r, notes } : r)) }));
+      persistRunDetails(runId);
+    },
+
+    setRunApproval: (runId, who, name) => {
+      const approval: Approval | null = name.trim() ? { name: name.trim(), at: nowStamp() } : null;
+      const field = who === 'tester' ? 'testerApproval' : 'reviewerApproval';
+      set((s) => ({ runs: s.runs.map((r) => (r.id === runId ? { ...r, [field]: approval } : r)) }));
+      persistRunDetails(runId);
+    },
+
+    rerunRun: (runId) => {
+      const src = get().runs.find((r) => r.id === runId);
+      if (!src) return;
+      const name = `${src.name} (rerun)`;
+      const date = new Date().toISOString().slice(0, 10);
+      const dir = relJoin(RUNS_REL, runFileStem(name, date));
+      const rows: RunRow[] = src.rows.map((r, i) => ({
+        case_id: r.case_id,
+        display_id: r.display_id,
+        title: r.title,
+        result: 'not_run',
+        tester: '',
+        executed_at: '',
+        notes: '',
+        checks: {},
+        failNotes: {},
+        itemText: {},
+        file: relJoin(dir, runCaseFileName(i, { display_id: r.display_id, title: r.title })),
+      }));
+      const run: Run = {
+        id: dir,
+        name,
+        file: dir,
+        created: date,
+        status: 'open',
+        scope: src.scope,
+        rows,
+        summary: '',
+        notes: '',
+        testerApproval: null,
+        reviewerApproval: null,
+      };
+      set((s) => ({ runs: [run, ...s.runs], sel: { ...s.sel, kind: 'run', runId: run.id, guideIndex: 0 }, view: 'run' }));
+      upsertChange({ kind: 'run', refId: run.id, path: run.file, status: 'A', label: run.name });
+      writeWholeRun(run);
+      get().toast(`Rerun created · ${rows.length} cases reset`);
     },
 
     setLastTester: (v) => set({ lastTester: v }),

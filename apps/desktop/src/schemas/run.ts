@@ -1,34 +1,36 @@
 import { z } from 'zod';
 
-/** One CSV result row (PRD §5.4). Tolerant: invalid `result` coerces to `not_run`. */
-export const RunRowSchema = z.object({
+/** Tri-state checklist mark in a per-case run sidecar (`[ ]`/`[x]`/`[-]`). */
+export const CheckStateSchema = z.enum(['none', 'pass', 'fail']).catch('none');
+
+/** A run approval (tester or reviewer): who, and when. Absent → `null`. */
+export const ApprovalSchema = z
+  .object({
+    name: z.coerce.string().default(''),
+    at: z.coerce.string().default(''),
+  })
+  .nullable();
+
+/** Run-details sidecar (`<run>/_run.md`) front matter. Tolerant: bad values coerce. */
+export const RunDetailsFrontSchema = z.object({
+  name: z.coerce.string().optional(),
+  status: z.enum(['open', 'closed']).catch('open'),
+  created: z.coerce.string().default(''),
+  scope: z.coerce.string().default(''),
+  tester_approval: ApprovalSchema.catch(null).default(null),
+  reviewer_approval: ApprovalSchema.catch(null).default(null),
+});
+
+export type RunDetailsFront = z.infer<typeof RunDetailsFrontSchema>;
+
+/** Per-case run sidecar (`<run>/NNN-<id>.md`) front matter. */
+export const RunCaseFrontSchema = z.object({
   case_id: z.coerce.string().default(''),
   display_id: z.coerce.string().default(''),
   title: z.coerce.string().default(''),
   result: z.enum(['not_run', 'pass', 'fail', 'blocked', 'skipped']).catch('not_run'),
   tester: z.coerce.string().default(''),
   executed_at: z.coerce.string().default(''),
-  notes: z.coerce.string().default(''),
 });
 
-export type RunRowParsed = z.infer<typeof RunRowSchema>;
-
-/** The 7 CSV columns, in canonical order (PRD §5.4). */
-export const RUN_CSV_COLUMNS = [
-  'case_id',
-  'display_id',
-  'title',
-  'result',
-  'tester',
-  'executed_at',
-  'notes',
-] as const;
-
-/** Run sidecar `runs/<name>.md` front matter (PRD §5.4). */
-export const RunSidecarSchema = z.object({
-  name: z.coerce.string().optional(),
-  description: z.coerce.string().optional(),
-  status: z.enum(['open', 'closed']).catch('open'),
-});
-
-export type RunSidecar = z.infer<typeof RunSidecarSchema>;
+export type RunCaseFront = z.infer<typeof RunCaseFrontSchema>;

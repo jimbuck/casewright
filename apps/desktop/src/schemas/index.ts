@@ -2,7 +2,14 @@ export { ConfigYamlSchema, type ConfigYaml } from './config';
 export { WorkspaceYamlSchema, type WorkspaceYaml } from './workspace';
 export { CaseFrontMatterSchema, type CaseFrontMatter } from './case';
 export { SuiteFrontMatterSchema, type SuiteFrontMatter } from './suite';
-export { RunRowSchema, RunSidecarSchema, RUN_CSV_COLUMNS, type RunRowParsed, type RunSidecar } from './run';
+export {
+  CheckStateSchema,
+  ApprovalSchema,
+  RunDetailsFrontSchema,
+  RunCaseFrontSchema,
+  type RunDetailsFront,
+  type RunCaseFront,
+} from './run';
 
 /**
  * A non-blocking import/parse warning (PRD §5.2 tolerance). Surfaced in the UI,

@@ -4,7 +4,7 @@ import type { Case, Run, TreeNode, Workspace } from '@/types';
 import { slug } from '@/utils/ids';
 import { parseCase } from './format/case';
 import { CASEWRIGHT_GITIGNORE, serializeConfigYaml } from './format/config';
-import { parseRunCsv, parseRunSidecar } from './format/run';
+import { parseRunCase, parseRunDetails, type RunCaseItem } from './format/run';
 import { parseSuite } from './format/suite';
 
 // ---------------------------------------------------------------------------
@@ -230,10 +230,24 @@ async function suiteDisplayName(absDir: string, folderName: string): Promise<str
   return folderName;
 }
 
+/** Fold a per-case sidecar's checklist items into the `checks`/`failNotes`/`itemText` maps. */
+function foldItems(
+  items: RunCaseItem[],
+  checks: Record<string, 'none' | 'pass' | 'fail'>,
+  failNotes: Record<string, string>,
+  itemText: Record<string, string>,
+): void {
+  for (const it of items) {
+    checks[it.key] = it.state;
+    if (it.failNote) failNotes[it.key] = it.failNote;
+    itemText[it.key] = it.text;
+  }
+}
+
 /**
  * Load all runs from `.casewright/runs/` once for the whole repo (PRD §4 req 16, 20).
- * A run is repo-level; its rows may reference cases from any workspace, so `file`/`id`
- * carry no workspace path.
+ * A run is a folder: `_run.md` (details) plus one `NNN-<id>.md` sidecar per seeded case.
+ * Runs are repo-level; rows may reference cases from any workspace.
  */
 async function loadRuns(repoPath: string, warnings: LintWarning[]): Promise<Run[]> {
   const path = node.path();
@@ -242,31 +256,67 @@ async function loadRuns(repoPath: string, warnings: LintWarning[]): Promise<Run[
     .fsp()
     .readdir(runsAbs, { withFileTypes: true })
     .catch(() => []);
-  const csvs = entries.filter((e) => e.isFile() && e.name.endsWith('.csv')).sort(byName).reverse();
+  const dirs = entries.filter((e) => e.isDirectory() && !e.name.startsWith('.')).sort(byName).reverse();
   const runs: Run[] = [];
-  for (const f of csvs) {
-    const text = (await readMaybe(path.join(runsAbs, f.name))) ?? '';
-    const { rows, warnings: w } = parseRunCsv(text);
-    const file = relJoin(RUNS_REL, f.name); // .casewright/runs/<name>.csv
-    for (const x of w) warnings.push({ ...x, file });
 
-    const stem = f.name.replace(/\.csv$/, '');
-    let name = stem;
-    let status: 'open' | 'closed' = 'open';
-    const sidecarRaw = await readMaybe(path.join(runsAbs, `${stem}.md`));
-    if (sidecarRaw) {
-      const { sidecar } = parseRunSidecar(sidecarRaw);
-      name = sidecar.name ?? stem;
-      status = sidecar.status;
+  for (const d of dirs) {
+    const stem = d.name;
+    const dirAbs = path.join(runsAbs, stem);
+    const dirRel = relJoin(RUNS_REL, stem);
+
+    const detailsRaw = await readMaybe(path.join(dirAbs, '_run.md'));
+    const det = detailsRaw ? parseRunDetails(detailsRaw) : null;
+    if (det) for (const x of det.warnings) warnings.push({ ...x, file: relJoin(dirRel, '_run.md') });
+
+    const caseEntries = await node
+      .fsp()
+      .readdir(dirAbs, { withFileTypes: true })
+      .catch(() => []);
+    const caseFiles = caseEntries
+      .filter((e) => e.isFile() && e.name.endsWith('.md') && e.name !== '_run.md')
+      .sort(byName);
+
+    const rows: Run['rows'] = [];
+    for (const cf of caseFiles) {
+      const text = (await readMaybe(path.join(dirAbs, cf.name))) ?? '';
+      const { runCase, warnings: w } = parseRunCase(text);
+      const file = relJoin(dirRel, cf.name);
+      for (const x of w) warnings.push({ ...x, file });
+
+      const checks: Record<string, 'none' | 'pass' | 'fail'> = {};
+      const failNotes: Record<string, string> = {};
+      const itemText: Record<string, string> = {};
+      foldItems(runCase.setup, checks, failNotes, itemText);
+      foldItems(runCase.steps, checks, failNotes, itemText);
+      foldItems(runCase.accept, checks, failNotes, itemText);
+
+      rows.push({
+        case_id: runCase.caseId,
+        display_id: runCase.displayId,
+        title: runCase.title,
+        result: runCase.result,
+        tester: runCase.tester,
+        executed_at: runCase.executedAt,
+        notes: runCase.notes,
+        checks,
+        failNotes,
+        itemText,
+        file,
+      });
     }
+
     runs.push({
-      id: relJoin(RUNS_REL, stem),
-      name,
-      file,
-      created: stem.match(/^\d{4}-\d{2}-\d{2}/)?.[0] ?? '',
-      status,
-      scope: '',
+      id: dirRel,
+      name: det?.details.name || stem,
+      file: dirRel,
+      created: det?.details.created || stem.match(/^\d{4}-\d{2}-\d{2}/)?.[0] || '',
+      status: det?.details.status ?? 'open',
+      scope: det?.details.scope ?? '',
       rows,
+      summary: det?.details.summary ?? '',
+      notes: det?.details.notes ?? '',
+      testerApproval: det?.details.testerApproval ?? null,
+      reviewerApproval: det?.details.reviewerApproval ?? null,
     });
   }
   return runs;

@@ -22,10 +22,11 @@ import { simpleGit } from 'simple-git';
 import { cases, runs, trees, workspaces } from '@/data/sample';
 import { serializeCase } from '@/services/format/case';
 import { CASEWRIGHT_GITIGNORE, serializeConfigYaml } from '@/services/format/config';
-import { serializeRunCsv, serializeRunSidecar } from '@/services/format/run';
+import { serializeRunCase, serializeRunDetails, type RunCaseItem } from '@/services/format/run';
 import { serializeWorkspaceYaml } from '@/services/format/workspace';
 import { caseFileName } from '@/services/format/filename';
-import type { Case, TreeNode } from '@/types';
+import { deriveItems } from '@/utils/run-items';
+import type { Case, RunRow, TreeNode } from '@/types';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(here, '..', '.fixture');
@@ -67,12 +68,50 @@ for (const ws of workspaces) {
   walk(trees[ws.id] ?? [], dir);
 }
 
-// --- runs (CSV + sidecar) flat under .casewright/runs/ ---
+// --- runs: one folder per run (_run.md + a sidecar per case) under .casewright/runs/ ---
 const runsDir = join(cwDir, 'runs');
+const overlay = (row: RunRow, key: string, text: string): RunCaseItem => ({
+  key,
+  text,
+  state: row.checks[key] ?? 'none',
+  failNote: row.failNotes[key] ?? '',
+});
 for (const run of runs) {
-  const csvName = run.file.split('/').pop() ?? 'run.csv';
-  writeFileSync(join(runsDir, csvName), serializeRunCsv(run.rows));
-  writeFileSync(join(runsDir, csvName.replace(/\.csv$/, '.md')), serializeRunSidecar({ name: run.name, status: run.status }));
+  const runFolder = run.file.split('/').pop() ?? 'run';
+  const runDir = join(runsDir, runFolder);
+  mkdirSync(runDir, { recursive: true });
+  writeFileSync(
+    join(runDir, '_run.md'),
+    serializeRunDetails({
+      name: run.name,
+      status: run.status,
+      created: run.created,
+      scope: run.scope,
+      testerApproval: run.testerApproval,
+      reviewerApproval: run.reviewerApproval,
+      summary: run.summary,
+      notes: run.notes,
+    }),
+  );
+  for (const row of run.rows) {
+    const kase = byId.get(row.case_id);
+    const d = deriveItems(kase);
+    writeFileSync(
+      join(runDir, row.file.split('/').pop() ?? 'case.md'),
+      serializeRunCase({
+        caseId: row.case_id,
+        displayId: row.display_id,
+        title: row.title,
+        result: row.result,
+        tester: row.tester,
+        executedAt: row.executed_at,
+        notes: row.notes,
+        setup: d.setup.map((it) => overlay(row, it.key, it.text)),
+        steps: d.steps.map((it) => overlay(row, it.key, it.text)),
+        accept: d.accept.map((it) => overlay(row, it.key, it.text)),
+      }),
+    );
+  }
 }
 
 // --- git init + seed commit on `main` ---

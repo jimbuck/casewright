@@ -3,17 +3,15 @@ import { I } from '@/components/icons';
 import { Button, Field, Input, RES, RESULTS, Textarea } from '@/components/ui';
 import { cn } from '@/lib/utils';
 import { useApp } from '@/store/app-store';
-import { nowStamp } from '@/utils/ids';
 import { renderInline } from '@/utils/markdown';
-import { numberSteps } from '@/utils/steps';
+import { buildDefectText, deriveItems } from '@/utils/run-items';
 import type { Result } from '@/types';
-import { GuideChecklist, type ChecklistItem } from './GuideChecklist';
+import { GuideChecklist } from './GuideChecklist';
 
 export function RunGuide() {
   const ctx = useApp();
   const run = ctx.runs.find((r) => r.id === ctx.sel.runId);
   const idx = ctx.sel.guideIndex ?? 0;
-  const [checks, setChecks] = useState<Record<string, Record<string, boolean>>>({});
   const [result, setResult] = useState<Result | null>(null);
   const [tester, setTester] = useState(ctx.lastTester);
   const [notes, setNotes] = useState('');
@@ -21,46 +19,33 @@ export function RunGuide() {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const runId = run?.id;
-  // reset the recorder when the active case changes
+  const row = run?.rows[idx];
+  // Seed the recorder from the row so revisiting a recorded case shows its state.
   useEffect(() => {
-    setResult(null);
-    setNotes('');
+    setResult(row && row.result !== 'not_run' ? row.result : null);
+    setNotes(row?.notes ?? '');
+    setTester(row?.tester || ctx.lastTester);
     setForceRecord(false);
     if (scrollRef.current) scrollRef.current.scrollTop = 0;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [idx, runId]);
 
-  if (!run) return null;
-  const row = run.rows[idx];
+  if (!run || !row) return null;
   const kase = ctx.cases.find((c) => c.id === row.case_id);
 
-  const myChecks = checks[row.case_id] || {};
-  const toggle = (key: string) =>
-    setChecks((s) => ({
-      ...s,
-      [row.case_id]: { ...(s[row.case_id] || {}), [key]: !(s[row.case_id] || {})[key] },
-    }));
+  const myChecks = row.checks;
+  const myFailNotes = row.failNotes;
+  const cycle = (key: string) => ctx.cycleRunCheck(run.id, idx, key);
+  const setFailNote = (key: string, value: string) => ctx.setRunFailNote(run.id, idx, key, value);
 
-  // ---- derive checklist items from the case ----
-  const setupItems: ChecklistItem[] = kase
-    ? kase.systems.map((sys, i) => ({ key: `setup:${i}`, text: `Confirm ${sys} is available and reachable.` }))
-    : [];
-  const stepNums = kase ? numberSteps(kase.steps) : [];
-  const stepItems: ChecklistItem[] = kase
-    ? kase.steps.map((s, i) => ({ key: `step:${i}`, text: s.text, num: stepNums[i], depth: s.depth }))
-    : [];
-  const acceptItems: ChecklistItem[] = kase ? kase.expected.map((t, i) => ({ key: `accept:${i}`, text: t })) : [];
-  const allKeys = [...setupItems, ...stepItems, ...acceptItems].map((x) => x.key);
-  const checkedCount = allKeys.filter((k) => myChecks[k]).length;
-  const total = allKeys.length;
-  const complete = total > 0 && checkedCount === total;
+  // ---- derive checklist items from the live case ----
+  const { setup: setupItems, steps: stepItems, accept: acceptItems } = deriveItems(kase);
+  const allItems = [...setupItems, ...stepItems, ...acceptItems];
+  const total = allItems.length;
+  const checkedCount = allItems.filter((it) => (myChecks[it.key] ?? 'none') !== 'none').length;
+  const complete = total > 0 && allItems.every((it) => myChecks[it.key] === 'pass');
   const canRecord = complete || forceRecord;
-
-  const setGroup = (items: ChecklistItem[], val: boolean) =>
-    setChecks((s) => {
-      const m = { ...(s[row.case_id] || {}) };
-      items.forEach((it) => (m[it.key] = val));
-      return { ...s, [row.case_id]: m };
-    });
+  const setGroup = (keys: string[], state: 'none' | 'pass' | 'fail') => ctx.setRunGroupChecks(run.id, idx, keys, state);
 
   // ---- navigation / recording ----
   const remaining = run.rows.map((_, i) => i).filter((i) => i !== idx && run.rows[i].result === 'not_run');
@@ -68,7 +53,7 @@ export function RunGuide() {
   const record = () => {
     if (!result) return;
     if (tester.trim()) ctx.setLastTester(tester.trim());
-    ctx.updateRunRow(run.id, idx, { result, tester, notes, executed_at: nowStamp() });
+    ctx.recordRunResult(run.id, idx, { result, tester, notes });
     ctx.toast(`${row.display_id} recorded · ${RES[result].label}`);
     const next = run.rows.findIndex((r, i) => i > idx && r.result === 'not_run');
     const anyEarlier = run.rows.findIndex((r) => r.result === 'not_run');
@@ -78,6 +63,17 @@ export function RunGuide() {
   };
 
   const tested = run.rows.filter((r) => r.result !== 'not_run').length;
+
+  // ---- defect helper (shown once a non-passing result is chosen) ----
+  const effResult: Result | null = result ?? (row.result !== 'not_run' ? row.result : null);
+  const showDefect = effResult === 'fail' || effResult === 'blocked' || effResult === 'skipped';
+  const defectText = showDefect ? buildDefectText(run, { ...row, result: effResult, tester, notes }, kase) : '';
+  const copyDefect = () => {
+    void navigator.clipboard?.writeText(defectText).then(
+      () => ctx.toast('Defect copied to clipboard'),
+      () => ctx.toast('Could not copy'),
+    );
+  };
 
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-bg">
@@ -157,28 +153,31 @@ export function RunGuide() {
                 caption="Get the environment ready before you begin."
                 items={setupItems}
                 myChecks={myChecks}
-                toggle={toggle}
-                onAll={() => setGroup(setupItems, true)}
-                onNone={() => setGroup(setupItems, false)}
+                failNotes={myFailNotes}
+                cycle={cycle}
+                onFailNote={setFailNote}
+                setGroup={(state) => setGroup(setupItems.map((i) => i.key), state)}
               />
               <GuideChecklist
                 title="Steps"
-                caption="Perform each step in order and tick it off."
+                caption="Perform each step in order — click to mark passed or failed."
                 numbered
                 items={stepItems}
                 myChecks={myChecks}
-                toggle={toggle}
-                onAll={() => setGroup(stepItems, true)}
-                onNone={() => setGroup(stepItems, false)}
+                failNotes={myFailNotes}
+                cycle={cycle}
+                onFailNote={setFailNote}
+                setGroup={(state) => setGroup(stepItems.map((i) => i.key), state)}
               />
               <GuideChecklist
                 title="Acceptance Criteria"
                 caption="Verify every expected result holds."
                 items={acceptItems}
                 myChecks={myChecks}
-                toggle={toggle}
-                onAll={() => setGroup(acceptItems, true)}
-                onNone={() => setGroup(acceptItems, false)}
+                failNotes={myFailNotes}
+                cycle={cycle}
+                onFailNote={setFailNote}
+                setGroup={(state) => setGroup(acceptItems.map((i) => i.key), state)}
               />
             </>
           )}
@@ -193,12 +192,12 @@ export function RunGuide() {
               <span className="text-[11px] font-bold uppercase tracking-[0.06em] text-ink-2">Record result</span>
               {!canRecord && (
                 <span className="ml-auto inline-flex items-center gap-1.5 text-[12px] text-[oklch(0.55_0.1_66)]">
-                  {I.warn({ size: 13 })} Complete all {total} checks to record a pass
+                  {I.warn({ size: 13 })} Pass all {total} checks to record a pass
                 </span>
               )}
               {complete && (
                 <span className="ml-auto inline-flex items-center gap-1.5 text-[12px] font-semibold text-pass">
-                  {I.check({ size: 14 })} All checks complete
+                  {I.check({ size: 14 })} All checks passed
                 </span>
               )}
             </div>
@@ -258,6 +257,19 @@ export function RunGuide() {
               </Button>
             </div>
           </section>
+
+          {showDefect && (
+            <section className="overflow-hidden rounded-lg border border-[oklch(0.85_0.07_27)] bg-fail-soft">
+              <div className="flex items-center gap-2.5 border-b border-[oklch(0.88_0.05_27)] px-4 py-3">
+                <span className="text-[11px] font-bold uppercase tracking-[0.06em] text-fail">Defect report</span>
+                <span className="flex-1 text-[12px] text-ink-3">Paste into your work-item tracker; link back to this run.</span>
+                <Button variant="ghost" size="sm" onClick={copyDefect}>
+                  {I.copy({ size: 13 })} Copy
+                </Button>
+              </div>
+              <pre className="max-h-[280px] overflow-auto whitespace-pre-wrap px-4 py-3 font-mono text-[12px] leading-[1.5] text-ink-2">{defectText}</pre>
+            </section>
+          )}
         </div>
       </div>
     </div>
