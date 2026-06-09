@@ -136,8 +136,8 @@ export function CaseEditor() {
           <hr className="m-0 h-px border-0 bg-border" />
           <ListControl
             icon={I.check({ size: 15 })}
-            title="Expected Results"
-            mark="## Expected Results"
+            title="Acceptance Criteria"
+            mark="## Acceptance Criteria"
             marker="–"
             items={c.expected}
             onChange={(v) => patch({ expected: v })}

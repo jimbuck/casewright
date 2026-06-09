@@ -32,7 +32,7 @@ single-branch workflow: edit, commit, pull, push, and resolve conflicts when the
   separate windows.
 - Author/edit/duplicate/move/delete test cases through a UI, persisted as plain markdown.
 - Treat the case body as **structured sections** (Objective, Systems in Scope, Steps,
-  Expected Results) edited via purpose-built controls, with **inline text formatting only**.
+  Acceptance Criteria) edited via purpose-built controls, with **inline text formatting only**.
 - Organize cases into a suite hierarchy derived directly from the folder structure.
 - Create test runs that snapshot a selected set of cases and capture per-case results.
 - Drive the full Git loop (status, commit, pull, push) from inside the app.
@@ -134,7 +134,7 @@ Verify a registered user can reset their password and regain access via the
    1. Confirm the recovery form is shown.
 3. Enter the account email and submit.
 
-## Expected Results
+## Acceptance Criteria
 
 - A reset email is delivered within one minute.
 - The reset link allows setting a new password.
@@ -159,12 +159,12 @@ Verify a registered user can reset their password and regain access via the
 
 The body is exactly these four sections, in this order, each under a reserved `##` heading:
 
-| Section            | Heading                 | Content model                                                        |
-|--------------------|-------------------------|----------------------------------------------------------------------|
-| Objective          | `## Objective`          | Multiline text, inline formatting only (see below).                  |
-| Systems in Scope   | `## Systems in Scope`   | Flat **bulleted** list; each item single-line, inline formatting only. |
-| Steps              | `## Steps`              | **Ordered, multi-depth (nestable)** list; each item single-line, inline formatting only. |
-| Expected Results   | `## Expected Results`   | Flat **bulleted** list; each item single-line, inline formatting only. |
+| Section             | Heading                  | Content model                                                                            |
+|---------------------|--------------------------|------------------------------------------------------------------------------------------|
+| Objective           | `## Objective`           | Multiline text, inline formatting only (see below).                                      |
+| Systems in Scope    | `## Systems in Scope`    | Flat **bulleted** list; each item single-line, inline formatting only.                   |
+| Steps               | `## Steps`               | **Ordered, multi-depth (nestable)** list; each item single-line, inline formatting only. |
+| Acceptance Criteria | `## Acceptance Criteria` | Flat **bulleted** list; each item single-line, inline formatting only.                   |
 
 Serialization rules (for clean, mergeable diffs):
 
@@ -172,7 +172,7 @@ Serialization rules (for clean, mergeable diffs):
 - Steps use ordered markers (`1.`, `2.`, …) with **2 spaces per nesting depth**; nesting =
   sub-steps. Nesting is created via the Steps control (indent/outdent), never by typing list
   syntax into an item.
-- Systems in Scope and Expected Results use `-` markers, one item per line, no nesting.
+- Systems in Scope and Acceptance Criteria use `-` markers, one item per line, no nesting.
 - File ends with a single trailing newline; front-matter key order is stable.
 
 Parser tolerance: the editor reads the four reserved sections. Any content outside them is
@@ -283,7 +283,7 @@ The CSV remains the primary store of results. *(In v1.)*
 
 - **Objective:** multiline text accepting the inline-formatting whitelist only; block-level
   constructs are prevented as you type and live-previewed.
-- **Systems in Scope / Expected Results:** add/remove/reorder (drag) single-line items.
+- **Systems in Scope / Acceptance Criteria:** add/remove/reorder (drag) single-line items.
 - **Steps:** add/remove/reorder single-line items with **indent/outdent** for sub-steps;
   rendered as a numbered, nested list.
 - All controls enforce the §5.2 formatting whitelist and round-trip to the reserved sections.

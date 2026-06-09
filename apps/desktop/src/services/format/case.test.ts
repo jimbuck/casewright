@@ -73,7 +73,7 @@ Access to the account inbox so the reset email can be opened.
   1. Confirm the recovery form is shown.
 3. Enter the account email and submit.
 
-## Expected Results
+## Acceptance Criteria
 
 - A reset email is delivered within one minute.
 - The reset link allows setting a new password.
@@ -94,7 +94,7 @@ describe('serializeCase', () => {
   it('emits all five sections even when empty', () => {
     const empty: ParsedCase = { ...PRD_CASE, objective: '', systems: [], setup: [], steps: [], expected: [] };
     const out = serializeCase(empty);
-    for (const h of ['## Objective', '## Systems in Scope', '## Setup', '## Steps', '## Expected Results']) {
+    for (const h of ['## Objective', '## Systems in Scope', '## Setup', '## Steps', '## Acceptance Criteria']) {
       expect(out).toContain(h);
     }
   });
@@ -150,6 +150,17 @@ describe('parseCase', () => {
     // and the recovered content round-trips
     const text = serializeCase(c);
     expect(serializeCase(parseCase(text).case)).toBe(text);
+  });
+
+  it('migrates a legacy `## Expected Results` heading to Acceptance Criteria', () => {
+    const legacy = PRD_CANONICAL.replace('## Acceptance Criteria', '## Expected Results');
+    const { case: c, extra } = parseCase(legacy);
+    // the legacy section is read into the acceptance list (not dropped to extra)…
+    expect(c.expected).toEqual(PRD_CASE.expected);
+    expect(extra).toBe('');
+    // …and serializing migrates it to the canonical heading.
+    expect(serializeCase(c)).toContain('## Acceptance Criteria');
+    expect(serializeCase(c)).not.toContain('## Expected Results');
   });
 
   it('preserves out-of-schema content and warns', () => {

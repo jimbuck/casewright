@@ -176,7 +176,7 @@ export function RunGuide() {
               />
               <GuideChecklist
                 title="Acceptance Criteria"
-                caption="Verify every expected result holds."
+                caption="Verify every acceptance criterion holds."
                 items={acceptItems}
                 myChecks={myChecks}
                 failNotes={myFailNotes}
