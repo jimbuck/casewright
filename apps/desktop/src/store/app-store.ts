@@ -596,7 +596,23 @@ export const useAppStore = create<AppState>()((set, get) => {
         expected: [...src.expected],
         steps: src.steps.map((s) => ({ ...s })),
       };
-      set((s) => ({ cases: [...s.cases, dup], sel: { kind: 'case', id: newId, runId: null }, view: 'editor' }));
+      set((s) => {
+        // Insert the duplicate's tree node right after the source so it shows in the sidebar
+        // (the tree — not the `cases` array — drives what renders). Mirrors `createCase`.
+        const nextTree = clone(s.tree);
+        const parent = findSuiteNode(nextTree, dup.suite);
+        if (parent) {
+          const i = parent.children.findIndex((n) => n.type === 'case' && n.id === id);
+          parent.children.splice(i < 0 ? parent.children.length : i + 1, 0, { type: 'case', id: newId });
+        }
+        return {
+          cases: [...s.cases, dup],
+          tree: nextTree,
+          collapsed: { ...s.collapsed, [dup.suite]: false },
+          sel: { kind: 'case', id: newId, runId: null },
+          view: 'editor',
+        };
+      });
       upsertChange({ kind: 'case', refId: newId, path: casePath(dup), status: 'A', label: dup.title });
       void writeCaseNow(newId);
       get().toast('Duplicated — resolve the display ID conflict');
