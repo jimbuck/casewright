@@ -36,7 +36,11 @@ beforeAll(async () => {
   await g.branch(['-M', 'main']);
 
   await fsp.mkdir(origin, { recursive: true });
-  await node.simpleGit()(origin).init(true);
+  // Create the bare origin with HEAD -> main. Without an explicit initial branch the
+  // bare repo inherits git's `init.defaultBranch` (often `master` on CI runners), so its
+  // HEAD points at a ref that never gets pushed — the later `clone` then checks out an
+  // empty tree and the divergent-pull tests fail. Pinning it to `main` keeps CI in sync.
+  await node.simpleGit()(origin).init(true, ['-b', 'main']);
   await g.addRemote('origin', origin);
   await g.push(['-u', 'origin', 'main']);
 });
