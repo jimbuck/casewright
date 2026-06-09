@@ -12,6 +12,7 @@ const c1: ParsedCase = {
   tags: ['smoke'],
   objective: 'Check the first thing.',
   systems: ['Web app'],
+  setup: [{ name: 'Seed data', body: 'A clean database with the **baseline** fixtures loaded.' }],
   steps: [
     { text: 'Open the app.', depth: 0 },
     { text: 'Confirm it loads.', depth: 1 },
@@ -26,6 +27,7 @@ const c2: ParsedCase = {
   tags: [],
   objective: '',
   systems: [],
+  setup: [],
   steps: [],
   expected: [],
 };

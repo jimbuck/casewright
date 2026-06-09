@@ -50,6 +50,16 @@ export const cases: Case[] = [
     objective:
       'Verify a registered user can reset their password and regain access via the **self-service** flow; no admin involvement required.',
     systems: ['Login web app', 'Auth service', 'Transactional email gateway'],
+    setup: [
+      {
+        name: 'Test account',
+        body: 'A registered user with a verified email and a **known** current password.',
+      },
+      {
+        name: 'Inbox access',
+        body: 'Access to the account inbox so the reset email can be opened.',
+      },
+    ],
     steps: [
       { text: 'Navigate to the login screen.', depth: 0 },
       { text: 'Click "Forgot password".', depth: 0 },
@@ -75,6 +85,7 @@ export const cases: Case[] = [
     objective:
       'Confirm the lockout policy engages after repeated failures and communicates a clear recovery path to the user.',
     systems: ['Login web app', 'Auth service', 'Rate limiter'],
+    setup: [],
     steps: [
       { text: 'Submit an incorrect password five times in a row.', depth: 0 },
       { text: 'Observe the lockout message on the sixth attempt.', depth: 0 },
@@ -97,6 +108,7 @@ export const cases: Case[] = [
     objective:
       'An idle session must expire on schedule and require re-authentication without losing unsaved draft data.',
     systems: ['Login web app', 'Session service'],
+    setup: [],
     steps: [
       { text: 'Sign in and leave the tab idle past the timeout.', depth: 0 },
       { text: 'Attempt a privileged action.', depth: 0 },
@@ -119,6 +131,12 @@ export const cases: Case[] = [
     objective:
       'A valid percentage coupon should reduce the order total correctly and reflect in the receipt.',
     systems: ['Checkout web app', 'Pricing service', 'Billing ledger'],
+    setup: [
+      {
+        name: 'Active coupon',
+        body: 'A valid percentage coupon configured in the pricing service.\nIt must not be expired or usage-capped.',
+      },
+    ],
     steps: [
       { text: 'Add a paid plan to the cart.', depth: 0 },
       { text: 'Enter a valid percentage coupon.', depth: 0 },
@@ -142,6 +160,7 @@ export const cases: Case[] = [
     objective:
       'When a card is declined the user must see a clear, recoverable error and the order must not be created.',
     systems: ['Checkout web app', 'Payment gateway'],
+    setup: [],
     steps: [
       { text: 'Enter a card number that the gateway declines.', depth: 0 },
       { text: 'Attempt to pay.', depth: 0 },
@@ -159,6 +178,7 @@ export const cases: Case[] = [
     objective:
       'A refund issued from the admin should return funds to the original method and update the ledger and receipt.',
     systems: ['Admin console', 'Payment gateway', 'Billing ledger'],
+    setup: [],
     steps: [
       { text: 'Locate a settled charge in the admin console.', depth: 0 },
       { text: 'Issue a full refund.', depth: 0 },
@@ -181,6 +201,7 @@ export const cases: Case[] = [
     objective:
       'Upgrading mid-cycle must charge a prorated amount for the remainder of the billing period.',
     systems: ['Account settings', 'Pricing service', 'Billing ledger'],
+    setup: [],
     steps: [
       { text: 'Open plan settings on an active subscription.', depth: 0 },
       { text: 'Select a higher tier and confirm.', depth: 0 },
@@ -202,6 +223,7 @@ export const cases: Case[] = [
     objective:
       'A standard cancellation should keep access until the end of the paid period, then stop renewal.',
     systems: ['Account settings', 'Billing ledger'],
+    setup: [],
     steps: [
       { text: 'Cancel an active subscription.', depth: 0 },
       { text: 'Confirm access continues until period end.', depth: 0 },
@@ -220,6 +242,7 @@ export const cases: Case[] = [
     tags: ['Onboarding', 'Smoke', 'Regression'],
     objective: 'A new sign-up must confirm their email before the account is fully activated.',
     systems: ['Sign-up web app', 'Auth service', 'Transactional email gateway'],
+    setup: [],
     steps: [
       { text: 'Complete the sign-up form with a new email.', depth: 0 },
       { text: 'Open the verification email and click the link.', depth: 0 },
@@ -240,6 +263,7 @@ export const cases: Case[] = [
     tags: ['Onboarding', 'Regression'],
     objective: 'The first-run checklist should orient a new user and track completion.',
     systems: ['Onboarding web app'],
+    setup: [],
     steps: [
       { text: 'Sign in as a brand-new user.', depth: 0 },
       { text: 'Complete each checklist item.', depth: 0 },
@@ -256,6 +280,7 @@ export const cases: Case[] = [
     tags: ['Onboarding', 'Invites'],
     objective: 'An invited colleague can accept and land in the correct workspace.',
     systems: ['Sign-up web app', 'Transactional email gateway'],
+    setup: [],
     steps: [
       { text: 'Send an invite to a colleague’s email.', depth: 0 },
       { text: 'Accept the invite from the email.', depth: 0 },

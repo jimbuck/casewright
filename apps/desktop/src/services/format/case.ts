@@ -1,6 +1,6 @@
 import { node } from '@/lib/node';
 import { CaseFrontMatterSchema, type LintWarning } from '@/schemas';
-import type { Case, Step } from '@/types';
+import type { Case, SetupItem, Step } from '@/types';
 import { randomId } from '@/utils/ids';
 import { numberSteps } from '@/utils/steps';
 
@@ -14,7 +14,7 @@ export interface ParseCaseResult {
   warnings: LintWarning[];
 }
 
-const RESERVED = ['Objective', 'Systems in Scope', 'Steps', 'Expected Results'] as const;
+const RESERVED = ['Objective', 'Systems in Scope', 'Setup', 'Steps', 'Expected Results'] as const;
 
 // ---------------------------------------------------------------------------
 // Serialize
@@ -34,6 +34,17 @@ const yamlScalar = (s: string): string => (needsQuote(s) ? JSON.stringify(s) : s
 function serializeSteps(steps: Step[]): string {
   const nums = numberSteps(steps);
   return steps.map((s, i) => '  '.repeat(s.depth) + (nums[i].split('.').pop() ?? '1') + '. ' + s.text).join('\n');
+}
+
+/** Each setup item becomes a `### name` heading with its (optional) multi-line body. */
+function serializeSetup(items: SetupItem[]): string {
+  return items
+    .map((it) => {
+      const head = it.name ? `### ${it.name}` : '###';
+      const body = it.body.trim();
+      return body ? `${head}\n\n${body}` : head;
+    })
+    .join('\n\n');
 }
 
 const sectionBlock = (heading: string, content: string): string => (content ? `${heading}\n\n${content}` : heading);
@@ -58,6 +69,7 @@ export function serializeCase(c: ParsedCase, extra = ''): string {
   const blocks = [
     sectionBlock('## Objective', c.objective.trim()),
     sectionBlock('## Systems in Scope', c.systems.map((s) => `- ${s}`).join('\n')),
+    sectionBlock('## Setup', serializeSetup(c.setup)),
     sectionBlock('## Steps', serializeSteps(c.steps)),
     sectionBlock('## Expected Results', c.expected.map((s) => `- ${s}`).join('\n')),
   ];
@@ -123,6 +135,20 @@ function parseBullets(text: string): string[] {
     .map((l) => l.replace(/^[-*+]\s+/, ''));
 }
 
+/** Split a Setup section into `### name` + body items (h1–h3 are reserved, so `###` is unambiguous). */
+function parseSetup(text: string): SetupItem[] {
+  const items: { name: string; body: string[] }[] = [];
+  for (const line of text.split('\n')) {
+    const h = /^###(?:[ \t]+(.*?))?[ \t]*$/.exec(line);
+    if (h) {
+      items.push({ name: (h[1] ?? '').trim(), body: [] });
+      continue;
+    }
+    if (items.length) items[items.length - 1].body.push(line);
+  }
+  return items.map((it) => ({ name: it.name, body: trimBlank(it.body).join('\n') }));
+}
+
 function parseSteps(text: string): Step[] {
   return text
     .split('\n')
@@ -168,6 +194,7 @@ export function parseCase(input: string): ParseCaseResult {
       tags: front.tags,
       objective: (sections['Objective'] ?? '').trim(),
       systems: parseBullets(sections['Systems in Scope'] ?? ''),
+      setup: parseSetup(sections['Setup'] ?? ''),
       steps: parseSteps(sections['Steps'] ?? ''),
       expected: parseBullets(sections['Expected Results'] ?? ''),
     },

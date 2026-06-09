@@ -17,6 +17,13 @@ const PRD_CASE: ParsedCase = {
   objective:
     'Verify a registered user can reset their password and regain access via the\n**self-service** flow; no admin involvement required.',
   systems: ['Login web app', 'Auth service', 'Transactional email gateway'],
+  setup: [
+    {
+      name: 'Test account',
+      body: 'A registered user with a verified email and a **known** current password.',
+    },
+    { name: 'Inbox access', body: 'Access to the account inbox so the reset email can be opened.' },
+  ],
   steps: [
     { text: 'Navigate to the login screen.', depth: 0 },
     { text: 'Click "Forgot password".', depth: 0 },
@@ -49,6 +56,16 @@ Verify a registered user can reset their password and regain access via the
 - Auth service
 - Transactional email gateway
 
+## Setup
+
+### Test account
+
+A registered user with a verified email and a **known** current password.
+
+### Inbox access
+
+Access to the account inbox so the reset email can be opened.
+
 ## Steps
 
 1. Navigate to the login screen.
@@ -74,10 +91,10 @@ describe('serializeCase', () => {
     expect(out.endsWith('\n\n')).toBe(false);
   });
 
-  it('emits all four sections even when empty', () => {
-    const empty: ParsedCase = { ...PRD_CASE, objective: '', systems: [], steps: [], expected: [] };
+  it('emits all five sections even when empty', () => {
+    const empty: ParsedCase = { ...PRD_CASE, objective: '', systems: [], setup: [], steps: [], expected: [] };
     const out = serializeCase(empty);
-    for (const h of ['## Objective', '## Systems in Scope', '## Steps', '## Expected Results']) {
+    for (const h of ['## Objective', '## Systems in Scope', '## Setup', '## Steps', '## Expected Results']) {
       expect(out).toContain(h);
     }
   });
@@ -101,6 +118,20 @@ describe('parseCase', () => {
     const { case: c, warnings } = parseCase(md);
     expect(c.id).toMatch(/^[a-z0-9]{11}$/);
     expect(warnings.some((w) => w.code === 'missing-id')).toBe(true);
+  });
+
+  it('parses named setup items, including one with an empty body', () => {
+    const md = PRD_CANONICAL.replace(
+      '### Inbox access\n\nAccess to the account inbox so the reset email can be opened.',
+      '### Inbox access',
+    );
+    const { case: c } = parseCase(md);
+    expect(c.setup).toEqual([
+      { name: 'Test account', body: 'A registered user with a verified email and a **known** current password.' },
+      { name: 'Inbox access', body: '' },
+    ]);
+    // a body-less item round-trips as a bare `### heading`
+    expect(serializeCase(c)).toContain('### Inbox access\n\n## Steps');
   });
 
   it('preserves out-of-schema content and warns', () => {
@@ -134,6 +165,7 @@ describe('round-trip — every sample case', () => {
       expect(parsed.status).toBe(c.status);
       expect(parsed.tags).toEqual(c.tags);
       expect(parsed.systems).toEqual(c.systems);
+      expect(parsed.setup).toEqual(c.setup);
       expect(parsed.expected).toEqual(c.expected);
       expect(parsed.steps).toEqual(c.steps);
       expect(parsed.objective).toBe(c.objective.trim());
