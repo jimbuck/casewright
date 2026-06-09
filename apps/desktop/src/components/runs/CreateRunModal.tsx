@@ -7,6 +7,9 @@ import type { Case, TreeNode } from '@/types';
 
 type NodeState = 'on' | 'off' | 'partial';
 
+/** Width folder rows give their disclosure chevron (size-5 = 20px) plus its gap-1 (4px). */
+const CHEVRON_COL = 24;
+
 /** A tri-state checkbox: checked / indeterminate / empty. */
 function TriBox({ state }: { state: NodeState }) {
   if (state === 'on')
@@ -92,14 +95,17 @@ export function CreateRunModal() {
   // ---- recursive tree rows ----
   const renderNodes = (nodes: TreeNode[], depth: number): ReactNode[] =>
     nodes.flatMap((node) => {
-      const pad = { paddingLeft: 8 + depth * 18 };
+      const indent = 8 + depth * 18;
       if (node.type === 'case') {
         const c: Case | undefined = byId.get(node.id);
         return (
           <button
             key={node.id}
             className="flex w-full items-center gap-2.5 rounded-md px-2 py-[5px] text-left hover:bg-raise"
-            style={pad}
+            // Folder rows lead with a chevron (CHEVRON_COL wide); cases have none, so they reserve
+            // the same width — this keeps a case's checkbox one indent step to the RIGHT of its
+            // parent folder's, instead of landing to the left of it.
+            style={{ paddingLeft: indent + CHEVRON_COL }}
             onClick={() => toggleNode(node)}
           >
             <TriBox state={nodeState(node)} />
@@ -110,7 +116,7 @@ export function CreateRunModal() {
       }
       const open = expanded.has(node.id);
       const rows: ReactNode[] = [
-        <div key={node.id} className="flex items-center gap-1 rounded-md hover:bg-raise" style={pad}>
+        <div key={node.id} className="flex items-center gap-1 rounded-md hover:bg-raise" style={{ paddingLeft: indent }}>
           <button className="grid size-5 shrink-0 place-items-center text-ink-faint" onClick={() => toggleExpand(node.id)} title={open ? 'Collapse' : 'Expand'}>
             {I.chevron({ size: 14, style: { transform: open ? 'rotate(90deg)' : 'none' } })}
           </button>

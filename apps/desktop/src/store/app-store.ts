@@ -31,7 +31,7 @@ import {
 } from '@/services/git';
 import type { LintWarning } from '@/schemas';
 import { nowStamp, randomId, slug } from '@/utils/ids';
-import { deriveItems } from '@/utils/run-items';
+import { buildRunSummary, deriveItems, serializeRunSummary } from '@/utils/run-items';
 import { isNwjs, pickDirectory } from '@/lib/nwjs';
 import type {
   Approval,
@@ -167,7 +167,8 @@ export interface AppState {
   setRunFailNote: (runId: string, i: number, key: string, note: string) => void;
   setRunGroupChecks: (runId: string, i: number, keys: string[], state: CheckState) => void;
   recordRunResult: (runId: string, i: number, patch: { result: Result; tester: string; notes: string }) => void;
-  setRunSummary: (runId: string, summary: string) => void;
+  /** Rename a run (display name only; the run folder/id is unchanged). */
+  setRunName: (runId: string, name: string) => void;
   setRunNotes: (runId: string, notes: string) => void;
   /** Save (name + now) or clear (empty name → null) a tester/reviewer approval. */
   setRunApproval: (runId: string, who: 'tester' | 'reviewer', name: string) => void;
@@ -473,7 +474,9 @@ export const useAppStore = create<AppState>()((set, get) => {
     scope: run.scope,
     testerApproval: run.testerApproval,
     reviewerApproval: run.reviewerApproval,
-    summary: run.summary,
+    // The Summary is generated from results, not user-authored — regenerated on every write so
+    // the committed `_run.md` always reflects the run's actual pass/fail state.
+    summary: serializeRunSummary(buildRunSummary(run, get().cases)),
     notes: run.notes,
   });
 
@@ -520,11 +523,13 @@ export const useAppStore = create<AppState>()((set, get) => {
       .catch(onWriteError);
   };
 
-  /** Persist one case sidecar (debounced) + flag the run as modified. */
+  /** Persist one case sidecar (debounced) + flag the run as modified. Also refreshes the
+   *  run-details sidecar, whose generated Summary depends on this row's result/failures. */
   const persistRunCase = (runId: string, i: number) => {
     const run = get().runs.find((r) => r.id === runId);
     if (run) upsertChange({ kind: 'run', refId: runId, path: run.file, status: 'M', label: run.name });
     schedulePersist(`runcase:${runId}:${i}`, () => writeRunCaseNow(runId, i));
+    schedulePersist(`rundetails:${runId}`, () => writeRunDetailsNow(runId));
   };
 
   /** Persist the run-details sidecar (debounced) + flag the run as modified. */
@@ -1226,8 +1231,8 @@ export const useAppStore = create<AppState>()((set, get) => {
       persistRunCase(runId, i);
     },
 
-    setRunSummary: (runId, summary) => {
-      set((s) => ({ runs: s.runs.map((r) => (r.id === runId ? { ...r, summary } : r)) }));
+    setRunName: (runId, name) => {
+      set((s) => ({ runs: s.runs.map((r) => (r.id === runId ? { ...r, name } : r)) }));
       persistRunDetails(runId);
     },
 
@@ -1239,8 +1244,20 @@ export const useAppStore = create<AppState>()((set, get) => {
     setRunApproval: (runId, who, name) => {
       const approval: Approval | null = name.trim() ? { name: name.trim(), at: nowStamp() } : null;
       const field = who === 'tester' ? 'testerApproval' : 'reviewerApproval';
-      set((s) => ({ runs: s.runs.map((r) => (r.id === runId ? { ...r, [field]: approval } : r)) }));
+      const wasClosed = get().runs.find((r) => r.id === runId)?.status === 'closed';
+      set((s) => ({
+        runs: s.runs.map((r) => {
+          if (r.id !== runId) return r;
+          const next = { ...r, [field]: approval };
+          // A run closes once both tester and reviewer have signed off; clearing either reopens it.
+          next.status = next.testerApproval && next.reviewerApproval ? 'closed' : 'open';
+          return next;
+        }),
+      }));
       persistRunDetails(runId);
+      if (!wasClosed && get().runs.find((r) => r.id === runId)?.status === 'closed') {
+        get().toast('Run closed · tester and reviewer approved');
+      }
     },
 
     rerunRun: (runId) => {

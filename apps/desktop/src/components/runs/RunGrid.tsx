@@ -4,6 +4,7 @@ import { Button, Input, RES, RESULTS, Textarea } from '@/components/ui';
 import { cn } from '@/lib/utils';
 import { useApp } from '@/store/app-store';
 import { firstUnrun, nowStamp } from '@/utils/ids';
+import { buildRunSummary, type RunSummaryEntry } from '@/utils/run-items';
 import type { Approval, Result, RunRow } from '@/types';
 import { NotesCell } from './NotesCell';
 
@@ -45,8 +46,40 @@ function ApprovalCard({
   );
 }
 
-type Tally = Record<Result, number>;
 const SEGS: Result[] = ['pass', 'fail', 'blocked', 'skipped', 'not_run'];
+
+/** A failed/blocked case in the generated Summary, shown with its failed steps + notes. */
+function AttentionRow({ entry }: { entry: RunSummaryEntry }) {
+  return (
+    <div className="flex flex-col gap-1.5 rounded-md border border-border bg-panel-2 p-2.5">
+      <div className="flex items-center gap-2">
+        <span className="size-[9px] shrink-0 rounded-[3px]" style={{ background: RES[entry.result].color }} />
+        <span className="font-mono text-[11px] text-ink-3">{entry.display_id}</span>
+        <span className="text-[13px] font-semibold text-ink">{entry.title}</span>
+        <span className="ml-auto font-mono text-[11px] font-semibold" style={{ color: RES[entry.result].color }}>
+          {RES[entry.result].label}
+        </span>
+      </div>
+      {entry.failures.length > 0 && (
+        <ul className="flex flex-col gap-1 pl-0.5">
+          {entry.failures.map((f, k) => (
+            <li key={k} className="flex gap-1.5 text-[12.5px] leading-[1.45] text-ink-2">
+              <span className="mt-[5px] size-[6px] shrink-0 rounded-full bg-fail" />
+              <span>
+                {f.text}
+                {f.note && <span className="text-ink-3"> — {f.note}</span>}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {entry.notes && <div className="text-[12px] italic text-ink-3">{entry.notes}</div>}
+      {entry.failures.length === 0 && !entry.notes && (
+        <div className="text-[12px] text-ink-faint">No failure detail recorded.</div>
+      )}
+    </div>
+  );
+}
 
 const RUN_STATUS: Record<string, string> = {
   open: 'text-accent-ink bg-accent-soft',
@@ -72,10 +105,8 @@ export function RunGrid() {
     setMenu(null);
   };
 
-  const t: Tally = { pass: 0, fail: 0, blocked: 0, skipped: 0, not_run: 0 };
-  run.rows.forEach((r) => (t[r.result] = (t[r.result] || 0) + 1));
-  const executed = run.rows.length - t.not_run;
-  const passRate = executed ? Math.round((t.pass / executed) * 100) : 0;
+  const summary = buildRunSummary(run, ctx.cases);
+  const { counts: t, executed, passRate } = summary;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -127,119 +158,185 @@ export function RunGrid() {
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-auto">
-        <table className="w-full border-separate border-spacing-0 text-[13px]">
-          <caption className="sr-only">Test cases in this run</caption>
-          <thead>
-            <tr className="[&>th]:sticky [&>th]:top-0 [&>th]:z-[2] [&>th]:whitespace-nowrap [&>th]:border-b [&>th]:border-border-2 [&>th]:bg-panel-2 [&>th]:px-3 [&>th]:py-[9px] [&>th]:text-left [&>th]:text-[11px] [&>th]:font-semibold [&>th]:uppercase [&>th]:tracking-[0.05em] [&>th]:text-ink-faint">
-              <th style={{ width: 90 }}>Case</th>
-              <th>Title</th>
-              <th style={{ width: 150 }}>Result</th>
-              <th style={{ width: 110 }}>Tester</th>
-              <th style={{ width: 130 }}>Executed</th>
-              <th style={{ width: 230 }}>Notes</th>
-              <th style={{ width: 40 }}></th>
-            </tr>
-          </thead>
-          <tbody>
-            {run.rows.map((row, i) => {
-              const gone = !liveIds.has(row.case_id);
-              return (
-                <tr
-                  key={row.case_id + i}
-                  className="hover:bg-[oklch(0.975_0.004_80)] [&>td]:border-b [&>td]:border-border [&>td]:px-3 [&>td]:py-[7px] [&>td]:align-middle"
-                >
-                  <td className="whitespace-nowrap font-mono text-[12px] text-ink-3">{row.display_id}</td>
-                  <td className="max-w-[420px]">
-                    {gone ? (
-                      <span className="text-ink-faint">{row.title}</span>
-                    ) : (
+      <div className="flex min-h-0 flex-1">
+        <div className="min-h-0 flex-1 overflow-auto">
+          <table className="w-full border-separate border-spacing-0 text-[13px]">
+            <caption className="sr-only">Test cases in this run</caption>
+            <thead>
+              <tr className="[&>th]:sticky [&>th]:top-0 [&>th]:z-[2] [&>th]:whitespace-nowrap [&>th]:border-b [&>th]:border-border-2 [&>th]:bg-panel-2 [&>th]:px-3 [&>th]:py-[9px] [&>th]:text-left [&>th]:text-[11px] [&>th]:font-semibold [&>th]:uppercase [&>th]:tracking-[0.05em] [&>th]:text-ink-faint">
+                <th style={{ width: 90 }}>Case</th>
+                <th>Title</th>
+                <th style={{ width: 150 }}>Result</th>
+                <th style={{ width: 110 }}>Tester</th>
+                <th style={{ width: 130 }}>Executed</th>
+                <th style={{ width: 230 }}>Notes</th>
+                <th style={{ width: 40 }}></th>
+              </tr>
+            </thead>
+            <tbody>
+              {run.rows.map((row, i) => {
+                const gone = !liveIds.has(row.case_id);
+                return (
+                  <tr
+                    key={row.case_id + i}
+                    className="hover:bg-[oklch(0.975_0.004_80)] [&>td]:border-b [&>td]:border-border [&>td]:px-3 [&>td]:py-[7px] [&>td]:align-middle"
+                  >
+                    <td className="whitespace-nowrap font-mono text-[12px] text-ink-3">{row.display_id}</td>
+                    <td className="max-w-[420px]">
+                      {gone ? (
+                        <span className="text-ink-faint">{row.title}</span>
+                      ) : (
+                        <button
+                          className="rounded-[3px] border-0 bg-transparent p-0 text-left text-ink hover:text-accent-ink hover:underline hover:underline-offset-2"
+                          title="Walk through this case"
+                          onClick={() => ctx.startGuide(run.id, i)}
+                        >
+                          {row.title}
+                        </button>
+                      )}
+                      {gone && (
+                        <span className="ml-1.5 text-[10px] text-fail" title="Case no longer resolves to a live file">
+                          ⚠ deleted
+                        </span>
+                      )}
+                    </td>
+                    <td className="relative">
                       <button
-                        className="rounded-[3px] border-0 bg-transparent p-0 text-left text-ink hover:text-accent-ink hover:underline hover:underline-offset-2"
-                        title="Walk through this case"
-                        onClick={() => ctx.startGuide(run.id, i)}
+                        className="inline-flex items-center gap-[5px] rounded-[5px] border border-border bg-panel px-[9px] py-[3px] font-mono text-[12px] font-semibold hover:bg-raise"
+                        onClick={() => setMenu(menu === i ? null : i)}
                       >
-                        {row.title}
+                        <span className="size-[9px] rounded-[3px]" style={{ background: RES[row.result].color }} />
+                        {RES[row.result].label}
+                        {I.chevronDown({ size: 12 })}
                       </button>
-                    )}
-                    {gone && (
-                      <span className="ml-1.5 text-[10px] text-fail" title="Case no longer resolves to a live file">
-                        ⚠ deleted
-                      </span>
-                    )}
-                  </td>
-                  <td className="relative">
-                    <button
-                      className="inline-flex items-center gap-[5px] rounded-[5px] border border-border bg-panel px-[9px] py-[3px] font-mono text-[12px] font-semibold hover:bg-raise"
-                      onClick={() => setMenu(menu === i ? null : i)}
-                    >
-                      <span className="size-[9px] rounded-[3px]" style={{ background: RES[row.result].color }} />
-                      {RES[row.result].label}
-                      {I.chevronDown({ size: 12 })}
-                    </button>
-                    {menu === i && (
-                      <>
-                        <div className="fixed inset-0 z-20" onClick={() => setMenu(null)} />
-                        <div className="absolute z-30 flex min-w-[130px] flex-col gap-0.5 rounded-md border border-border-2 bg-panel p-[5px] shadow-[0_12px_30px_var(--shadow)]">
-                          {RESULTS.map((r) => (
-                            <button
-                              key={r.key}
-                              className="flex items-center gap-2 rounded-sm border-0 bg-transparent px-[9px] py-1.5 text-left text-[12.5px] hover:bg-raise"
-                              onClick={() => setResult(i, r.key)}
-                            >
-                              <span className="size-[9px] shrink-0 rounded-[3px]" style={{ background: r.color }} />
-                              {r.label}
-                              {row.result === r.key && <span className="ml-auto text-accent">{I.check({ size: 13 })}</span>}
-                            </button>
-                          ))}
-                        </div>
-                      </>
-                    )}
-                  </td>
-                  <td>
-                    <input
-                      className={cn(cellInput, 'font-mono')}
-                      value={row.tester}
-                      placeholder={ctx.lastTester || '—'}
-                      onChange={(e) => {
-                        update(i, { tester: e.target.value });
-                        if (e.target.value.trim()) ctx.setLastTester(e.target.value.trim());
-                      }}
-                    />
-                  </td>
-                  <td className="whitespace-nowrap font-mono text-[12px] text-ink-3">
-                    {row.executed_at || <span className="text-ink-3">—</span>}
-                  </td>
-                  <td>
-                    <NotesCell value={row.notes} onChange={(v) => update(i, { notes: v })} />
-                  </td>
-                  <td>
-                    {!gone && (
-                      <Button icon size="sm" variant="ghost" title="Walk through this case" onClick={() => ctx.startGuide(run.id, i)}>
-                        {I.play({ size: 13 })}
-                      </Button>
-                    )}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+                      {menu === i && (
+                        <>
+                          <div className="fixed inset-0 z-20" onClick={() => setMenu(null)} />
+                          <div className="absolute z-30 flex min-w-[130px] flex-col gap-0.5 rounded-md border border-border-2 bg-panel p-[5px] shadow-[0_12px_30px_var(--shadow)]">
+                            {RESULTS.map((r) => (
+                              <button
+                                key={r.key}
+                                className="flex items-center gap-2 rounded-sm border-0 bg-transparent px-[9px] py-1.5 text-left text-[12.5px] hover:bg-raise"
+                                onClick={() => setResult(i, r.key)}
+                              >
+                                <span className="size-[9px] shrink-0 rounded-[3px]" style={{ background: r.color }} />
+                                {r.label}
+                                {row.result === r.key && <span className="ml-auto text-accent">{I.check({ size: 13 })}</span>}
+                              </button>
+                            ))}
+                          </div>
+                        </>
+                      )}
+                    </td>
+                    <td>
+                      <input
+                        className={cn(cellInput, 'font-mono')}
+                        value={row.tester}
+                        placeholder={ctx.lastTester || '—'}
+                        onChange={(e) => {
+                          update(i, { tester: e.target.value });
+                          if (e.target.value.trim()) ctx.setLastTester(e.target.value.trim());
+                        }}
+                      />
+                    </td>
+                    <td className="whitespace-nowrap font-mono text-[12px] text-ink-3">
+                      {row.executed_at || <span className="text-ink-3">—</span>}
+                    </td>
+                    <td>
+                      <NotesCell value={row.notes} onChange={(v) => update(i, { notes: v })} />
+                    </td>
+                    <td>
+                      {!gone && (
+                        <Button icon size="sm" variant="ghost" title="Walk through this case" onClick={() => ctx.startGuide(run.id, i)}>
+                          {I.play({ size: 13 })}
+                        </Button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
 
-        <div className="mx-auto flex max-w-[880px] flex-col gap-4 px-[26px] py-[22px]">
-          <section className="flex flex-col gap-2">
-            <div className="text-[11px] font-bold uppercase tracking-[0.06em] text-ink-2">Summary</div>
-            <Textarea
-              className="min-h-[64px] text-[13px] leading-[1.5]"
-              value={run.summary}
-              placeholder="A short summary of this run — scope, outcome, anything notable."
-              onChange={(e) => ctx.setRunSummary(run.id, e.target.value)}
+        <aside className="flex w-[360px] flex-none flex-col gap-4 overflow-auto border-l border-border bg-panel-2 px-5 py-[18px]">
+          <section className="flex flex-col gap-1.5">
+            <label className="text-[11px] font-bold uppercase tracking-[0.06em] text-ink-2">Run name</label>
+            <Input
+              className="text-[14px] font-semibold"
+              value={run.name}
+              placeholder="Untitled run"
+              onChange={(e) => ctx.setRunName(run.id, e.target.value)}
             />
           </section>
 
           <section className="flex flex-col gap-2">
+            <div className="flex items-baseline gap-2">
+              <div className="text-[11px] font-bold uppercase tracking-[0.06em] text-ink-2">Summary</div>
+              <span className="text-[10.5px] text-ink-faint">generated from results</span>
+            </div>
+            <div className="flex flex-col gap-3 rounded-lg border border-border bg-panel p-[14px]">
+              {summary.total === 0 ? (
+                <div className="text-[13px] text-ink-3">No cases in this run.</div>
+              ) : (
+                <>
+                  <div className="flex items-baseline gap-2">
+                    <span
+                      className="text-[20px] font-bold leading-none"
+                      style={{ color: passRate >= 80 ? 'var(--pass)' : passRate >= 50 ? 'var(--blocked)' : 'var(--fail)' }}
+                    >
+                      {passRate}%
+                    </span>
+                    <span className="text-[13px] text-ink-3">
+                      pass rate · {t.pass}/{executed} executed {executed === 1 ? 'case' : 'cases'} passed
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {SEGS.filter((s) => t[s]).map((s) => (
+                      <span key={s} className="inline-flex items-center gap-1.5 rounded-full bg-sunken px-2.5 py-1 text-[12px] text-ink-2">
+                        <span className="size-[9px] rounded-[3px]" style={{ background: RES[s].color }} />
+                        <b className="font-semibold text-ink">{t[s]}</b> {RES[s].label}
+                      </span>
+                    ))}
+                  </div>
+                  {summary.attention.length > 0 ? (
+                    <div className="flex flex-col gap-2">
+                      <div className="text-[11px] font-bold uppercase tracking-[0.05em] text-ink-2">
+                        Needs attention ({summary.attention.length})
+                      </div>
+                      {summary.attention.map((e) => (
+                        <AttentionRow key={e.case_id} entry={e} />
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-1.5 text-[12.5px] text-pass">
+                      {I.check({ size: 14 })} No failed or blocked cases.
+                    </div>
+                  )}
+                  {summary.passed.length > 0 && (
+                    <div className="flex flex-col gap-1">
+                      <div className="text-[11px] font-bold uppercase tracking-[0.05em] text-ink-2">
+                        Passed ({summary.passed.length})
+                      </div>
+                      <ul className="flex flex-col gap-0.5">
+                        {summary.passed.map((e) => (
+                          <li key={e.case_id} className="flex items-center gap-2 text-[12.5px] text-ink-3">
+                            <span className="text-pass">{I.check({ size: 12 })}</span>
+                            <span className="font-mono text-[11px] text-ink-faint">{e.display_id}</span>
+                            <span className="truncate text-ink-2">{e.title}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          </section>
+
+          <section className="flex flex-col gap-2">
             <div className="text-[11px] font-bold uppercase tracking-[0.06em] text-ink-2">Approvals</div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="flex flex-col gap-3">
               <ApprovalCard
                 label="Tester"
                 approval={run.testerApproval}
@@ -266,7 +363,7 @@ export function RunGrid() {
               onChange={(e) => ctx.setRunNotes(run.id, e.target.value)}
             />
           </section>
-        </div>
+        </aside>
       </div>
     </div>
   );

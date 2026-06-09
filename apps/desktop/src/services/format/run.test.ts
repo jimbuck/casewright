@@ -35,7 +35,7 @@ describe('run-case sidecar', () => {
   it('encodes checkbox states as [ ] / [x] / [-]', () => {
     const md = serializeRunCase(SAMPLE_CASE);
     expect(md).toContain('- [x] Navigate to the login screen');
-    expect(md).toContain('- [-] Click "Forgot password" — button 500s, no email sent');
+    expect(md).toContain('- [-] Click "Forgot password" !! button 500s, no email sent');
     expect(md).toContain('- [ ] Enter the emailed token');
   });
 
@@ -54,11 +54,18 @@ describe('run-case sidecar', () => {
     expect(runCase.steps.every((s) => s.state === 'pass')).toBe(true);
   });
 
-  it('splits the failure note on the first separator only', () => {
-    const md = '---\ncase_id: x1\n---\n\n## Steps\n\n- [-] A — B — C\n';
+  it('splits the failure note on the last `!!` sentinel, so dashes survive in the item text', () => {
+    const md = '---\ncase_id: x1\n---\n\n## Steps\n\n- [-] Reset link — emailed within 60s !! never arrived\n';
     const { runCase } = parseRunCase(md);
-    expect(runCase.steps[0].text).toBe('A');
-    expect(runCase.steps[0].failNote).toBe('B — C');
+    expect(runCase.steps[0].text).toBe('Reset link — emailed within 60s');
+    expect(runCase.steps[0].failNote).toBe('never arrived');
+  });
+
+  it('uses the last sentinel when one appears in the item text too', () => {
+    const md = '---\ncase_id: x1\n---\n\n## Steps\n\n- [-] Tap Save !! Confirm !! crashed on save\n';
+    const { runCase } = parseRunCase(md);
+    expect(runCase.steps[0].text).toBe('Tap Save !! Confirm');
+    expect(runCase.steps[0].failNote).toBe('crashed on save');
   });
 
   it('keeps an em-dash inside a passing item as text', () => {

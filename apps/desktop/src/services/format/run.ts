@@ -80,7 +80,10 @@ export interface RunCaseItem {
 }
 
 const GLYPH: Record<CheckState, string> = { none: ' ', pass: 'x', fail: '-' };
-const FAIL_SEP = ' — ';
+// Separates a failed item's text from its note. A rare `!!` sentinel (not prose punctuation like an
+// em-dash) plus splitting on the LAST occurrence means dashes/em-dashes in the item text survive,
+// and the space padding keeps a trailing `!`/`!!` in the text from being mistaken for the sentinel.
+const FAIL_SEP = ' !! ';
 
 /** Serialize one checklist section's items to `- [ |x|-] text[ — failNote]` lines. */
 function serializeItems(items: RunCaseItem[]): string {
@@ -113,7 +116,7 @@ function parseItems(text: string, prefix: string, warnings: LintWarning[]): RunC
     let body = m[2].replace(/^\d+\.\s+/, '').trim(); // strip an ordinal that followed the checkbox
     let failNote = '';
     if (state === 'fail') {
-      const i = body.indexOf(FAIL_SEP);
+      const i = body.lastIndexOf(FAIL_SEP);
       if (i !== -1) {
         failNote = body.slice(i + FAIL_SEP.length).trim();
         body = body.slice(0, i).trim();
