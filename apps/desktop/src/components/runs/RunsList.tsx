@@ -26,7 +26,7 @@ export function RunsList() {
       <div className="flex-1 overflow-auto px-[30px] py-[26px]">
         <div className="mb-[18px] flex items-center gap-3">
           <h2 className="m-0 text-[18px] font-semibold">Test runs</h2>
-          <Tag>{ctx.workspace?.runsDir ?? 'runs'}/</Tag>
+          <Tag>.casewright/runs/</Tag>
           <Button variant="primary" className="ml-auto" onClick={ctx.openCreateRun}>
             {I.plus({ size: 15 })} New run
           </Button>

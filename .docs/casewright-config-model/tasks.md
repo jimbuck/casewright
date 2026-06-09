@@ -103,7 +103,7 @@ un-initialized repo. (PRD FR 15, 17–21, 2.)
 
 ---
 
-### [ ] 0400 - UI: workspace settings, create-run scope, empty-repo & init flows
+### [x] 0400 - UI: workspace settings, create-run scope, empty-repo & init flows
 
 **Overview:** Surface the new model in the UI: the workspace settings panel drops *Runs directory*,
 enforces non-blank *Name*/*Display ID prefix*, and shows the `<workspace>/casewright.yaml` path;
@@ -119,12 +119,12 @@ the `.casewright/` init/scaffold flow. (PRD FR 2, 11, 15, 19, 21.)
 - `apps/desktop/src/components/runs/RunsList.tsx` - Runs-dir chip now reflects the central `.casewright/runs/`.
 
 **Sub-Tasks:**
-- [ ] 0401 In `WorkspaceSettings` (`SuiteSummary.tsx`): remove the *Runs directory* `Field`, its `runsDir` state and `useEffect` deps; change the path label to `{ws.path}/casewright.yaml`; enforce non-blank on blur for *Name* and *Display ID prefix* (skip the commit + keep the prior value when trimmed-empty, FR 15); update the helper text to drop the runs-dir sentence.
-- [ ] 0402 In `SuiteSummary`, replace the `relevantRuns` filter and `runTally` id-set with the `caseWorkspace`/case-membership derivation: a workspace summary shows runs with ≥1 row whose case belongs to that workspace; a suite summary shows runs touching the suite subtree — no `r.file.startsWith(ws.path + '/')` (FR 18, 21).
-- [ ] 0403 In `CreateRunModal`: replace the scope options with **Whole repo** (`'all'`), **This workspace** (`'workspace'`), **By suite** (`'suite'`), and keep **By tag** (`'tag'`); update default scope, the seeded-row `count` preview per scope, and the copy referencing "this workspace" (FR 19).
-- [ ] 0404 In `Launcher.tsx`: add an **empty-repo** state (opened a `.casewright/` repo with zero workspaces → invite to create the first workspace) and an **init** entry (opened a Git repo without `.casewright/` → offer to scaffold it via the store `initRepo` action), styled like the existing dashed-empty / banner treatments (FR 2, 11).
-- [ ] 0405 In `App.tsx`: gate the workbench on the new flags — route an un-initialized or empty repo to the launcher/init/empty states instead of a broken `Center`, consistent with the `mergeBanner` styling (FR 2, 11).
-- [ ] 0406 In `RunsList.tsx`, replace the `ctx.workspace?.runsDir ?? 'runs'` chip with the central `.casewright/runs` label (runs are repo-level, not per-workspace).
+- [x] 0401 In `WorkspaceSettings` (`SuiteSummary.tsx`): removed the *Runs directory* `Field`, its `runsDir` state + `useEffect` dep; path label now `{ws.path}/casewright.yaml` (root-safe); *Name* and *Display ID prefix* revert to the saved value when blurred blank (FR 15); helper text now points at central `.casewright/runs/`.
+- [x] 0402 In `SuiteSummary`, replaced the `relevantRuns` filter + `runTally` arg with case-membership: a run is relevant if any row's `case_id` is in the node's collected case ids (works for both workspace and suite nodes); dropped `r.file.startsWith(ws.path + '/')` (FR 18, 21).
+- [x] 0403 In `CreateRunModal`: scope options are now **Whole repo** (`'all'`), **This workspace** (`'workspace'`, default), **By suite** (`'suite'`, flattened suite picker), **By tag** (`'tag'`); per-scope seeded-row `count` preview (workspace count via `caseWorkspace`); writes to `.casewright/runs/` (FR 19).
+- [x] 0404 In `Launcher.tsx`: added an **init** panel (Git repo without `.casewright/` → `initRepo` scaffold + "choose another folder") and an **empty-repo** panel (`.casewright/` with no workspaces → reload), styled with the accent-soft / panel-2 treatments (FR 2, 11).
+- [x] 0405 `App.tsx`: no code change required — the store routes both `needsInit` and `emptyRepo` to `screen: 'launcher'`, and `App` already renders `<Launcher />` when `screen === 'launcher' || !workspace`, so those states reach the launcher panels rather than a broken `Center` (FR 2, 11).
+- [x] 0406 In `RunsList.tsx`, replaced the `ctx.workspace?.runsDir ?? 'runs'` chip with the central `.casewright/runs/` label (runs are repo-level).
 
 **Notes:**
 - Depends on 0300 (init action, `caseWorkspace`, scope-based create). Keep the existing
