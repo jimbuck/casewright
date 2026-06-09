@@ -11,6 +11,12 @@ export interface Step {
   depth: number;
 }
 
+/** A named setup item — a `###` heading plus a multi-line markdown body. */
+export interface SetupItem {
+  name: string;
+  body: string;
+}
+
 /** A manual test case — one markdown file on disk. */
 export interface Case {
   id: string; // stable hash, the internal key
@@ -21,6 +27,7 @@ export interface Case {
   suite: string; // owning suite id
   objective: string;
   systems: string[];
+  setup: SetupItem[];
   steps: Step[];
   expected: string[];
   modified: boolean;

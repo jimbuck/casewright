@@ -5,6 +5,7 @@ import { useApp } from '@/store/app-store';
 import type { Case, Status } from '@/types';
 import { ListControl } from './ListControl';
 import { ObjectiveEditor } from './ObjectiveEditor';
+import { SetupControl } from './SetupControl';
 import { StepsControl } from './StepsControl';
 import { TagEditor } from './TagEditor';
 
@@ -129,6 +130,8 @@ export function CaseEditor() {
             placeholder="System or component…"
           />
           <hr className="m-0 h-px border-0 bg-border" />
+          <SetupControl items={c.setup} onChange={(v) => patch({ setup: v })} />
+          <hr className="m-0 h-px border-0 bg-border" />
           <StepsControl steps={c.steps} onChange={(v) => patch({ steps: v })} />
           <hr className="m-0 h-px border-0 bg-border" />
           <ListControl
@@ -141,7 +144,7 @@ export function CaseEditor() {
             placeholder="Expected outcome…"
           />
           <div className="flex items-center gap-[7px] rounded-md border border-dashed border-border-2 bg-panel-2 px-3 py-[9px] text-[12px] text-ink-3">
-            {I.check({ size: 14 })} Round-trips to four reserved <span className="font-mono">##</span> sections · inline
+            {I.check({ size: 14 })} Round-trips to five reserved <span className="font-mono">##</span> sections · inline
             formatting only · single trailing newline.
           </div>
         </div>

@@ -782,6 +782,7 @@ export const useAppStore = create<AppState>()((set, get) => {
         modified: true,
         tags: [...src.tags],
         systems: [...src.systems],
+        setup: src.setup.map((x) => ({ ...x })),
         expected: [...src.expected],
         steps: src.steps.map((s) => ({ ...s })),
       };
@@ -856,6 +857,7 @@ export const useAppStore = create<AppState>()((set, get) => {
         suite,
         objective: '',
         systems: [],
+        setup: [],
         steps: [{ text: '', depth: 0 }],
         expected: [''],
         modified: true,
