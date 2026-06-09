@@ -6,10 +6,16 @@
   "license": "MIT",
   "type": "module",
   "exports": {
-    "./tokens.css": "./tokens.css"
+    "./tokens.css": "./tokens.css",
+    "./logo.svg": "./logo.svg",
+    "./logo-mark.svg": "./logo-mark.svg",
+    "./logo-mark-cutout.svg": "./logo-mark-cutout.svg"
   },
   "files": [
-    "tokens.css"
+    "tokens.css",
+    "logo.svg",
+    "logo-mark.svg",
+    "logo-mark-cutout.svg"
   ],
   "sideEffects": [
     "*.css"
