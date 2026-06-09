@@ -2,7 +2,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { node } from '@/lib/node';
 import { parseCase, serializeCase, type ParsedCase } from './format/case';
 import { serializeRunCsv } from './format/run';
-import { deletePath, initRepo, isContentConflict, loadRepo, loadWorkspace, makeDir, markWrite, openRepo, relJoin, renamePath, wasSelfWrite, writeFileAt } from './repo';
+import { deletePath, initRepo, loadRepo, loadWorkspace, makeDir, markWrite, openRepo, relJoin, renamePath, wasSelfWrite, writeFileAt } from './repo';
 
 const c1: ParsedCase = {
   id: 'aaa1111aaaa',
@@ -349,16 +349,6 @@ describe('self-write echo suppression', () => {
     markWrite('areas/payments/Billing/PAY-0088.md');
     expect(wasSelfWrite('areas\\payments\\Billing\\PAY-0088.md')).toBe(true);
     expect(wasSelfWrite('areas/payments/Billing')).toBe(true);
-  });
-});
-
-describe('isContentConflict', () => {
-  it('flags only when disk differs from BOTH our last sync and our in-memory version', () => {
-    expect(isContentConflict('A', 'A', 'A')).toBe(false); // nothing changed
-    expect(isContentConflict('A', 'A', 'B')).toBe(false); // only I changed (pending edit) — disk == sync
-    expect(isContentConflict('B', 'A', 'B')).toBe(false); // external happens to equal mine — adopt, no conflict
-    expect(isContentConflict('C', 'A', 'B')).toBe(true); // external (C) ≠ sync (A) and ≠ mine (B)
-    expect(isContentConflict(null, 'A', 'B')).toBe(false); // file gone — not a content conflict
   });
 });
 

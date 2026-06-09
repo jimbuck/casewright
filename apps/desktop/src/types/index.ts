@@ -114,14 +114,7 @@ export interface Selection {
 
 export type View = 'editor' | 'runs' | 'run' | 'guide' | 'suite';
 export type Screen = 'launcher' | 'main';
-export type ModalKind = 'commit' | 'createRun' | 'merge' | 'externalConflict' | null;
-
-/** A case with unsaved in-app edits whose file changed on disk (external-change prompt). */
-export interface ExternalConflict {
-  id: string;
-  title: string;
-  displayId: string;
-}
+export type ModalKind = 'commit' | 'createRun' | 'merge' | null;
 
 export interface Toast {
   id: number;

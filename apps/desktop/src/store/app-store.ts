@@ -8,18 +8,16 @@ import { serializeWorkspaceYaml } from '@/services/format/workspace';
 import {
   deletePath,
   initRepo as initRepoSvc,
-  isContentConflict,
   loadRepo,
   makeDir,
   openRepo as openRepoSvc,
-  readFileRel,
   relJoin,
   renamePath,
   wasSelfWrite,
   writeFileAt,
 } from '@/services/repo';
 import { addRecent, listRecents } from '@/services/recents';
-import { clearPersist, flushPersist, schedulePersist } from '@/services/persist';
+import { flushPersist, schedulePersist } from '@/services/persist';
 import { watchRepo, type RepoWatcher } from '@/services/watch';
 import {
   abortMerge as gitAbortMerge,
@@ -37,7 +35,6 @@ import type {
   Change,
   Conflict,
   CreateRunArgs,
-  ExternalConflict,
   ModalKind,
   Recent,
   Renaming,
@@ -188,10 +185,6 @@ export interface AppState {
   /* modals */
   modal: ModalKind;
   setModal: (modal: ModalKind) => void;
-
-  /* external-change conflicts (file changed on disk while edited in-app) */
-  externalConflicts: ExternalConflict[];
-  resolveExternalConflict: (choice: 'mine' | 'theirs') => Promise<void>;
 }
 
 /** Repo-level runs live flat under `.casewright/runs/` (PRD §4 req 16). */
@@ -224,21 +217,11 @@ export const useAppStore = create<AppState>()((set, get) => {
     return workspaceOfPath(buildSuiteIndex(get().tree).path[c.suite] ?? '');
   };
 
-  // the path + serialized content each case was last synced to disk — drives rename-on-write
-  // cleanup and external-change conflict detection (what we believe is on disk).
+  // the path each case was last written to — drives rename-on-write cleanup
   const lastCasePath = new Map<string, string>();
-  const lastWritten = new Map<string, string>();
-  const caseContent = (c: Case): string => {
-    const { suite: _s, modified: _m, ...parsed } = c;
-    return serializeCase(parsed);
-  };
   const seedPaths = () => {
     lastCasePath.clear();
-    lastWritten.clear();
-    get().cases.forEach((c) => {
-      lastCasePath.set(c.id, casePath(c));
-      lastWritten.set(c.id, caseContent(c));
-    });
+    get().cases.forEach((c) => lastCasePath.set(c.id, casePath(c)));
   };
 
   // recompute git-derived dirty state shortly after writes settle
@@ -275,7 +258,7 @@ export const useAppStore = create<AppState>()((set, get) => {
   const reloadAfterExternalChange = async () => {
     const repoPath = get().repoPath;
     if (!repoPath) return;
-    await flushPersist(); // land any pending in-app edits first (true conflicts already went to the prompt)
+    await flushPersist(); // land any pending in-app edits first (ours win on a same-file clash)
     const opened = await openRepoSvc(repoPath);
     if (opened.needsInit) {
       stopWatch();
@@ -313,27 +296,10 @@ export const useAppStore = create<AppState>()((set, get) => {
     get().toast('Reloaded — external changes detected');
   };
 
-  // Cases with uncommitted in-app edits whose file ALSO changed on disk to a different
-  // version — the user would lose work on a blind reload, so we prompt (VS Code–style).
-  const detectConflicts = async (): Promise<ExternalConflict[]> => {
-    const { repoPath, cases } = get();
-    if (!repoPath) return [];
-    const out: ExternalConflict[] = [];
-    for (const c of cases) {
-      if (!c.modified) continue; // only protect local work we'd otherwise lose
-      const rel = lastCasePath.get(c.id) ?? casePath(c);
-      const disk = await readFileRel(repoPath, rel);
-      if (isContentConflict(disk, lastWritten.get(c.id), caseContent(c))) {
-        out.push({ id: c.id, title: c.title, displayId: c.displayId });
-      }
-    }
-    return out;
-  };
-
   // Serialize reloads; if changes land mid-reload, run once more after (don't drop them).
   const handleExternalChange = async () => {
-    if (reloadingExternal || get().modal === 'externalConflict') {
-      queuedReload = true; // already busy / waiting on the user — coalesce
+    if (reloadingExternal) {
+      queuedReload = true;
       return;
     }
     reloadingExternal = true;
@@ -341,12 +307,6 @@ export const useAppStore = create<AppState>()((set, get) => {
       do {
         queuedReload = false;
         try {
-          const conflicts = await detectConflicts();
-          if (conflicts.length) {
-            // Don't touch the user's unsaved edits — ask first; resolution resumes the reload.
-            set({ externalConflicts: conflicts, modal: 'externalConflict' });
-            return;
-          }
           await reloadAfterExternalChange();
         } catch {
           /* transient (a file mid-write by the external tool) — a later event retries */
@@ -374,13 +334,12 @@ export const useAppStore = create<AppState>()((set, get) => {
     const c = get().cases.find((x) => x.id === id);
     if (!repoPath || !c) return;
     const rel = casePath(c);
-    const content = caseContent(c);
+    const { suite: _s, modified: _m, ...parsed } = c;
     try {
-      await writeFileAt(repoPath, rel, content);
+      await writeFileAt(repoPath, rel, serializeCase(parsed));
       const prev = lastCasePath.get(id);
       if (prev && prev !== rel) await deletePath(repoPath, prev);
       lastCasePath.set(id, rel);
-      lastWritten.set(id, content);
       scheduleRefresh();
     } catch (e) {
       onWriteError(e);
@@ -393,7 +352,6 @@ export const useAppStore = create<AppState>()((set, get) => {
     try {
       await deletePath(repoPath, rel);
       lastCasePath.delete(id);
-      lastWritten.delete(id);
       scheduleRefresh();
     } catch (e) {
       onWriteError(e);
@@ -504,7 +462,6 @@ export const useAppStore = create<AppState>()((set, get) => {
     recents: [],
     needsInit: false,
     emptyRepo: false,
-    externalConflicts: [],
     conflict: null,
     screen: 'launcher',
     view: 'editor',
@@ -1123,30 +1080,6 @@ export const useAppStore = create<AppState>()((set, get) => {
 
     /* ---- modals ---- */
     setModal: (modal) => set({ modal }),
-
-    resolveExternalConflict: async (choice) => {
-      const conflicts = get().externalConflicts;
-      set({ modal: null, externalConflicts: [] });
-      reloadingExternal = true; // hold off watcher reloads while we resolve
-      try {
-        if (choice === 'mine') {
-          // overwrite the on-disk version with the in-app version of each conflicted case
-          for (const c of conflicts) await writeCaseNow(c.id);
-        } else {
-          // discard in-app edits: drop pending writes so the reload's disk version wins
-          for (const c of conflicts) clearPersist('case:' + c.id);
-        }
-        await reloadAfterExternalChange();
-      } catch {
-        /* transient — a later watcher event retries */
-      } finally {
-        reloadingExternal = false;
-      }
-      if (queuedReload) {
-        queuedReload = false;
-        void handleExternalChange();
-      }
-    },
   };
 });
 

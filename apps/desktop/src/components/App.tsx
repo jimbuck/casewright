@@ -13,7 +13,6 @@ import { RunGuide } from './guide/RunGuide';
 import { CreateRunModal } from './runs/CreateRunModal';
 import { CommitModal } from './common/CommitModal';
 import { EmptyCenter } from './common/EmptyCenter';
-import { ExternalConflictModal } from './common/ExternalConflictModal';
 import { MergeResolver } from './merge/MergeResolver';
 import { SuiteSummary } from './summary/SuiteSummary';
 
@@ -56,7 +55,6 @@ function Workbench() {
           {modal === 'commit' && <CommitModal />}
           {modal === 'createRun' && <CreateRunModal />}
           {modal === 'merge' && <MergeResolver />}
-          {modal === 'externalConflict' && <ExternalConflictModal />}
           <Toasts />
         </>
       )}

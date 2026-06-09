@@ -352,16 +352,6 @@ export function wasSelfWrite(rel: string): boolean {
   return t != null && now - t <= SELF_WRITE_TTL;
 }
 
-/**
- * A file is in conflict (for the external-change prompt) when its on-disk content has
- * diverged from what we last synced (`synced`) **and** from our current in-memory version
- * (`mine`). A pending-but-unwritten local edit alone (`disk === synced`) is not a conflict,
- * and an external change that happens to match our version (`disk === mine`) isn't either.
- */
-export function isContentConflict(disk: string | null, synced: string | undefined, mine: string): boolean {
-  return disk != null && disk !== synced && disk !== mine;
-}
-
 // ---------------------------------------------------------------------------
 // Write path — low-level, repo-relative fs ops (PRD §6.2–6.5)
 // The store composes these with the serializers + its path/tree knowledge.
@@ -397,9 +387,4 @@ export async function renamePath(repoPath: string, fromRel: string, toRel: strin
 export async function makeDir(repoPath: string, rel: string): Promise<void> {
   markWrite(rel);
   await node.fsp().mkdir(node.path().join(repoPath, rel), { recursive: true });
-}
-
-/** Read `<repoPath>/<rel>` as utf8, or null when missing/unreadable. */
-export async function readFileRel(repoPath: string, rel: string): Promise<string | null> {
-  return readMaybe(node.path().join(repoPath, rel));
 }
