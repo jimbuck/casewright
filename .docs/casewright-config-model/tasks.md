@@ -157,7 +157,7 @@ cross-workspace run is demonstrable. (PRD FR 22, 23; §8.)
 
 ---
 
-### [ ] 0600 - Tests: discovery, no-nesting, root-as-workspace, central runs & scaffold
+### [x] 0600 - Tests: discovery, no-nesting, root-as-workspace, central runs & scaffold
 
 **Overview:** Update and extend the test suite for the new model: fix existing `openRepo`/
 `loadWorkspace`/`loadRepo` tests to the `.casewright/` layout, and add coverage for the discovery
@@ -167,17 +167,18 @@ the `initRepo` scaffold output, and the tightened workspace/config schemas. (PRD
 
 **Relevant Files:**
 - `apps/desktop/src/services/repo.test.ts` - Rebuilt fixtures + new discovery/nesting/root/central-runs/init tests.
-- `apps/desktop/src/services/format/workspace.test.ts` - Round-trip without `runsDir` (create if absent).
-- `apps/desktop/src/schemas/config.test.ts` - Config/workspace schema coercion + lint-warning behavior (create if absent).
+- `apps/desktop/src/services/format/workspace.test.ts` - `serializeWorkspaceYaml` round-trip without `runsDir` (created).
+- `apps/desktop/src/services/format/config.test.ts` - `serializeConfigYaml` + `CASEWRIGHT_GITIGNORE` (created).
+- `apps/desktop/src/schemas/config.test.ts` - Config/workspace schema coercion + unknown-key preservation (created).
 
 **Sub-Tasks:**
-- [ ] 0601 Rebuild the `repo.test.ts` fixtures to the `.casewright/` layout (write `.casewright/config.yaml`, `.casewright/runs/<…>.csv`, per-workspace `casewright.yaml`) and fix the existing `openRepo`/`loadWorkspace`/`loadRepo` assertions (run `file` now `.casewright/runs/…`, no `runsDir`, workspaces discovered not globbed).
-- [ ] 0602 Add discovery-walk tests: a folder with `casewright.yaml` is discovered; `.git`/`.casewright`/dot-folders are skipped; results are ordered alphabetically by name (FR 7, 10).
-- [ ] 0603 Add a no-nesting test: a `casewright.yaml` placed in a workspace's subfolder does **not** create a second workspace — the subfolder is a suite within the parent workspace (FR 8).
-- [ ] 0604 Add a root-as-workspace test: `<root>/casewright.yaml` yields a single workspace at path `''` with no further discovery, replacing the old implicit-fallback test block (FR 9).
-- [ ] 0605 Add missing-`.casewright/` and empty-repo tests: `openRepo` on a Git repo without `.casewright/` emits `needs-init` (does not throw); a `.casewright/` repo with no markers emits the empty-repo warning and zero workspaces (FR 1, 11).
-- [ ] 0606 Add an `initRepo` scaffold test: it writes `.casewright/config.yaml`, creates `.casewright/runs/`, and writes a `.casewright/.gitignore` that ignores `cache/` (FR 2, 4).
-- [ ] 0607 Add/refresh format + schema tests: `serializeWorkspaceYaml` no longer emits `runsDir`; `serializeConfigYaml` round-trips; `ConfigYamlSchema`/`WorkspaceYamlSchema` coerce malformed input to defaults with `LintWarning`s; central `loadRuns` produces `.casewright/runs/<stem>` ids/files (FR 3, 12–14, 16).
+- [x] 0601 Rebuilt the `repo.test.ts` fixtures to the `.casewright/` layout (`.casewright/config.yaml`, `.casewright/runs/<…>.csv`, per-workspace `casewright.yaml`) and fixed the `openRepo`/`loadWorkspace`/`loadRepo` assertions (run `file`/`id` now `.casewright/runs/…`, `loadWorkspace` no longer returns `runs`, workspaces discovered not globbed, no `runsDir`).
+- [x] 0602 Added a discovery-walk test: two `casewright.yaml` workspaces are discovered, a `.hidden/` marker is skipped, and results sort alphabetically by display name (names chosen so name-order ≠ path-order) (FR 7, 10).
+- [x] 0603 Added a no-nesting test: a `casewright.yaml` in a workspace subfolder yields a single workspace, and that subfolder loads as a suite (FR 8).
+- [x] 0604 Added a root-as-workspace test (replacing the old implicit-fallback block): `<root>/casewright.yaml` → one workspace at path `''`, non-empty ids, `"Auth"` (not `"./Auth"`) suite paths, `.casewright/runs/…` run file (FR 9).
+- [x] 0605 Added missing-`.casewright/` (→ `needsInit`, no throw, `needs-init` warning) and empty-repo (`.casewright/` present, no markers → `empty-repo` warning, zero workspaces) tests (FR 1, 11).
+- [x] 0606 Added an `initRepo` scaffold test: writes `.casewright/config.yaml` (`version: 1`), creates `.casewright/runs/`, writes a `.gitignore` matching `cache/`, then opens cleanly with the empty-repo warning (FR 2, 4).
+- [x] 0607 Added `schemas/config.test.ts` (ConfigYaml default/coerce/looseObject-preserve; WorkspaceYaml blank-default/coerce/no-runsDir), `format/config.test.ts` (`serializeConfigYaml` + `CASEWRIGHT_GITIGNORE`), and `format/workspace.test.ts` (`serializeWorkspaceYaml` emits no `runsDir`); central `loadRuns` paths covered in `repo.test.ts` (FR 3, 12–14, 16).
 
 **Notes:**
 - Depends on all prior tasks. Run with `pnpm --filter @casewright/desktop test`; typecheck with
