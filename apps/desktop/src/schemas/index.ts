@@ -1,4 +1,4 @@
-export { RootConfigSchema, type RootConfig } from './config';
+export { ConfigYamlSchema, type ConfigYaml } from './config';
 export { WorkspaceYamlSchema, type WorkspaceYaml } from './workspace';
 export { CaseFrontMatterSchema, type CaseFrontMatter } from './case';
 export { SuiteFrontMatterSchema, type SuiteFrontMatter } from './suite';

@@ -16,7 +16,7 @@ YAML; legacy formats are dropped outright (hard cutover, no migration). See
 
 ## Tasks
 
-### [ ] 0100 - Schemas & domain types for the `.casewright/` model
+### [x] 0100 - Schemas & domain types for the `.casewright/` model
 
 **Overview:** Lay the type/schema foundation the rest of the work compiles against: a new
 `.casewright/config.yaml` schema (replacing the JSON `RootConfigSchema`), a tightened
@@ -31,10 +31,10 @@ tolerant (coerce + `LintWarning`, never throw). (PRD FR 3, 12, 13, 16–20.)
 - `apps/desktop/src/types/index.ts` - Drop `Workspace.runsDir`; document `Run.file`/`Run.id` as `.casewright/runs/<stem>`; broaden `RunScope` to `'all' | 'workspace' | 'suite' | 'tag'` and update `CreateRunArgs`.
 
 **Sub-Tasks:**
-- [ ] 0101 In `schemas/config.ts`, replace `RootConfigSchema` with a `ConfigYamlSchema` for `.casewright/config.yaml`: `version` (int, `.default(1)`), optional `name` (string); use `.passthrough()` so unknown keys are preserved (FR 3). Export the schema and its inferred type; remove `RootConfig`.
-- [ ] 0102 In `schemas/workspace.ts`, rename/retarget to `casewright.yaml`: keep `name` and `displayIdPrefix` as `.default('')` (so a malformed/blank file coerces rather than throws — the service adds the lint warning, FR 13), keep `description` optional, and **remove `runsDir`** (FR 12).
-- [ ] 0103 Update `schemas/index.ts`: drop the `RootConfigSchema`/`RootConfig` exports, add the new config schema + type, keep `WorkspaceYamlSchema`/`LintWarning` exports.
-- [ ] 0104 In `types/index.ts`, remove `runsDir` from `Workspace`; update the `Run.file`/`Run.id` doc comments to `.casewright/runs/<stem>`; broaden `RunScope` to `'all' | 'workspace' | 'suite' | 'tag'` and ensure `CreateRunArgs` still type-checks against the new union.
+- [x] 0101 In `schemas/config.ts`, replace `RootConfigSchema` with a `ConfigYamlSchema` for `.casewright/config.yaml`: `version` (int, `.default(1)`), optional `name` (string); use `z.looseObject` so unknown keys are preserved (FR 3). Export the schema and its inferred type; remove `RootConfig`.
+- [x] 0102 In `schemas/workspace.ts`, rename/retarget to `casewright.yaml`: keep `name` and `displayIdPrefix` as `.default('')` (so a malformed/blank file coerces rather than throws — the service adds the lint warning, FR 13), keep `description` optional, and **remove `runsDir`** (FR 12).
+- [x] 0103 Update `schemas/index.ts`: drop the `RootConfigSchema`/`RootConfig` exports, add the new config schema + type, keep `WorkspaceYamlSchema`/`LintWarning` exports.
+- [x] 0104 In `types/index.ts`, remove `runsDir` from `Workspace`; update the `Run.file`/`Run.id` doc comments to `.casewright/runs/<stem>`; broaden `RunScope` to `'all' | 'workspace' | 'suite' | 'tag'` and ensure `CreateRunArgs` still type-checks against the new union.
 
 **Notes:**
 - This is the breaking change at the root of the dependency graph: removing `Workspace.runsDir` and
@@ -116,6 +116,7 @@ the `.casewright/` init/scaffold flow. (PRD FR 2, 11, 15, 19, 21.)
 - `apps/desktop/src/components/runs/CreateRunModal.tsx` - Repo / Workspace / Suite scope.
 - `apps/desktop/src/components/launcher/Launcher.tsx` - Empty-repo + init entry points.
 - `apps/desktop/src/components/App.tsx` - Center/empty gating for empty/un-initialized repos.
+- `apps/desktop/src/components/runs/RunsList.tsx` - Runs-dir chip now reflects the central `.casewright/runs/`.
 
 **Sub-Tasks:**
 - [ ] 0401 In `WorkspaceSettings` (`SuiteSummary.tsx`): remove the *Runs directory* `Field`, its `runsDir` state and `useEffect` deps; change the path label to `{ws.path}/casewright.yaml`; enforce non-blank on blur for *Name* and *Display ID prefix* (skip the commit + keep the prior value when trimmed-empty, FR 15); update the helper text to drop the runs-dir sentence.
@@ -123,6 +124,7 @@ the `.casewright/` init/scaffold flow. (PRD FR 2, 11, 15, 19, 21.)
 - [ ] 0403 In `CreateRunModal`: replace the scope options with **Whole repo** (`'all'`), **This workspace** (`'workspace'`), **By suite** (`'suite'`), and keep **By tag** (`'tag'`); update default scope, the seeded-row `count` preview per scope, and the copy referencing "this workspace" (FR 19).
 - [ ] 0404 In `Launcher.tsx`: add an **empty-repo** state (opened a `.casewright/` repo with zero workspaces → invite to create the first workspace) and an **init** entry (opened a Git repo without `.casewright/` → offer to scaffold it via the store `initRepo` action), styled like the existing dashed-empty / banner treatments (FR 2, 11).
 - [ ] 0405 In `App.tsx`: gate the workbench on the new flags — route an un-initialized or empty repo to the launcher/init/empty states instead of a broken `Center`, consistent with the `mergeBanner` styling (FR 2, 11).
+- [ ] 0406 In `RunsList.tsx`, replace the `ctx.workspace?.runsDir ?? 'runs'` chip with the central `.casewright/runs` label (runs are repo-level, not per-workspace).
 
 **Notes:**
 - Depends on 0300 (init action, `caseWorkspace`, scope-based create). Keep the existing
