@@ -1,24 +1,18 @@
 import { I } from '@/components/icons';
-import { Logo } from '@/components/Logo';
 import { Button } from '@/components/ui';
 import { useApp } from '@/store/app-store';
 
 const baseName = (p: string): string => p.replace(/[/\\]+$/, '').split(/[/\\]/).pop() || 'repository';
 
 export function TopBar() {
-  const { workspace, workspaces, repoPath, branch, ahead, behind, changes, gitBusy, goHome, doPush, doPull, setModal } = useApp();
+  const { workspace, workspaces, repoPath, branch, ahead, behind, changes, gitBusy, doPush, doPull, setModal } = useApp();
   const dirty = changes.length;
   if (!workspace) return null;
   const repoName = baseName(repoPath);
 
   return (
     <div className="flex h-[46px] flex-none items-center gap-2.5 border-b border-border bg-panel-2 px-3">
-      <Button variant="ghost" icon title="Repositories" onClick={goHome}>
-        {I.repo({ size: 16 })}
-      </Button>
-
-      <div className="flex min-w-0 items-center gap-2" title={`${workspaces.length} workspace(s) · .casewright/`}>
-        <Logo size={26} className="shrink-0 rounded-[7px]" />
+      <div className="flex min-w-0 items-baseline gap-2" title={`${workspaces.length} workspace(s) · .casewright/`}>
         <span className="whitespace-nowrap font-semibold">{repoName}</span>
         <span className="whitespace-nowrap font-mono text-[12px] text-ink-3">
           {workspaces.length} workspace{workspaces.length === 1 ? '' : 's'}

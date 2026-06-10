@@ -63,7 +63,11 @@ const manifest = {
 };
 writeFileSync(join(stagingDir, 'package.json'), JSON.stringify(manifest, null, 2));
 cpSync(distDir, join(stagingDir, 'dist'), { recursive: true });
-console.log('  ✓ staged manifest + dist');
+// Ship the PNG referenced by window.icon (the .exe carries the .ico, but the running
+// window/taskbar icon comes from window.icon → build-resources/icon.png).
+mkdirSync(join(stagingDir, 'build-resources'), { recursive: true });
+cpSync(join(desktopRoot, 'build-resources', 'icon.png'), join(stagingDir, 'build-resources', 'icon.png'));
+console.log('  ✓ staged manifest + dist + icon');
 
 // ── 2. install runtime node_modules (flat, prod-only) ────────────────────────
 console.log(`  • installing runtime deps: ${RUNTIME_DEPS.join(', ')}`);
@@ -98,7 +102,7 @@ await nwbuild({
     icon: iconPath,
     version,
     company: pkg.author || 'Casewright',
-    fileDescription: "Casewright — a craftsman's editor for manual test cases",
+    fileDescription: "Casewright — a bespoke editor for manual test cases",
     fileVersion: version,
     productName: 'Casewright',
     productVersion: version,

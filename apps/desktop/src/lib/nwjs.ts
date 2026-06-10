@@ -17,6 +17,7 @@ export interface NwWindow {
 interface NwGlobal {
   Window: { get(): NwWindow };
   App?: { dataPath: string; argv: string[] };
+  Shell?: { openExternal(uri: string): void };
   require?: NodeRequire;
 }
 
@@ -37,6 +38,19 @@ export function nwWindow(): NwWindow | null {
 /** The per-app data directory (NW.js `nw.App.dataPath`), for app-level state like recents. */
 export function appDataPath(): string | null {
   return window.nw?.App?.dataPath ?? null;
+}
+
+/** Open a URL in the user's default browser (NW.js Shell), with a plain-browser fallback. */
+export function openExternal(url: string): void {
+  const shell = window.nw?.Shell;
+  if (shell) shell.openExternal(url);
+  else window.open(url, '_blank', 'noopener');
+}
+
+/** Runtime versions exposed by NW.js (Node-integrated renderer); empty in a plain browser. */
+export function runtimeVersions(): { nw?: string; chromium?: string; node?: string } {
+  const v = (globalThis as { process?: { versions?: Record<string, string> } }).process?.versions;
+  return { nw: v?.nw, chromium: v?.chromium ?? v?.chrome, node: v?.node };
 }
 
 /**

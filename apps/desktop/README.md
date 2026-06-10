@@ -1,6 +1,6 @@
 # @casewright/desktop
 
-The Casewright desktop application — _a craftsman's editor for manual test cases; markdown on
+The Casewright desktop application — _a bespoke editor for manual test cases; markdown on
 disk, Git as the data store._ Built with **NW.js + React + TypeScript** (Vite).
 
 ## Running

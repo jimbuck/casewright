@@ -40,6 +40,7 @@ import type {
   CheckState,
   Conflict,
   CreateRunArgs,
+  DialogRequest,
   ModalKind,
   Recent,
   Renaming,
@@ -152,11 +153,11 @@ export interface AppState {
   /* case + suite mutations */
   updateCase: (id: string, patch: Partial<Case>) => void;
   duplicateCase: (id: string) => void;
-  deleteCase: (id: string) => void;
+  deleteCase: (id: string) => Promise<void>;
   createCase: (parentSuiteId: string | null) => void;
   createSuite: (parentId: string | null) => void;
   renameSuite: (id: string, name: string) => void;
-  deleteSuite: (id: string) => void;
+  deleteSuite: (id: string) => Promise<void>;
   moveNodeToParent: (dragId: string, parentId: string | null, index: number) => void;
 
   /* runs */
@@ -191,6 +192,15 @@ export interface AppState {
   toast: (msg: string) => void;
   toasts: Toast[];
 
+  /* generic dialogs (shadcn) — replace native window.confirm/alert */
+  dialog: DialogRequest | null;
+  /** Ask the user to confirm; resolves true if they accept, false if they cancel/dismiss. */
+  confirm: (opts: Omit<DialogRequest, 'kind'>) => Promise<boolean>;
+  /** Show a message with a single acknowledge button; resolves when dismissed. */
+  alert: (opts: { title: string; message?: string; okLabel?: string }) => Promise<void>;
+  /** Resolve the open dialog (true = primary action). Called by the dialog host. */
+  closeDialog: (result: boolean) => void;
+
   /* git */
   branch: string;
   ahead: number;
@@ -219,6 +229,10 @@ const RUNS_REL = '.casewright/runs';
 const changeKey = (c: Change) => c.kind + ':' + c.refId;
 
 export const useAppStore = create<AppState>()((set, get) => {
+  // Resolver for the currently-open generic dialog (confirm/alert). Only one dialog shows
+  // at a time; a new request cancels any pending one (resolves it false).
+  let pendingDialog: ((result: boolean) => void) | null = null;
+
   // suite paths in the tree are full repo-relative (workspaces are top-level folders)
   const casePath = (c: Case): string => {
     const dir = buildSuiteIndex(get().tree).path[c.suite] ?? '';
@@ -566,6 +580,45 @@ export const useAppStore = create<AppState>()((set, get) => {
         : { changes: [...s.changes, change] };
     });
 
+  /** Collapse raw per-file git changes into user-facing entities: one row per test run (its whole
+   *  folder, not its files) and one per test case, labelled by run name / case title rather than
+   *  the raw path. A run's `path` is its folder, so committing it stages every file inside. */
+  const groupChanges = (raw: Change[]): Change[] => {
+    const { runs, cases } = get();
+    const caseByPath = new Map<string, Case>();
+    cases.forEach((c) => {
+      caseByPath.set(casePath(c), c);
+      const last = lastCasePath.get(c.id);
+      if (last) caseByPath.set(last, c);
+    });
+    const runFolderOf = (p: string): string | null => {
+      const known = runs.find((r) => p === r.file || p.startsWith(r.file + '/'));
+      if (known) return known.file;
+      const m = /^(.*\/runs\/[^/]+)(?:\/|$)/.exec(p);
+      return m ? m[1] : null;
+    };
+
+    const out: Change[] = [];
+    const idx = new Map<string, number>();
+    for (const ch of raw) {
+      const folder = ch.kind === 'run' ? runFolderOf(ch.path) : null;
+      if (folder) {
+        const at = idx.get(folder);
+        if (at === undefined) {
+          idx.set(folder, out.length);
+          const run = runs.find((r) => r.file === folder);
+          out.push({ kind: 'run', refId: folder, path: folder, status: ch.status, label: run?.name ?? folder.split('/').pop() ?? folder });
+        } else if (out[at].status !== ch.status) {
+          out[at] = { ...out[at], status: 'M' }; // mixed adds/mods/deletes in one run folder → modified
+        }
+      } else {
+        const c = caseByPath.get(ch.path);
+        out.push({ ...ch, kind: 'case', refId: c?.id ?? ch.refId, label: c?.title ?? ch.label });
+      }
+    }
+    return out;
+  };
+
   const applyMerge = (resolutions: Resolutions) => {
     const conflict = get().conflict;
     if (!conflict) return;
@@ -651,6 +704,7 @@ export const useAppStore = create<AppState>()((set, get) => {
     modal: null,
     wsModalId: null,
     toasts: [],
+    dialog: null,
     collapsed: {},
     renaming: null,
 
@@ -662,6 +716,26 @@ export const useAppStore = create<AppState>()((set, get) => {
       const id = Math.random();
       set((s) => ({ toasts: [...s.toasts, { id, msg }] }));
       setTimeout(() => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })), 2600);
+    },
+
+    /* ---- generic dialogs ---- */
+    confirm: (opts) =>
+      new Promise<boolean>((resolve) => {
+        pendingDialog?.(false); // a fresh request supersedes any pending one
+        pendingDialog = resolve;
+        set({ dialog: { kind: 'confirm', ...opts } });
+      }),
+    alert: (opts) =>
+      new Promise<void>((resolve) => {
+        pendingDialog?.(false);
+        pendingDialog = () => resolve();
+        set({ dialog: { kind: 'alert', title: opts.title, message: opts.message, confirmLabel: opts.okLabel } });
+      }),
+    closeDialog: (result) => {
+      const resolve = pendingDialog;
+      pendingDialog = null;
+      set({ dialog: null });
+      resolve?.(result);
     },
 
     /* ---- repo ---- */
@@ -841,10 +915,13 @@ export const useAppStore = create<AppState>()((set, get) => {
       const { repoPath, workspace } = get();
       if (!repoPath || !workspace) return;
       if (
-        !window.confirm(
-          `Remove workspace "${workspace.name}"?\n\n` +
+        !(await get().confirm({
+          title: `Remove workspace "${workspace.name}"?`,
+          message:
             'This deletes only its casewright.yaml marker — the case and suite files in the folder are left untouched.',
-        )
+          confirmLabel: 'Remove',
+          danger: true,
+        }))
       )
         return;
       try {
@@ -944,18 +1021,20 @@ export const useAppStore = create<AppState>()((set, get) => {
       get().toast('Duplicated — resolve the display ID conflict');
     },
 
-    deleteCase: (id) => {
+    deleteCase: async (id) => {
       const { cases, runs } = get();
       const c = cases.find((x) => x.id === id);
       if (!c) return;
       const used = runs.some((r) => r.rows.some((row) => row.case_id === id));
       if (
-        !window.confirm(
-          `Delete "${c.title}"?` +
-            (used
-              ? '\n\nThis case is referenced by a run — its snapshot rows are kept but will no longer resolve to a live file.'
-              : ''),
-        )
+        !(await get().confirm({
+          title: `Delete "${c.title}"?`,
+          message: used
+            ? 'This case is referenced by a run — its snapshot rows are kept but will no longer resolve to a live file.'
+            : undefined,
+          confirmLabel: 'Delete',
+          danger: true,
+        }))
       )
         return;
       const rel = lastCasePath.get(id) ?? casePath(c);
@@ -1058,7 +1137,7 @@ export const useAppStore = create<AppState>()((set, get) => {
       }
     },
 
-    deleteSuite: (id) => {
+    deleteSuite: async (id) => {
       const node = findSuiteNode(get().tree, id);
       if (!node) return;
       const collectCases = (n: TreeNode, acc: string[]): string[] => {
@@ -1068,9 +1147,11 @@ export const useAppStore = create<AppState>()((set, get) => {
       };
       const caseIds = collectCases(node, []);
       if (
-        !window.confirm(
-          `Delete suite "${node.name}"` + (caseIds.length ? ` and its ${caseIds.length} case(s)` : '') + '?',
-        )
+        !(await get().confirm({
+          title: `Delete suite "${node.name}"${caseIds.length ? ` and its ${caseIds.length} case(s)` : ''}?`,
+          confirmLabel: 'Delete',
+          danger: true,
+        }))
       )
         return;
       const rel = suiteRel(id);
@@ -1323,7 +1404,7 @@ export const useAppStore = create<AppState>()((set, get) => {
       if (!repoPath) return;
       try {
         const s = await gitStatus(repoPath);
-        set({ branch: s.branch, ahead: s.ahead, behind: s.behind, changes: s.changes });
+        set({ branch: s.branch, ahead: s.ahead, behind: s.behind, changes: groupChanges(s.changes) });
       } catch {
         /* status read failed — keep optimistic values */
       }
@@ -1341,7 +1422,7 @@ export const useAppStore = create<AppState>()((set, get) => {
             cases: s.cases.map((c) => (selectedKeys.includes('case:' + c.id) ? { ...c, modified: false } : c)),
           }));
           await get().refreshStatus();
-          get().toast(`Committed ${paths.length || selectedKeys.length} file(s)`);
+          get().toast(`Committed ${paths.length || selectedKeys.length} change(s)`);
         } catch (e) {
           set({ error: e instanceof Error ? e.message : String(e) });
           get().toast('Commit failed');

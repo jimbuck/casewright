@@ -58,6 +58,38 @@ export async function status(repoPath: string): Promise<GitStatus> {
   };
 }
 
+export interface RepoInfo {
+  /** Configured Git identity (`user.name` / `user.email`); empty if unset. */
+  userName: string;
+  userEmail: string;
+  /** `origin` remote URL, or '' if none. */
+  remote: string;
+  /** `git describe --tags --always` — the nearest tag or short SHA. */
+  describe: string;
+  /** Short HEAD commit SHA. */
+  commit: string;
+}
+
+/** Gather repository metadata for the About dialog. Each field degrades to '' on error. */
+export async function repoInfo(repoPath: string): Promise<RepoInfo> {
+  const g = git(repoPath);
+  const safe = async (fn: () => Promise<string>): Promise<string> => {
+    try {
+      return (await fn()).trim();
+    } catch {
+      return '';
+    }
+  };
+  const [userName, userEmail, remote, describe, commit] = await Promise.all([
+    safe(() => g.raw(['config', 'user.name'])),
+    safe(() => g.raw(['config', 'user.email'])),
+    safe(() => g.raw(['remote', 'get-url', 'origin'])),
+    safe(() => g.raw(['describe', '--tags', '--always'])),
+    safe(() => g.revparse(['--short', 'HEAD'])),
+  ]);
+  return { userName, userEmail, remote, describe, commit };
+}
+
 /** Stage the given repo-relative paths (or everything) and commit. */
 export async function stageAndCommit(repoPath: string, paths: string[], message: string): Promise<void> {
   const g = git(repoPath);

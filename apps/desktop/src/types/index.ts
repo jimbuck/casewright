@@ -143,11 +143,23 @@ export interface Selection {
 
 export type View = 'editor' | 'runs' | 'run' | 'guide' | 'suite';
 export type Screen = 'launcher' | 'main';
-export type ModalKind = 'commit' | 'createRun' | 'merge' | 'workspace' | null;
+export type ModalKind = 'commit' | 'createRun' | 'merge' | 'workspace' | 'about' | null;
 
 export interface Toast {
   id: number;
   msg: string;
+}
+
+/** A pending generic dialog (replaces native window.confirm/alert). */
+export interface DialogRequest {
+  kind: 'confirm' | 'alert';
+  title: string;
+  message?: string;
+  /** Primary-button label (confirm action, or "OK" for an alert). */
+  confirmLabel?: string;
+  cancelLabel?: string;
+  /** Render the primary action as destructive. */
+  danger?: boolean;
 }
 
 export interface Renaming {

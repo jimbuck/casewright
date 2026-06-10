@@ -89,9 +89,17 @@ export function CaseEditor() {
               value={c.status}
               onChange={(e) => patch({ status: e.target.value as Status })}
             >
-              <option value="draft">Draft</option>
-              <option value="active">Active</option>
-              <option value="deprecated">Deprecated</option>
+              {/* color each option so the open menu shows each status in its own color,
+                  rather than inheriting the select's current-status color */}
+              <option value="draft" className="text-blocked">
+                Draft
+              </option>
+              <option value="active" className="text-pass">
+                Active
+              </option>
+              <option value="deprecated" className="text-ink-3">
+                Deprecated
+              </option>
             </select>
           </div>
           <span className="mx-0.5 my-1.5 w-px self-stretch bg-border" />

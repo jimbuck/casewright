@@ -12,9 +12,9 @@ export interface ResultMeta {
 export const RESULTS: ResultMeta[] = [
   { key: 'pass', label: 'Pass', glyph: '✓', color: 'var(--pass)' },
   { key: 'fail', label: 'Fail', glyph: '✕', color: 'var(--fail)' },
-  { key: 'blocked', label: 'Blocked', glyph: '▢', color: 'oklch(0.5 0.13 66)' },
+  { key: 'blocked', label: 'Blocked', glyph: '▢', color: 'var(--blocked)' },
   { key: 'skipped', label: 'Skipped', glyph: '⤼', color: 'var(--skipped)' },
-  { key: 'not_run', label: 'Not run', glyph: '·', color: 'var(--ink-3)' },
+  { key: 'not_run', label: 'Not run', glyph: '·', color: 'var(--notrun)' },
 ];
 
 export const RES: Record<Result, ResultMeta> = Object.fromEntries(
@@ -24,8 +24,8 @@ export const RES: Record<Result, ResultMeta> = Object.fromEntries(
 const RESULT_CLASS: Record<Result, string> = {
   pass: 'text-pass bg-pass-soft border-[oklch(0.85_0.06_152)]',
   fail: 'text-fail bg-fail-soft border-[oklch(0.85_0.07_27)]',
-  blocked: 'text-[oklch(0.5_0.13_66)] bg-blocked-soft border-[oklch(0.85_0.08_80)]',
-  skipped: 'text-skipped bg-skipped-soft border-[oklch(0.85_0.04_285)]',
+  blocked: 'text-blocked bg-blocked-soft border-[oklch(0.85_0.1_58)]',
+  skipped: 'text-skipped bg-skipped-soft border-[oklch(0.87_0.006_75)]',
   not_run: 'text-ink-3 bg-notrun-soft border-border',
 };
 

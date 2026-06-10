@@ -132,8 +132,9 @@ export function RunGrid() {
               t[s] ? (
                 <i
                   key={s}
-                  className="flex h-full items-center justify-center font-mono text-[11px] font-bold text-[oklch(1_0_0/0.92)] transition-[flex-grow] duration-300"
-                  style={{ flexGrow: t[s], background: RES[s].color }}
+                  className="flex h-full items-center justify-center font-mono text-[11px] font-bold transition-[flex-grow] duration-300"
+                  // not_run is near-white, so its count needs dark ink rather than the white used on the saturated fills.
+                  style={{ flexGrow: t[s], background: RES[s].color, color: s === 'not_run' ? 'var(--ink-2)' : 'oklch(1 0 0 / 0.92)' }}
                 >
                   {t[s]}
                 </i>
@@ -259,7 +260,7 @@ export function RunGrid() {
           </table>
         </div>
 
-        <aside className="flex w-[360px] flex-none flex-col gap-4 overflow-auto border-l border-border bg-panel-2 px-5 py-[18px]">
+        <aside className="flex w-[540px] flex-none flex-col gap-4 overflow-auto border-l border-border bg-panel-2 px-5 py-[18px]">
           <section className="flex flex-col gap-1.5">
             <label className="text-[11px] font-bold uppercase tracking-[0.06em] text-ink-2">Run name</label>
             <Input

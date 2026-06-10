@@ -31,7 +31,7 @@ export function RunsList() {
             {I.plus({ size: 15 })} New run
           </Button>
         </div>
-        <div className="flex max-w-[880px] flex-col gap-2.5">
+        <div className="flex flex-col gap-2.5">
           {runs.map((run) => {
             const t = tally(run.rows);
             const total = run.rows.length;
@@ -50,13 +50,13 @@ export function RunsList() {
                   </div>
                   <div className="mt-[3px] font-mono text-[11.5px] text-ink-faint">{run.file}</div>
                 </div>
-                <div className="text-right">
-                  <div className="flex h-[7px] w-[180px] shrink-0 overflow-hidden rounded-full bg-sunken">
+                <div className="w-[260px] shrink-0 text-right">
+                  <div className="flex h-[7px] w-full overflow-hidden rounded-full bg-sunken">
                     {SEGS.map((s) =>
                       t[s] ? <i key={s} className="block h-full" style={{ width: (t[s] / total) * 100 + '%', background: RES[s].color }} /> : null,
                     )}
                   </div>
-                  <div className="mt-1.5 font-mono text-[11.5px] text-ink-3">
+                  <div className="mt-1.5 whitespace-nowrap font-mono text-[11.5px] text-ink-3">
                     {total} cases · {t.pass} pass · {t.fail} fail{t.blocked ? ' · ' + t.blocked + ' blocked' : ''}
                   </div>
                 </div>

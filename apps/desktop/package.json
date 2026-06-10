@@ -1,14 +1,15 @@
 {
   "name": "@casewright/desktop",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
-  "description": "Casewright desktop app — a craftsman's editor for manual test cases (NW.js + React + TypeScript).",
+  "description": "Casewright desktop app — a bespoke editor for manual test cases (NW.js + React + TypeScript).",
   "license": "MIT",
   "author": "Jim Buck",
   "main": "dist/index.html",
   "window": {
     "title": "Casewright",
+    "icon": "build-resources/icon.png",
     "width": 1480,
     "height": 940,
     "min_width": 1024,

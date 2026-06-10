@@ -24,24 +24,24 @@
   --ink-3:         oklch(0.60 0.008 62);
   --ink-faint:     oklch(0.72 0.006 64);
 
-  /* ---- accent: slate blue (primary actions + selection only) ---- */
-  --accent:        oklch(0.55 0.13 256);
-  --accent-press:  oklch(0.47 0.13 256);
+  /* ---- accent: bluish-purple iris (primary actions + selection only) ---- */
+  --accent:        oklch(0.55 0.13 283);
+  --accent-press:  oklch(0.47 0.13 283);
   --accent-fg:     oklch(0.99 0 0);
-  --accent-soft:   oklch(0.952 0.028 256);
-  --accent-line:   oklch(0.84 0.06 256);
-  --accent-ink:    oklch(0.46 0.12 256);
+  --accent-soft:   oklch(0.952 0.028 283);
+  --accent-line:   oklch(0.84 0.06 283);
+  --accent-ink:    oklch(0.46 0.12 283);
 
   /* ---- status palette (the loudest signal; pair with glyphs) ---- */
   --pass:          oklch(0.58 0.12 152);
   --pass-soft:     oklch(0.95 0.04 152);
   --fail:          oklch(0.56 0.19 27);
   --fail-soft:     oklch(0.95 0.045 27);
-  --blocked:       oklch(0.66 0.14 66);
-  --blocked-soft:  oklch(0.95 0.05 80);
-  --skipped:       oklch(0.58 0.07 285);
-  --skipped-soft:  oklch(0.95 0.025 285);
-  --notrun:        oklch(0.70 0.008 70);
+  --blocked:       oklch(0.62 0.16 52);     /* orange */
+  --blocked-soft:  oklch(0.95 0.05 58);
+  --skipped:       oklch(0.60 0.008 65);     /* neutral gray (formerly the "not run" gray) */
+  --skipped-soft:  oklch(0.95 0.005 75);
+  --notrun:        oklch(0.90 0.003 80);     /* super light gray, almost white */
   --notrun-soft:   oklch(0.955 0.004 75);
 
   /* ---- diff colors (calm, not alarming) ---- */
