@@ -118,7 +118,7 @@ export function TitleBar() {
   return (
     <div className="relative z-50 flex h-[34px] flex-none items-stretch select-none border-b border-border bg-[linear-gradient(var(--panel-2),oklch(0.972_0.004_80))] [-webkit-app-region:drag]">
       <div className="flex items-center pl-2.5 pr-2">
-        <Logo size={16} className="rounded-sm shadow-[0_1px_1px_oklch(0.3_0.05_256/0.3)]" />
+        <Logo size={16} />
       </div>
 
       {screen === 'main' && (
