@@ -17,6 +17,8 @@ export const RunDetailsFrontSchema = z.object({
   status: z.enum(['open', 'closed']).catch('open'),
   created: z.coerce.string().default(''),
   scope: z.coerce.string().default(''),
+  /** The run's default test date (ISO) for `{{today}}` resolution. */
+  test_date: z.coerce.string().default(''),
   tester_approval: ApprovalSchema.catch(null).default(null),
   reviewer_approval: ApprovalSchema.catch(null).default(null),
 });
@@ -31,6 +33,8 @@ export const RunCaseFrontSchema = z.object({
   result: z.enum(['not_run', 'pass', 'fail', 'blocked', 'skipped']).catch('not_run'),
   tester: z.coerce.string().default(''),
   executed_at: z.coerce.string().default(''),
+  /** Per-case test-date override (ISO); absent/null = inherit the run's. */
+  test_date: z.coerce.string().nullish(),
 });
 
 export type RunCaseFront = z.infer<typeof RunCaseFrontSchema>;

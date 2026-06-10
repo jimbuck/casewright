@@ -95,6 +95,8 @@ export interface RunRow {
   itemText?: Record<string, string>;
   /** Repo-relative path of this case's sidecar markdown file. */
   file: string;
+  /** Per-case test-date override (ISO `YYYY-MM-DD`) for `{{today}}` resolution; absent/null = inherit the run's. */
+  testDate?: string | null;
 }
 
 export interface Run {
@@ -103,6 +105,8 @@ export interface Run {
   /** Repo-level folder path, `.casewright/runs/<stem>`. */
   file: string;
   created: string;
+  /** The run's default test date (ISO `YYYY-MM-DD`) for `{{today}}` resolution; seeded to the creation date. */
+  testDate?: string;
   status: 'open' | 'closed';
   scope: string;
   rows: RunRow[];

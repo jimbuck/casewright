@@ -1,5 +1,6 @@
 import type { Case, Result, Run, RunRow } from '@/types';
 import { numberSteps } from '@/utils/steps';
+import { resolveVariables } from '@/utils/variables';
 
 /** One checklist row in the run guide — positional `key`, display `text`, optional number/indent. */
 export interface ChecklistItem {
@@ -7,6 +8,8 @@ export interface ChecklistItem {
   text: string;
   num?: string;
   depth?: number;
+  /** Optional secondary detail shown under the row (e.g. a setup item's markdown body). */
+  body?: string;
 }
 
 export interface DerivedItems {
@@ -24,10 +27,15 @@ export function deriveItems(kase: Case | undefined): DerivedItems {
   if (!kase) return { setup: [], steps: [], accept: [] };
   const stepNums = numberSteps(kase.steps);
   return {
-    setup: kase.systems.map((sys, i) => ({ key: `setup:${i}`, text: `Confirm ${sys} is available and reachable.` })),
+    setup: kase.setup.map((s, i) => ({ key: `setup:${i}`, text: s.name, body: s.body })),
     steps: kase.steps.map((s, i) => ({ key: `step:${i}`, text: s.text, num: stepNums[i], depth: s.depth })),
     accept: kase.expected.map((t, i) => ({ key: `accept:${i}`, text: t })),
   };
+}
+
+/** The test date a run row resolves `{{today}}` against: its own override, else the run's. */
+export function effectiveTestDate(run: Run, row: RunRow): string {
+  return row.testDate || run.testDate || run.created;
 }
 
 const RESULT_LABEL: Record<Result, string> = {
@@ -74,8 +82,9 @@ export function rowFailures(row: RunRow, kase: Case | undefined): Failure[] {
  * failure description. Falls back to the snapshot `itemText` when the live case is gone.
  */
 export function buildDefectText(run: Run, row: RunRow, kase: Case | undefined): string {
-  const lines: string[] = [`# ${row.display_id} — ${row.title}`];
-  if (kase?.objective.trim()) lines.push('', `**Objective:** ${kase.objective.trim()}`);
+  const td = effectiveTestDate(run, row);
+  const lines: string[] = [`# ${row.display_id} — ${resolveVariables(row.title, td)}`];
+  if (kase?.objective.trim()) lines.push('', `**Objective:** ${resolveVariables(kase.objective.trim(), td)}`);
   lines.push('', `**Run:** ${run.name}`);
   lines.push(`**Result:** ${RESULT_LABEL[row.result]} · Tester: ${row.tester || '—'} · ${row.executed_at || '—'}`);
 
@@ -91,7 +100,7 @@ export function buildDefectText(run: Run, row: RunRow, kase: Case | undefined): 
         const it = steps[i];
         const note = row.checks[it.key] === 'fail' ? (row.failNotes[it.key] ?? '').trim() : null;
         const mark = note === null ? '' : `  ✗${note ? ` ${note}` : ''}`;
-        lines.push(`${'  '.repeat(it.depth ?? 0)}${it.num ?? '-'}. ${it.text}${mark}`);
+        lines.push(`${'  '.repeat(it.depth ?? 0)}${it.num ?? '-'}. ${resolveVariables(it.text, td)}${mark}`);
       }
     }
     // Failed preconditions / acceptance criteria live outside the ordered step sequence.
@@ -104,7 +113,7 @@ export function buildDefectText(run: Run, row: RunRow, kase: Case | undefined): 
       lines.push('', `## ${label}`);
       for (const it of failed) {
         const note = (row.failNotes[it.key] ?? '').trim();
-        lines.push(`- ${it.text}${note ? ` — ${note}` : ''}`);
+        lines.push(`- ${resolveVariables(it.text, td)}${note ? ` — ${note}` : ''}`);
       }
     }
   } else {
@@ -113,7 +122,7 @@ export function buildDefectText(run: Run, row: RunRow, kase: Case | undefined): 
     const failed = rowFailures(row, kase);
     if (failed.length) {
       lines.push('', '## Failed items');
-      for (const f of failed) lines.push(`- ${f.text}${f.note ? ` — ${f.note}` : ''}`);
+      for (const f of failed) lines.push(`- ${resolveVariables(f.text, td)}${f.note ? ` — ${f.note}` : ''}`);
     }
   }
 
@@ -161,12 +170,16 @@ export function buildRunSummary(run: Run, cases: Case[]): RunSummary {
 
   for (const row of run.rows) {
     counts[row.result] += 1;
+    const td = effectiveTestDate(run, row);
     const entry: RunSummaryEntry = {
       case_id: row.case_id,
       display_id: row.display_id,
-      title: row.title,
+      title: resolveVariables(row.title, td),
       result: row.result,
-      failures: row.result === 'pass' ? [] : rowFailures(row, byId.get(row.case_id)),
+      failures:
+        row.result === 'pass'
+          ? []
+          : rowFailures(row, byId.get(row.case_id)).map((f) => ({ text: resolveVariables(f.text, td), note: f.note })),
       notes: row.notes.trim(),
     };
     if (row.result === 'pass') passed.push(entry);

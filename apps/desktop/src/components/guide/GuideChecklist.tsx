@@ -42,6 +42,11 @@ export function GuideChecklist({ title, caption, items, myChecks, failNotes, cyc
             <div key={it.key}>
               <GuideCheck state={state} onToggle={() => cycle(it.key)} num={numbered ? (it.num ?? '') + '.' : null} depth={it.depth}>
                 {renderInline(it.text, it.key)}
+                {it.body?.trim() && (
+                  <span className="mt-1 block whitespace-pre-wrap text-[13px] font-normal leading-[1.55] text-ink-3">
+                    {renderInline(it.body, it.key + '-body')}
+                  </span>
+                )}
               </GuideCheck>
               {state === 'fail' && (
                 <div className="mb-1 ml-[42px] mr-2" style={it.depth ? { marginLeft: 42 + it.depth * 26 } : undefined}>

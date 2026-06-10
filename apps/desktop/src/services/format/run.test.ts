@@ -93,12 +93,26 @@ describe('run-case sidecar', () => {
     const twice = parseRunCase(serializeRunCase(once)).runCase;
     expect(twice).toEqual(once);
   });
+
+  it('emits and round-trips a per-case test-date override', () => {
+    const overridden: RunCaseFile = { ...SAMPLE_CASE, testDate: '2026-07-01' };
+    const md = serializeRunCase(overridden);
+    expect(md).toContain('test_date: "2026-07-01"');
+    expect(parseRunCase(md).runCase.testDate).toBe('2026-07-01');
+  });
+
+  it('omits test_date when the case inherits the run date', () => {
+    const md = serializeRunCase(SAMPLE_CASE);
+    expect(md).not.toContain('test_date');
+    expect(parseRunCase(md).runCase.testDate).toBeUndefined();
+  });
 });
 
 const SAMPLE_DETAILS: RunDetails = {
   name: 'Regression — Sprint 13',
   status: 'open',
   created: '2026-06-09',
+  testDate: '2026-06-09',
   scope: 'custom (4 cases)',
   testerApproval: { name: 'amartin', at: '2026-06-09 14:22' },
   reviewerApproval: { name: 'okeefe', at: '2026-06-09 16:01' },
@@ -111,6 +125,12 @@ describe('run-details sidecar', () => {
     const { details, warnings } = parseRunDetails(serializeRunDetails(SAMPLE_DETAILS));
     expect(warnings).toHaveLength(0);
     expect(details).toEqual(SAMPLE_DETAILS);
+  });
+
+  it('writes the run test date and round-trips it', () => {
+    const md = serializeRunDetails(SAMPLE_DETAILS);
+    expect(md).toContain('test_date: "2026-06-09"');
+    expect(parseRunDetails(md).details.testDate).toBe('2026-06-09');
   });
 
   it('round-trips with no approvals', () => {

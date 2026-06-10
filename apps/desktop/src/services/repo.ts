@@ -302,6 +302,7 @@ async function loadRuns(repoPath: string, warnings: LintWarning[]): Promise<Run[
         failNotes,
         itemText,
         file,
+        ...(runCase.testDate ? { testDate: runCase.testDate } : {}),
       });
     }
 
@@ -310,6 +311,8 @@ async function loadRuns(repoPath: string, warnings: LintWarning[]): Promise<Run[
       name: det?.details.name || stem,
       file: dirRel,
       created: det?.details.created || stem.match(/^\d{4}-\d{2}-\d{2}/)?.[0] || '',
+      // Default the test date to the run's creation date for legacy runs without one.
+      testDate: det?.details.testDate || det?.details.created || stem.match(/^\d{4}-\d{2}-\d{2}/)?.[0] || '',
       status: det?.details.status ?? 'open',
       scope: det?.details.scope ?? '',
       rows,

@@ -4,7 +4,8 @@ import { Button, Field, Input, RES, RESULTS, Textarea } from '@/components/ui';
 import { cn } from '@/lib/utils';
 import { useApp } from '@/store/app-store';
 import { renderInline } from '@/utils/markdown';
-import { buildDefectText, deriveItems } from '@/utils/run-items';
+import { resolveVariables } from '@/utils/variables';
+import { buildDefectText, deriveItems, effectiveTestDate, type ChecklistItem } from '@/utils/run-items';
 import type { Result } from '@/types';
 import { GuideChecklist } from './GuideChecklist';
 
@@ -38,8 +39,18 @@ export function RunGuide() {
   const cycle = (key: string) => ctx.cycleRunCheck(run.id, idx, key);
   const setFailNote = (key: string, value: string) => ctx.setRunFailNote(run.id, idx, key, value);
 
-  // ---- derive checklist items from the live case ----
-  const { setup: setupItems, steps: stepItems, accept: acceptItems } = deriveItems(kase);
+  // ---- derive checklist items from the live case, resolving {{today}} against the test date ----
+  const testDate = effectiveTestDate(run, row);
+  const withDates = (items: ChecklistItem[]) =>
+    items.map((it) => ({
+      ...it,
+      text: resolveVariables(it.text, testDate),
+      body: it.body ? resolveVariables(it.body, testDate) : it.body,
+    }));
+  const derived = deriveItems(kase);
+  const setupItems = withDates(derived.setup);
+  const stepItems = withDates(derived.steps);
+  const acceptItems = withDates(derived.accept);
   const allItems = [...setupItems, ...stepItems, ...acceptItems];
   const total = allItems.length;
   const checkedCount = allItems.filter((it) => (myChecks[it.key] ?? 'none') !== 'none').length;
@@ -92,6 +103,27 @@ export function RunGuide() {
             {tested} of {run.rows.length} cases recorded
           </div>
         </div>
+        <div className="flex items-center gap-1.5" title="Resolves {{today}} in this case against this date">
+          <label htmlFor="cw-test-date" className="text-[10.5px] font-semibold uppercase tracking-[0.05em] text-ink-faint">
+            Test date
+          </label>
+          <input
+            id="cw-test-date"
+            type="date"
+            className="h-[28px] rounded-md border border-border bg-panel px-2 font-mono text-[12px] text-ink focus:border-accent focus:shadow-[0_0_0_3px_var(--accent-soft)] focus:outline-none"
+            value={testDate}
+            onChange={(e) => ctx.setRowTestDate(run.id, idx, e.target.value || null)}
+          />
+          {row.testDate != null && (
+            <button
+              className="text-[11px] font-medium text-accent-ink hover:underline"
+              title="Reset to the run's test date"
+              onClick={() => ctx.setRowTestDate(run.id, idx, null)}
+            >
+              reset
+            </button>
+          )}
+        </div>
         <div className="flex items-center gap-2">
           <Button icon disabled={idx === 0} onClick={() => go(idx - 1)} title="Previous case">
             {I.chevron({ size: 16, style: { transform: 'rotate(180deg)' } })}
@@ -139,14 +171,14 @@ export function RunGuide() {
                   <span className="text-[11px] font-bold uppercase tracking-[0.06em] text-ink-2">Brief</span>
                 </div>
                 <div className="px-[18px] py-4 font-read text-[16.5px] leading-[1.6] text-[oklch(0.30_0.012_60)]">
-                  {renderInline(kase.objective, 'gobj')}
+                  {renderInline(resolveVariables(kase.objective, testDate), 'gobj')}
                 </div>
                 <div className="px-[18px] pb-4">
                   <div className="mb-[7px] text-[11px] font-semibold uppercase tracking-[0.05em] text-ink-faint">Systems in scope</div>
                   <div className="flex flex-wrap gap-1.5">
                     {kase.systems.map((s, i) => (
                       <span key={i} className="rounded-full border border-border bg-panel px-[11px] py-[3px] text-[12.5px] text-ink-2">
-                        {s}
+                        {resolveVariables(s, testDate)}
                       </span>
                     ))}
                   </div>

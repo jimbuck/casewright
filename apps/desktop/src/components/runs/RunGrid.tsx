@@ -271,6 +271,22 @@ export function RunGrid() {
             />
           </section>
 
+          <section className="flex flex-col gap-1.5">
+            <label className="text-[11px] font-bold uppercase tracking-[0.06em] text-ink-2" htmlFor="run-test-date">
+              Test date
+            </label>
+            <input
+              id="run-test-date"
+              type="date"
+              className="h-[34px] w-full rounded-md border border-border bg-panel px-2.5 font-mono text-[13px] text-ink focus:border-accent focus:shadow-[0_0_0_3px_var(--accent-soft)] focus:outline-none"
+              value={run.testDate ?? run.created}
+              onChange={(e) => ctx.setRunTestDate(run.id, e.target.value || run.created)}
+            />
+            <span className="text-[11px] text-ink-faint">
+              The date <span className="font-mono text-ink-3">{'{{today}}'}</span> resolves to by default; cases can override it in the runner.
+            </span>
+          </section>
+
           <section className="flex flex-col gap-2">
             <div className="flex items-baseline gap-2">
               <div className="text-[11px] font-bold uppercase tracking-[0.06em] text-ink-2">Summary</div>

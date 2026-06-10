@@ -11,7 +11,7 @@ const kase: Case = {
   suite: 's1',
   objective: 'Verify the self-service reset flow.',
   systems: ['Auth service'],
-  setup: [],
+  setup: [{ name: 'Test account', body: 'A verified user with a known password.' }],
   steps: [
     { text: 'Open login', depth: 0 },
     { text: 'Click forgot password', depth: 0 },
@@ -57,6 +57,11 @@ describe('deriveItems', () => {
     expect(d.steps[1].num).toBe('2');
   });
 
+  it('derives setup from the case setup items (name + body), not the systems list', () => {
+    const d = deriveItems(kase);
+    expect(d.setup).toEqual([{ key: 'setup:0', text: 'Test account', body: 'A verified user with a known password.' }]);
+  });
+
   it('returns empty groups for a missing case', () => {
     expect(deriveItems(undefined)).toEqual({ setup: [], steps: [], accept: [] });
   });
@@ -96,6 +101,39 @@ describe('buildDefectText', () => {
     const row: RunRow = { ...baseRow, itemText: { 'step:1': 'Click forgot password' } };
     const text = buildDefectText(run, row, undefined);
     expect(text).toContain('- Click forgot password — button 500s');
+  });
+
+  it('resolves {{today}} in case-derived text against the test date, leaving tester text raw', () => {
+    const tokenCase: Case = {
+      ...kase,
+      objective: 'Reset before {{today+7}}.',
+      steps: [
+        { text: 'Open login', depth: 0 },
+        { text: 'Submit by {{today+7}}', depth: 0 },
+      ],
+      expected: ['Email by {{today+1}}'],
+    };
+    const row: RunRow = {
+      ...baseRow,
+      title: 'Reset {{today}}',
+      checks: { 'step:1': 'fail', 'accept:0': 'fail' },
+      failNotes: { 'step:1': 'still {{today}} raw', 'accept:0': 'never arrived' },
+      notes: 'note {{today}} kept',
+    };
+    const text = buildDefectText({ ...run, testDate: '2026-06-10' }, row, tokenCase);
+    expect(text).toContain('# PAY-0042 — Reset 2026-06-10');
+    expect(text).toContain('**Objective:** Reset before 2026-06-17.');
+    expect(text).toContain('2. Submit by 2026-06-17');
+    expect(text).toContain('- Email by 2026-06-11');
+    expect(text).toContain('still {{today}} raw'); // failure note untouched
+    expect(text).toContain('note {{today}} kept'); // tester notes untouched
+  });
+
+  it('uses the per-case override date when set', () => {
+    const tokenCase: Case = { ...kase, expected: ['Due {{today}}'] };
+    const row: RunRow = { ...baseRow, testDate: '2027-01-15', checks: { 'accept:0': 'fail' }, failNotes: {}, notes: '' };
+    const text = buildDefectText({ ...run, testDate: '2026-06-10' }, row, tokenCase);
+    expect(text).toContain('Due 2027-01-15');
   });
 });
 
@@ -144,5 +182,20 @@ describe('buildRunSummary', () => {
 
   it('is empty for a run with no rows', () => {
     expect(serializeRunSummary(buildRunSummary({ ...run, rows: [] }, [kase]))).toBe('');
+  });
+
+  it('resolves {{today}} in summary titles and failures against the run test date', () => {
+    const tokenCase: Case = { ...kase, title: 'Due {{today+7}}', expected: ['Email by {{today+1}}'] };
+    const r: Run = {
+      ...run,
+      testDate: '2026-06-10',
+      rows: [{ ...baseRow, title: 'Due {{today+7}}', checks: { 'accept:0': 'fail' }, failNotes: { 'accept:0': 'late' } }],
+    };
+    const s = buildRunSummary(r, [tokenCase]);
+    expect(s.attention[0].title).toBe('Due 2026-06-17');
+    expect(s.attention[0].failures).toEqual([{ text: 'Email by 2026-06-11', note: 'late' }]);
+    const md = serializeRunSummary(s);
+    expect(md).toContain('Due 2026-06-17');
+    expect(md).toContain('- Email by 2026-06-11 — late');
   });
 });

@@ -140,6 +140,8 @@ export interface RunCaseFile {
   result: Result;
   tester: string;
   executedAt: string;
+  /** Per-case test-date override (ISO); absent/null = inherit the run's. */
+  testDate?: string | null;
   notes: string;
   setup: RunCaseItem[];
   steps: RunCaseItem[];
@@ -156,6 +158,8 @@ export function serializeRunCase(rc: RunCaseFile, extra = ''): string {
     `result: ${rc.result}`,
     `tester: ${yamlScalar(rc.tester)}`,
     `executed_at: ${yamlScalar(rc.executedAt)}`,
+    // Only emit a per-case override when set — an inherited date keeps the diff minimal.
+    ...(rc.testDate ? [`test_date: ${yamlScalar(rc.testDate)}`] : []),
     '---',
   ].join('\n');
 
@@ -200,6 +204,7 @@ export function parseRunCase(input: string): ParseRunCaseResult {
       result: front.result,
       tester: front.tester,
       executedAt: front.executed_at,
+      testDate: front.test_date || undefined,
       notes: (sections['Notes'] ?? '').trim(),
       setup: parseItems(sections['Setup'] ?? '', 'setup', warnings),
       steps: parseItems(sections['Steps'] ?? '', 'step', warnings),
@@ -220,6 +225,8 @@ export interface RunDetails {
   name: string;
   status: 'open' | 'closed';
   created: string;
+  /** The run's default test date (ISO) for `{{today}}` resolution. */
+  testDate?: string;
   scope: string;
   testerApproval: Approval | null;
   reviewerApproval: Approval | null;
@@ -239,6 +246,7 @@ export function serializeRunDetails(d: RunDetails, extra = ''): string {
     `name: ${yamlScalar(d.name)}`,
     `status: ${d.status}`,
     `created: ${JSON.stringify(d.created)}`,
+    `test_date: ${yamlScalar(d.testDate ?? '')}`,
     `scope: ${yamlScalar(d.scope)}`,
     ...approvalLines('tester_approval', d.testerApproval),
     ...approvalLines('reviewer_approval', d.reviewerApproval),
@@ -279,6 +287,7 @@ export function parseRunDetails(input: string): ParseRunDetailsResult {
       name: front.name ?? '',
       status: front.status,
       created: front.created,
+      testDate: front.test_date ?? '',
       scope: front.scope,
       testerApproval: toApproval(front.tester_approval),
       reviewerApproval: toApproval(front.reviewer_approval),

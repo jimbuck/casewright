@@ -42,6 +42,15 @@ const checks = [
   { mark: '[-]', label: 'Fail', body: 'The item failed — add a note describing what happened.' },
 ];
 
+const variables = [
+  { token: '{{today}}', body: 'The run’s test date, formatted as ISO YYYY-MM-DD.' },
+  { token: '{{today+7}}', body: 'Seven days after — a bare number means days.' },
+  { token: '{{today-30}}', body: 'Thirty days before the test date.' },
+  { token: '{{today+2w}}', body: 'Two weeks after (units: d, w, m, y).' },
+  { token: '{{today+1m}}', body: 'One month after, clamped to the month’s last day.' },
+  { token: '{{{today}}}', body: 'Escaped — renders the literal {{today}}, never resolved.' },
+];
+
 const menus = [
   { name: 'File', items: 'Add / Edit / Remove Workspace · Repositories · Exit' },
   { name: 'Edit', items: 'New Case · New Suite' },
@@ -140,6 +149,28 @@ const menus = [
           <p class="muted">
             Draft is amber, Active reads green, and Deprecated is muted — the same colors the editor
             uses.
+          </p>
+
+          <h3>Date variables</h3>
+          <p>
+            Any case text can use the <span class="mono">{'{{today}}'}</span> variable, which resolves
+            to a real date <em>when the case is run</em> — so a case stays accurate without edits. Date
+            math is supported:
+          </p>
+          <dl class="doc-defs">
+            {variables.map((v) => (
+              <div class="def">
+                <dt class="mono">{v.token}</dt>
+                <dd>{v.body}</dd>
+              </div>
+            ))}
+          </dl>
+          <p>
+            Tokens are stored verbatim on disk and resolve in the guided runner, the generated run
+            summary, and the defect report. Each run has a <strong>test date</strong> (defaulting to
+            the day it was created) that the tester can change — per run, and per case — so you can
+            exercise date-sensitive behavior without touching the system clock. The editor’s
+            <strong>Resolve variables</strong> toggle previews resolution against any date.
           </p>
         </section>
 

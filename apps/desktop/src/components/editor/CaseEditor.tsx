@@ -1,6 +1,10 @@
+import { useState } from 'react';
 import { I } from '@/components/icons';
 import { Button } from '@/components/ui';
 import { cn } from '@/lib/utils';
+import { renderInlineResolved } from '@/utils/markdown';
+import { numberSteps } from '@/utils/steps';
+import { findVariableLint } from '@/utils/variables';
 import { useApp } from '@/store/app-store';
 import type { Case, Status } from '@/types';
 import { ListControl } from './ListControl';
@@ -17,6 +21,8 @@ const STATUS_TEXT: Record<Status, string> = {
 
 export function CaseEditor() {
   const ctx = useApp();
+  const [previewVars, setPreviewVars] = useState(false);
+  const [previewDate, setPreviewDate] = useState(() => new Date().toISOString().slice(0, 10));
   const c = ctx.cases.find((x) => x.id === ctx.sel.id);
   if (!c) return null;
   const patch = (p: Partial<Case>) => ctx.updateCase(c.id, p);
@@ -36,8 +42,40 @@ export function CaseEditor() {
     return pad(n);
   };
 
+  const stepNums = numberSteps(c.steps);
+  const lintTokens = findVariableLint(
+    [c.objective, ...c.systems, ...c.setup.flatMap((s) => [s.name, s.body]), ...c.steps.map((s) => s.text), ...c.expected].join('\n'),
+  )
+    .map((w) => w.message.match(/"([^"]+)"/)?.[1] ?? '')
+    .filter(Boolean);
+
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-panel">
+      <div className="flex flex-none items-center gap-2.5 border-b border-border bg-panel-2 px-[26px] py-[7px]">
+        <span className="text-[11px] font-semibold uppercase tracking-[0.05em] text-ink-faint">Variables</span>
+        <Button
+          variant="ghost"
+          size="sm"
+          className={cn(previewVars && 'text-accent-ink')}
+          onClick={() => setPreviewVars((p) => !p)}
+          title="Preview how the {{today}} variable resolves against a date"
+        >
+          {I.eye({ size: 14 })} {previewVars ? 'Hide resolved' : 'Resolve variables'}
+        </Button>
+        {previewVars && (
+          <input
+            type="date"
+            className="h-[26px] rounded-md border border-border bg-panel px-2 font-mono text-[12px] text-ink focus:border-accent focus:outline-none"
+            value={previewDate}
+            onChange={(e) => setPreviewDate(e.target.value || previewDate)}
+          />
+        )}
+        {lintTokens.length > 0 && (
+          <span className="ml-auto inline-flex items-center gap-1.5 text-[12px] text-[oklch(0.55_0.1_66)]">
+            {I.warn({ size: 13 })} {lintTokens.length} unrecognized variable{lintTokens.length > 1 ? 's' : ''}
+          </span>
+        )}
+      </div>
       <div className="flex-none border-b border-border px-[26px] pt-[14px]">
         <div className="flex items-center gap-2.5">
           <input
@@ -124,8 +162,76 @@ export function CaseEditor() {
         )}
       </div>
 
+      {lintTokens.length > 0 && (
+        <div className="flex-none border-b border-[oklch(0.85_0.07_80)] bg-blocked-soft px-[26px] py-2">
+          <div className="flex items-start gap-2 text-[12.5px] text-[oklch(0.5_0.12_66)]">
+            <span className="mt-px shrink-0">{I.warn({ size: 15 })}</span>
+            <div>
+              <span className="font-semibold">
+                {lintTokens.length} unrecognized variable{lintTokens.length > 1 ? 's' : ''}
+              </span>{' '}
+              — left literal at run time. Supported: <span className="font-mono">{'{{today}}'}</span>,{' '}
+              <span className="font-mono">{'{{today+7}}'}</span>, <span className="font-mono">{'{{today-1m}}'}</span>.{' '}
+              <span className="font-mono text-[11.5px] text-ink-3">{lintTokens.join('  ·  ')}</span>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="min-h-0 flex-1 overflow-auto">
         <div className="mx-auto flex max-w-[760px] flex-col gap-[26px] px-[26px] pb-20 pt-[26px]">
+          {previewVars && (
+            <section className="flex flex-col gap-3 rounded-lg border border-dashed border-accent-line bg-accent-soft px-4 py-3.5">
+              <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.05em] text-ink-faint">
+                {I.eye({ size: 13 })} Resolved preview · <span className="font-mono">{'{{today}}'}</span> ={' '}
+                <span className="font-mono text-accent-ink">{previewDate}</span>
+              </div>
+              {c.objective.trim() && (
+                <div className="font-read text-[14.5px] leading-[1.6] text-ink-2">
+                  {renderInlineResolved(c.objective, previewDate, 'pvo')}
+                </div>
+              )}
+              {c.systems.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {c.systems.map((s, i) => (
+                    <span key={i} className="rounded-full border border-border bg-panel px-[10px] py-[2px] text-[12px] text-ink-2">
+                      {renderInlineResolved(s, previewDate, `pvs${i}`)}
+                    </span>
+                  ))}
+                </div>
+              )}
+              {c.setup.length > 0 && (
+                <div className="flex flex-col gap-1.5">
+                  {c.setup.map((s, i) => (
+                    <div key={i} className="text-[13px] text-ink-2">
+                      <span className="font-semibold">{renderInlineResolved(s.name, previewDate, `pvn${i}`)}</span>
+                      {s.body.trim() && <span className="text-ink-3"> — {renderInlineResolved(s.body, previewDate, `pvb${i}`)}</span>}
+                    </div>
+                  ))}
+                </div>
+              )}
+              {c.steps.length > 0 && (
+                <ol className="flex flex-col gap-1">
+                  {c.steps.map((s, i) => (
+                    <li key={i} className="flex gap-2 text-[13px] text-ink-2" style={{ marginLeft: s.depth * 18 }}>
+                      <span className="shrink-0 font-mono text-ink-faint">{stepNums[i]}.</span>
+                      <span>{renderInlineResolved(s.text, previewDate, `pvt${i}`)}</span>
+                    </li>
+                  ))}
+                </ol>
+              )}
+              {c.expected.length > 0 && (
+                <ul className="flex flex-col gap-1">
+                  {c.expected.map((e, i) => (
+                    <li key={i} className="flex gap-2 text-[13px] text-ink-2">
+                      <span className="shrink-0 text-ink-faint">–</span>
+                      <span>{renderInlineResolved(e, previewDate, `pve${i}`)}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+          )}
           <ObjectiveEditor value={c.objective} onChange={(v) => patch({ objective: v })} />
           <hr className="m-0 h-px border-0 bg-border" />
           <ListControl
@@ -153,7 +259,8 @@ export function CaseEditor() {
           />
           <div className="flex items-center gap-[7px] rounded-md border border-dashed border-border-2 bg-panel-2 px-3 py-[9px] text-[12px] text-ink-3">
             {I.check({ size: 14 })} Round-trips to five reserved <span className="font-mono">##</span> sections · inline
-            formatting only · single trailing newline.
+            formatting only · <span className="font-mono">{'{{today}}'}</span> variables resolve at run time · single trailing
+            newline.
           </div>
         </div>
       </div>

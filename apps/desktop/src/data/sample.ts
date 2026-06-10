@@ -232,6 +232,34 @@ export const cases: Case[] = [
     expected: ['Access remains until the period end date.', 'No further renewal is charged.'],
     modified: false,
   },
+  {
+    id: 'aa12bb34cc',
+    displayId: 'PAY-0120',
+    suite: 'subs',
+    title: 'Free trial converts to a paid plan on the billing date',
+    status: 'active',
+    tags: ['Billing', 'Subscriptions', 'Trials'],
+    objective:
+      'A free trial started on {{today}} must convert to a paid plan on {{today+14}} and charge the card exactly once. Demonstrates the {{today}} date variable.',
+    systems: ['Account settings', 'Pricing service', 'Billing ledger'],
+    setup: [
+      {
+        name: 'Trial account',
+        body: 'An account whose 14-day trial starts on {{today}} and ends on {{today+13}}.\nThe welcome email shows the literal template token {{{today}}} verbatim (triple-brace escape).',
+      },
+    ],
+    steps: [
+      { text: 'Start a free trial on {{today}}.', depth: 0 },
+      { text: 'Advance the test clock to the billing date {{today+14}}.', depth: 0 },
+      { text: 'Confirm a single conversion charge is attempted.', depth: 1 },
+    ],
+    expected: [
+      'The trial is active from {{today}} through {{today+13}}.',
+      'On {{today+14}} the plan converts and the card is charged once.',
+      'A receipt dated {{today+14}} is emailed to the customer.',
+    ],
+    modified: false,
+  },
 
   /* ---- Onboarding workspace (ONB) — gives runs cases from a second workspace ---- */
   {
@@ -330,6 +358,7 @@ export const trees: Record<string, TreeNode[]> = {
       children: [
         { type: 'case', id: '5d6e9981bb' },
         { type: 'case', id: 'f7710c2ad9' },
+        { type: 'case', id: 'aa12bb34cc' },
       ],
     },
   ],

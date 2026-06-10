@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { resolveVariables } from './variables';
 
 /**
  * Render the inline-formatting whitelist to React nodes.
@@ -39,6 +40,11 @@ export function renderInline(text: string | null | undefined, keyPrefix = 'k'): 
   }
   if (last < text.length) out.push(text.slice(last));
   return out;
+}
+
+/** Resolve `{{today}}` variables against `date`, then render the inline-formatting whitelist. */
+export function renderInlineResolved(text: string | null | undefined, date: string, keyPrefix = 'k'): ReactNode {
+  return renderInline(text == null ? text : resolveVariables(text, date), keyPrefix);
 }
 
 type TextField = HTMLInputElement | HTMLTextAreaElement;

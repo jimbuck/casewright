@@ -168,6 +168,10 @@ export interface AppState {
   setRunFailNote: (runId: string, i: number, key: string, note: string) => void;
   setRunGroupChecks: (runId: string, i: number, keys: string[], state: CheckState) => void;
   recordRunResult: (runId: string, i: number, patch: { result: Result; tester: string; notes: string }) => void;
+  /** Set the run's default test date (ISO) used to resolve `{{today}}` in the runner. */
+  setRunTestDate: (runId: string, date: string) => void;
+  /** Override one case's test date (ISO), or clear the override with `null` to inherit the run's. */
+  setRowTestDate: (runId: string, i: number, date: string | null) => void;
   /** Rename a run (display name only; the run folder/id is unchanged). */
   setRunName: (runId: string, name: string) => void;
   setRunNotes: (runId: string, notes: string) => void;
@@ -464,6 +468,7 @@ export const useAppStore = create<AppState>()((set, get) => {
       result: row.result,
       tester: row.tester,
       executedAt: row.executed_at,
+      testDate: row.testDate ?? undefined,
       notes: row.notes,
       setup,
       steps,
@@ -485,6 +490,7 @@ export const useAppStore = create<AppState>()((set, get) => {
     name: run.name,
     status: run.status,
     created: run.created,
+    testDate: run.testDate,
     scope: run.scope,
     testerApproval: run.testerApproval,
     reviewerApproval: run.reviewerApproval,
@@ -1234,6 +1240,16 @@ export const useAppStore = create<AppState>()((set, get) => {
       persistRunCase(runId, i);
     },
 
+    setRunTestDate: (runId, date) => {
+      set((s) => ({ runs: s.runs.map((r) => (r.id === runId ? { ...r, testDate: date } : r)) }));
+      persistRunDetails(runId);
+    },
+
+    setRowTestDate: (runId, i, date) => {
+      patchRow(runId, i, { testDate: date });
+      persistRunCase(runId, i);
+    },
+
     createRun: ({ name, caseIds, scopeLabel }) => {
       const { cases } = get();
       const date = new Date().toISOString().slice(0, 10);
@@ -1261,6 +1277,7 @@ export const useAppStore = create<AppState>()((set, get) => {
         name,
         file: dir,
         created: date,
+        testDate: date,
         status: 'open',
         scope: scopeLabel ?? '',
         rows,
@@ -1369,6 +1386,7 @@ export const useAppStore = create<AppState>()((set, get) => {
         name,
         file: dir,
         created: date,
+        testDate: date,
         status: 'open',
         scope: src.scope,
         rows,

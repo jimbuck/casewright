@@ -86,6 +86,7 @@ for (const run of runs) {
       name: run.name,
       status: run.status,
       created: run.created,
+      testDate: run.created,
       scope: run.scope,
       testerApproval: run.testerApproval,
       reviewerApproval: run.reviewerApproval,
