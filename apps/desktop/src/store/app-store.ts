@@ -1235,7 +1235,16 @@ export const useAppStore = create<AppState>()((set, get) => {
         const fix = (nodes: TreeNode[], parentPath: string, parentSuiteId: string | null) =>
           nodes.forEach((n) => {
             if (n.type === 'suite') {
-              n.path = parentPath ? parentPath + '/' + n.name : n.name;
+              // Workspace folders are fixed roots — their `path` may be nested (e.g.
+              // `areas/payments`) and they can never be dragged, so keep it verbatim.
+              // Regular suites are re-rooted under their (possibly new) parent, keyed on
+              // their real on-disk folder name (`baseName(path)`), not their display name
+              // (a `_suite.md` name can differ from the folder), so moves stay inside the
+              // workspace instead of collapsing to the repo root.
+              if (!n.isWorkspace) {
+                const folder = baseName(n.path);
+                n.path = parentPath ? parentPath + '/' + folder : folder;
+              }
               fix(n.children, n.path, n.id);
             } else {
               movedCaseParent[n.id] = parentSuiteId;
