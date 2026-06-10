@@ -1,22 +1,43 @@
-name: Release desktop
+name: Build desktop release
 
-# Builds the Windows NW.js desktop app and publishes it as a GitHub Release.
-# Produces two assets:
-#   • Casewright-Setup-<version>.exe   — per-user installer (single executable)
+# Builds the Windows NW.js desktop app + installer and publishes (or updates) its
+# GitHub Release with two assets:
+#   • Casewright-Setup-<version>.exe   — per-user installer (the auto-update target)
 #   • Casewright-<version>-win-x64.zip — portable build (unzip + run Casewright.exe)
 #
-# Trigger by pushing a version tag (the version is taken from the tag):
-#   git tag v0.1.0 && git push origin v0.1.0
-# Or run manually from the Actions tab, supplying the version.
+# This workflow is NOT triggered by tags. Two entry points:
+#   • workflow_call    — invoked by release.yml right after semantic-release cuts a
+#                        version (the v<version> tag already exists; this builds and
+#                        attaches the assets + release notes — so the Release only
+#                        appears once the installer is actually present).
+#   • workflow_dispatch — manual fallback: rebuild/republish a specific version, e.g.
+#                        when the build failed after the tag was already created.
 
 on:
-  push:
-    tags:
-      - "v*"
+  workflow_call:
+    inputs:
+      version:
+        description: "Release version, no leading 'v' (e.g. 0.4.0)"
+        required: true
+        type: string
+      ref:
+        description: "Git ref to build (tag/sha). Empty → the triggering ref."
+        required: false
+        type: string
+        default: ""
+      notes:
+        description: "Release body (from semantic-release). Empty → auto-generate."
+        required: false
+        type: string
+        default: ""
+      prerelease:
+        required: false
+        type: boolean
+        default: false
   workflow_dispatch:
     inputs:
       version:
-        description: "Release version (e.g. 0.1.0) — without the leading 'v'"
+        description: "Release version (e.g. 0.4.0) — without the leading 'v'"
         required: true
         type: string
       prerelease:
@@ -25,12 +46,12 @@ on:
         type: boolean
         default: false
 
-# Allow the job to create releases and tags.
+# Allow the job to create/update releases and tags.
 permissions:
   contents: write
 
 concurrency:
-  group: release-desktop-${{ github.ref }}
+  group: build-desktop-${{ inputs.version }}
   cancel-in-progress: false
 
 jobs:
@@ -38,25 +59,22 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
 
-      # Resolve the release version + tag from the trigger (tag name or manual input).
+      # Normalize the version and derive the tag (both entry points provide `version`).
       - name: Resolve version
         id: ver
         shell: pwsh
         run: |
-          if ('${{ github.event_name }}' -eq 'workflow_dispatch') {
-            $v = '${{ inputs.version }}'
-          } else {
-            $v = '${{ github.ref_name }}'
-          }
-          $v = $v -replace '^v', ''
+          $v = '${{ inputs.version }}' -replace '^v', ''
           if ($v -notmatch '^\d+\.\d+\.\d+') {
-            Write-Error "Version '$v' is not a valid semver — tag releases like v0.1.0."
+            Write-Error "Version '$v' is not a valid semver — e.g. 0.4.0."
             exit 1
           }
           "version=$v" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
           "tag=v$v"    | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-          Write-Host "Releasing Casewright v$v"
+          Write-Host "Building Casewright v$v"
 
       - uses: pnpm/action-setup@v4
 
@@ -83,6 +101,8 @@ jobs:
         run: pnpm --filter @casewright/desktop test
 
       # Build the renderer, stage runtime deps, and run nw-builder (+ portable zip).
+      # CASEWRIGHT_VERSION drives both `vite build` (__APP_VERSION__, what the running
+      # app reports to the auto-updater) and the packaged manifest version.
       - name: Package (nw-builder + portable zip)
         env:
           CASEWRIGHT_VERSION: ${{ steps.ver.outputs.version }}
@@ -109,14 +129,18 @@ jobs:
             Write-Host ("{0}  ({1:N1} MB)" -f $f, ((Get-Item $f).Length / 1MB))
           }
 
+      # Create or update the Release for this tag and attach the assets. When called
+      # from release.yml the tag already exists and `notes` carries the changelog;
+      # for a manual dispatch the tag is created here and notes are auto-generated.
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.ver.outputs.tag }}
           name: Casewright ${{ steps.ver.outputs.tag }}
-          prerelease: ${{ github.event_name == 'workflow_dispatch' && inputs.prerelease || false }}
+          body: ${{ inputs.notes }}
+          generate_release_notes: ${{ inputs.notes == '' }}
+          prerelease: ${{ inputs.prerelease }}
           fail_on_unmatched_files: true
-          generate_release_notes: true
           files: |
             apps/desktop/build/Casewright-Setup-${{ steps.ver.outputs.version }}.exe
             apps/desktop/build/Casewright-${{ steps.ver.outputs.version }}-win-x64.zip

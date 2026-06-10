@@ -70,6 +70,15 @@ workflow derives the correct `site` and `base` automatically (project site → `
 user/org site → `/`), so no config edit is needed. Commit `pnpm-lock.yaml` so the frozen
 install resolves in CI.
 
+## Releasing the desktop app
+
+Releases are **automatic** — there's nothing to tag by hand. [`.github/workflows/release.yml`](.github/workflows/release.yml)
+runs [semantic-release](https://semantic-release.gitbook.io) on every push to `main`: it reads the
+[Conventional Commits](https://www.conventionalcommits.org) since the last release, picks the next
+version (`fix:` → patch, `feat:` → minor, `feat!:`/`BREAKING CHANGE` → major), bumps the changelog
+and versions, tags it, then builds and publishes the Windows release the in-app updater consumes.
+Just write conventional-commit messages and merge to `main`. Full flow and caveats: [`RELEASING.md`](RELEASING.md).
+
 ## Status
 
 The desktop app is a **React + TypeScript** application (Vite-built, NW.js-hosted), architected

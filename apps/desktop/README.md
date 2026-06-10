@@ -128,16 +128,21 @@ temp git repos (open/load, write/rename/delete, commit/push/pull/conflict+abort)
 
 ## Packaging & releases (Windows)
 
-The Windows desktop app is built and published by the **Release desktop** workflow
-([`.github/workflows/release-desktop.yml`](../../.github/workflows/release-desktop.yml)). Cut a
-release by pushing a version tag — the version is taken from the tag:
+Releases are **fully automatic** and driven by [Conventional Commits](https://www.conventionalcommits.org).
+On every push to `main`, the **Release** workflow ([`.github/workflows/release.yml`](../../.github/workflows/release.yml))
+runs [semantic-release](https://semantic-release.gitbook.io): it reads the commits since the last
+tag, decides the next version (`fix:` → patch, `feat:` → minor, `feat!:` / `BREAKING CHANGE` →
+major), bumps `CHANGELOG.md` + both `package.json` versions, and pushes the `v<version>` tag. It
+then triggers the reusable **Build desktop release** workflow
+([`.github/workflows/release-desktop.yml`](../../.github/workflows/release-desktop.yml)), which
+builds on `windows-latest` and publishes the GitHub Release **with the installer attached** (so the
+Release never appears without its download — important for the in-app auto-updater). See
+[`RELEASING.md`](../../RELEASING.md) for the full flow and the protected-branch caveat.
 
-```bash
-git tag v0.1.0
-git push origin v0.1.0          # → builds on windows-latest, publishes a GitHub Release
-```
-
-(or run it manually from the **Actions** tab, supplying the version). Each run produces two assets:
+A push with no releasable commits (only `chore`/`docs`/`refactor`/`style`/`test`/`ci`) ships
+nothing. To rebuild/republish a specific version by hand (e.g. a build that failed after the tag was
+cut), run **Build desktop release** from the **Actions** tab and supply the version. Each run
+produces two assets:
 
 - **`Casewright-Setup-<version>.exe`** — a per-user installer (no admin/UAC), with a Start-Menu
   shortcut and uninstaller. Built with **Inno Setup** ([`build-resources/casewright.iss`](build-resources/casewright.iss)).
