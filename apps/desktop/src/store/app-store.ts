@@ -32,7 +32,8 @@ import {
 import type { LintWarning } from '@/schemas';
 import { nowStamp, randomId, slug } from '@/utils/ids';
 import { buildRunSummary, deriveItems, serializeRunSummary } from '@/utils/run-items';
-import { isNwjs, pickDirectory } from '@/lib/nwjs';
+import { isNwjs, openExternal, pickDirectory } from '@/lib/nwjs';
+import { downloadInstaller, fetchLatestUpdate, isInstalledBuild, runInstallerAndQuit } from '@/services/updater';
 import type {
   Approval,
   Case,
@@ -222,6 +223,21 @@ export interface AppState {
   abortMerge: () => Promise<void>;
   completeMerge: (resolutions: Resolutions) => void;
 
+  /* updates (GitHub release auto-update; Windows/NW.js only) */
+  updateStatus: 'idle' | 'checking' | 'available' | 'downloading' | 'ready' | 'unsupported' | 'error';
+  /** Newer version available (tag without `v`), or null. */
+  updateVersion: string | null;
+  /** Background-download progress, 0..100. */
+  updateProgress: number;
+  /** The release page URL, shown to portable builds that can't self-apply. */
+  updateReleaseUrl: string | null;
+  /** Poll GitHub for a newer release; auto-downloads the installer for installed builds. */
+  checkForUpdate: () => Promise<void>;
+  /** Launch the downloaded installer and quit so it can replace + relaunch the app. */
+  relaunchToUpdate: () => void;
+  /** Open the release page in the browser (portable / unsupported builds). */
+  openReleasePage: () => void;
+
   /* modals */
   modal: ModalKind;
   setModal: (modal: ModalKind) => void;
@@ -236,6 +252,9 @@ export const useAppStore = create<AppState>()((set, get) => {
   // Resolver for the currently-open generic dialog (confirm/alert). Only one dialog shows
   // at a time; a new request cancels any pending one (resolves it false).
   let pendingDialog: ((result: boolean) => void) | null = null;
+
+  // Path of the installer downloaded by `checkForUpdate`, handed to `relaunchToUpdate`.
+  let downloadedInstaller: string | null = null;
 
   // suite paths in the tree are full repo-relative (workspaces are top-level folders)
   const casePath = (c: Case): string => {
@@ -713,6 +732,10 @@ export const useAppStore = create<AppState>()((set, get) => {
     dialog: null,
     collapsed: {},
     renaming: null,
+    updateStatus: 'idle',
+    updateVersion: null,
+    updateProgress: 0,
+    updateReleaseUrl: null,
 
     /* ---- derived helpers ---- */
     casePath,
@@ -1513,6 +1536,54 @@ export const useAppStore = create<AppState>()((set, get) => {
       set({ modal: null, conflict: null });
       void get().refreshStatus();
       get().toast('Merge resolved');
+    },
+
+    /* ---- updates ---- */
+    checkForUpdate: async () => {
+      if (!isNwjs()) return; // dev preview / browser — nothing to update
+      // Skip when a check is in flight or an update is already surfaced — re-polling would
+      // re-download the (unchanging) installer and could clobber the "ready"/link banner on a
+      // transient failure. A fresh check resumes after a restart, or from the 'error'/'idle' states.
+      if (['checking', 'downloading', 'ready', 'unsupported'].includes(get().updateStatus)) return;
+      set({ updateStatus: 'checking' });
+      try {
+        const info = await fetchLatestUpdate(__APP_VERSION__);
+        if (!info) {
+          set({ updateStatus: 'idle', updateVersion: null, updateReleaseUrl: null });
+          return;
+        }
+        set({ updateStatus: 'available', updateVersion: info.version, updateReleaseUrl: info.htmlUrl });
+        // Only installed builds can self-apply; portable builds just link to the release.
+        const installable = info.setupUrl != null && (await isInstalledBuild());
+        if (!installable) {
+          set({ updateStatus: 'unsupported' });
+          return;
+        }
+        set({ updateStatus: 'downloading', updateProgress: 0 });
+        try {
+          downloadedInstaller = await downloadInstaller(info.setupUrl!, info.version, (pct) =>
+            set({ updateProgress: pct }),
+          );
+          set({ updateStatus: 'ready' });
+        } catch {
+          // Download failed — fall back to the manual release-page path.
+          downloadedInstaller = null;
+          set({ updateStatus: 'unsupported' });
+        }
+      } catch {
+        // Network/API hiccup — stay quiet (no startup toast spam); retry next interval.
+        set({ updateStatus: 'error' });
+      }
+    },
+
+    relaunchToUpdate: () => {
+      if (!downloadedInstaller) return;
+      runInstallerAndQuit(downloadedInstaller);
+    },
+
+    openReleasePage: () => {
+      const url = get().updateReleaseUrl;
+      if (url) openExternal(url);
     },
 
     /* ---- modals ---- */

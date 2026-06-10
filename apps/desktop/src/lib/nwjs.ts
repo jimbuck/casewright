@@ -16,7 +16,7 @@ export interface NwWindow {
 
 interface NwGlobal {
   Window: { get(): NwWindow };
-  App?: { dataPath: string; argv: string[] };
+  App?: { dataPath: string; argv: string[]; quit?(): void };
   Shell?: { openExternal(uri: string): void };
   require?: NodeRequire;
 }
@@ -51,6 +51,22 @@ export function openExternal(url: string): void {
 export function runtimeVersions(): { nw?: string; chromium?: string; node?: string } {
   const v = (globalThis as { process?: { versions?: Record<string, string> } }).process?.versions;
   return { nw: v?.nw, chromium: v?.chromium ?? v?.chrome, node: v?.node };
+}
+
+/**
+ * Quit the whole app — not just the window. Used by the updater so a Windows
+ * installer can replace the running (locked) executable. Falls back to a forced
+ * window close if `nw.App.quit` is unavailable.
+ */
+export function quitApp(): void {
+  const app = window.nw?.App;
+  if (app?.quit) app.quit();
+  else nwWindow()?.close(true);
+}
+
+/** Absolute path of the running executable (Node global `process.execPath`); null in a plain browser. */
+export function execPath(): string | null {
+  return (globalThis as { process?: { execPath?: string } }).process?.execPath ?? null;
 }
 
 /**

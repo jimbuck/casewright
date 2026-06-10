@@ -44,9 +44,21 @@ function SectionLabel({ children }: { children: ReactNode }) {
   );
 }
 
+const updateLabel: Record<string, string | null> = {
+  idle: null,
+  checking: 'Checking…',
+  available: 'Update available',
+  downloading: 'Downloading…',
+  ready: 'Update ready',
+  unsupported: 'Update available',
+  error: 'Check failed',
+};
+
 export function AboutModal() {
   const { repoPath, branch, ahead, behind, changes, workspaces, setModal, toast } = useApp();
+  const { updateStatus, updateVersion, checkForUpdate } = useApp();
   const close = () => setModal(null);
+  const updateText = updateStatus === 'idle' ? null : `${updateLabel[updateStatus] ?? ''}${updateVersion ? ` · v${updateVersion}` : ''}`;
   const [info, setInfo] = useState<RepoInfo | null>(null);
 
   useEffect(() => {
@@ -145,9 +157,18 @@ export function AboutModal() {
         )}
       </ModalBody>
       <ModalFooter>
-        <Button variant="ghost" className="mr-auto" onClick={() => openExternal(GITHUB_URL)}>
+        <Button variant="ghost" onClick={() => openExternal(GITHUB_URL)}>
           {I.link({ size: 14 })} GitHub
         </Button>
+        <Button
+          variant="ghost"
+          className="mr-auto"
+          disabled={updateStatus === 'checking' || updateStatus === 'downloading'}
+          onClick={() => void checkForUpdate()}
+        >
+          {I.sync({ size: 14 })} Check for updates
+        </Button>
+        {updateText && <span className="text-[11.5px] text-ink-faint">{updateText}</span>}
         <Button variant="primary" onClick={close}>
           Close
         </Button>

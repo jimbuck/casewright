@@ -1,9 +1,12 @@
-import { useApp } from '@/store/app-store';
+import { useEffect } from 'react';
+import { useApp, useAppStore } from '@/store/app-store';
+import { isNwjs } from '@/lib/nwjs';
 import { I } from './icons';
 import { Button } from './ui';
 import { TitleBar } from './chrome/TitleBar';
 import { TopBar } from './chrome/TopBar';
 import { Toasts } from './chrome/Toasts';
+import { UpdateBanner } from './chrome/UpdateBanner';
 import { Launcher } from './launcher/Launcher';
 import { Sidebar } from './sidebar/Sidebar';
 import { CaseEditor } from './editor/CaseEditor';
@@ -49,6 +52,7 @@ function Workbench() {
               </Button>
             </div>
           )}
+          <UpdateBanner />
           <div className="flex min-h-0 flex-1">
             <div className="flex min-h-0 flex-1">
               <Sidebar />
@@ -69,5 +73,18 @@ function Workbench() {
 }
 
 export function App() {
+  // Poll GitHub for a newer release: once shortly after launch (off the critical
+  // path), then on a slow interval. No-ops outside NW.js (dev preview / browser).
+  const checkForUpdate = useAppStore((s) => s.checkForUpdate);
+  useEffect(() => {
+    if (!isNwjs()) return;
+    const first = setTimeout(() => void checkForUpdate(), 8_000);
+    const interval = setInterval(() => void checkForUpdate(), 6 * 60 * 60 * 1000);
+    return () => {
+      clearTimeout(first);
+      clearInterval(interval);
+    };
+  }, [checkForUpdate]);
+
   return <Workbench />;
 }
