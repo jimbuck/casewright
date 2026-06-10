@@ -83,8 +83,10 @@ export async function isInstalledBuild(): Promise<boolean> {
 
 /**
  * Download the installer to the OS temp directory, reporting 0..100 progress when
- * the server sends a content-length. Writes to a `.part` file first and renames on
- * completion, so a half-written installer can never be launched.
+ * the server sends a content-length. Streams each chunk straight to a `.part` file
+ * (never buffering the whole — potentially large — installer in memory) and renames
+ * on completion, so a half-written installer can never be launched. A prior download
+ * is cleared first, since Windows can't rename onto an existing file.
  */
 export async function downloadInstaller(
   url: string,
@@ -101,17 +103,24 @@ export async function downloadInstaller(
 
   const total = Number(res.headers.get('content-length')) || 0;
   const reader = res.body.getReader();
-  const chunks: Uint8Array[] = [];
+  const handle = await fsp.open(part, 'w');
   let received = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    chunks.push(value);
-    received += value.length;
-    if (total && onProgress) onProgress(Math.round((received / total) * 100));
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      await handle.write(value);
+      received += value.length;
+      if (total && onProgress) onProgress(Math.round((received / total) * 100));
+    }
+  } catch (err) {
+    await handle.close().catch(() => {});
+    await fsp.rm(part, { force: true }).catch(() => {});
+    throw err;
   }
+  await handle.close();
 
-  await fsp.writeFile(part, Buffer.concat(chunks));
+  await fsp.rm(dest, { force: true }).catch(() => {}); // Windows rename won't overwrite
   await fsp.rename(part, dest);
   return dest;
 }

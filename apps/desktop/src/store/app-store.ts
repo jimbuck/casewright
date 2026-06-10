@@ -1523,7 +1523,10 @@ export const useAppStore = create<AppState>()((set, get) => {
     /* ---- updates ---- */
     checkForUpdate: async () => {
       if (!isNwjs()) return; // dev preview / browser — nothing to update
-      if (['checking', 'downloading'].includes(get().updateStatus)) return; // already in flight
+      // Skip when a check is in flight or an update is already surfaced — re-polling would
+      // re-download the (unchanging) installer and could clobber the "ready"/link banner on a
+      // transient failure. A fresh check resumes after a restart, or from the 'error'/'idle' states.
+      if (['checking', 'downloading', 'ready', 'unsupported'].includes(get().updateStatus)) return;
       set({ updateStatus: 'checking' });
       try {
         const info = await fetchLatestUpdate(__APP_VERSION__);

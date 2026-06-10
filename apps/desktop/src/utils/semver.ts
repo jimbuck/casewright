@@ -5,9 +5,13 @@
  * unparseable version is treated as "not newer", so we never prompt on garbage).
  */
 
-/** Parse "1.2.3" or "v1.2.3" → [1, 2, 3]; any -prerelease/+build suffix is dropped. */
+/**
+ * Parse "1.2.3" or "v1.2.3" → [1, 2, 3]; a trailing -prerelease/+build suffix is
+ * dropped. The match is anchored so non-semver tags (`1.2.3.4`, `v1.2.3foo`) are
+ * rejected outright rather than silently truncated to `1.2.3`.
+ */
 export function parseVersion(v: string): [number, number, number] | null {
-  const m = /^v?(\d+)\.(\d+)\.(\d+)/.exec(v.trim());
+  const m = /^v?(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$/.exec(v.trim());
   return m ? [Number(m[1]), Number(m[2]), Number(m[3])] : null;
 }
 

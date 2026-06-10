@@ -18,6 +18,12 @@ describe('parseVersion', () => {
     expect(parseVersion('not-a-version')).toBeNull();
     expect(parseVersion('')).toBeNull();
   });
+
+  it('rejects non-semver tags rather than truncating them', () => {
+    expect(parseVersion('v1.2.3foo')).toBeNull();
+    expect(parseVersion('1.2.3.4')).toBeNull();
+    expect(parseVersion('1.2.3-')).toEqual([1, 2, 3]); // a bare suffix marker is still 1.2.3
+  });
 });
 
 describe('compareVersions', () => {
