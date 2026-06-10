@@ -2,6 +2,13 @@
 
 All notable changes to Casewright. Generated automatically from Conventional Commits — do not edit by hand.
 
+## [0.3.1](https://github.com/jimbuck/casewright/compare/v0.3.0...v0.3.1) (2026-06-10)
+
+
+### Bug Fixes
+
+* **sidebar:** keep drag-and-drop moves inside the workspace folder ([a101429](https://github.com/jimbuck/casewright/commit/a101429c7240dd5fd984b33d0679c98ecce7dee6))
+
 # [0.3.0](https://github.com/jimbuck/casewright/compare/v0.2.0...v0.3.0) (2026-06-10)
 
 
