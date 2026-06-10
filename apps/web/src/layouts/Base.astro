@@ -1,6 +1,8 @@
 ---
 import '@casewright/brand/tokens.css';
 import '../styles/global.css';
+// The favicon is the shared brand mark, so the site and the desktop app icon never diverge.
+import favicon from '@casewright/brand/logo-mark.svg?url';
 
 interface Props {
   title?: string;
@@ -11,9 +13,6 @@ const {
   title = 'Casewright — a bespoke editor for manual test cases',
   description = 'Casewright is a git-backed desktop app for writing and running manual test cases. Markdown on disk, suites as folders, and a structured 3-way merge. Local-first, no telemetry.',
 } = Astro.props;
-
-const base = import.meta.env.BASE_URL;
-const favicon = `${base.replace(/\/$/, '')}/favicon.svg`;
 ---
 
 <!doctype html>

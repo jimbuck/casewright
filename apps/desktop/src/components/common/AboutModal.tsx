@@ -7,7 +7,8 @@ import { repoInfo, type RepoInfo } from '@/services/git';
 import { useApp } from '@/store/app-store';
 
 export const GITHUB_URL = 'https://github.com/jimbuck/casewright';
-export const WEBSITE_URL = 'https://jimbuck.github.io/casewright/';
+export const WEBSITE_URL = 'https://casewright.dev/';
+export const DOCS_URL = `${WEBSITE_URL}docs`;
 
 const baseName = (p: string): string => p.replace(/[/\\]+$/, '').split(/[/\\]/).pop() || 'repository';
 

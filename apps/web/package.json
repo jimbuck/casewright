@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "description": "Casewright marketing site — static, built with Astro, deployed to GitHub Pages.",
-  "homepage": "https://jimbuck.github.io/casewright/",
+  "homepage": "https://casewright.dev",
   "license": "MIT",
   "scripts": {
     "dev": "astro dev",

@@ -121,7 +121,7 @@ svg {
   background: var(--accent);
   color: var(--accent-fg);
   border-color: var(--accent-press);
-  box-shadow: 0 1px 2px oklch(0.3 0.05 256 / 0.25);
+  box-shadow: 0 1px 2px oklch(0.3 0.05 283 / 0.25);
 }
 
 .btn.primary:hover {
@@ -141,19 +141,12 @@ svg {
   text-decoration: none;
 }
 
-.wordmark .glyph {
-  display: grid;
-  place-items: center;
+.wordmark .mark {
   width: 28px;
   height: 28px;
   border-radius: 7px;
-  background: var(--accent);
-  box-shadow: 0 1px 2px oklch(0.3 0.05 256 / 0.3);
-}
-
-.wordmark .glyph svg {
-  width: 18px;
-  height: 18px;
+  flex: none;
+  box-shadow: 0 1px 2px oklch(0.3 0.05 283 / 0.3);
 }
 
 .wordmark .name {

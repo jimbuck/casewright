@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { I } from '@/components/icons';
 import { Logo } from '@/components/Logo';
 import { Menu, type MenuItem } from '@/components/ui';
-import { WEBSITE_URL } from '@/components/common/AboutModal';
+import { DOCS_URL } from '@/components/common/AboutModal';
 import { nwWindow, openExternal } from '@/lib/nwjs';
 import { useApp } from '@/store/app-store';
 
@@ -108,7 +108,7 @@ export function TitleBar() {
       label: 'Help',
       items: [
         { icon: I.eye, label: 'About Casewright', on: () => ctx.setModal('about') },
-        { icon: I.link, label: 'Documentation', on: () => openExternal(WEBSITE_URL) },
+        { icon: I.link, label: 'Documentation', on: () => openExternal(DOCS_URL) },
       ],
     },
   ];
