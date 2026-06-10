@@ -2,7 +2,7 @@
 // pointed at the dev server URL. NW.js loads a tiny generated manifest in .nwdev/
 // whose `main` is the Vite URL, so we get hot reload inside the real desktop window.
 import { spawn } from 'node:child_process';
-import { mkdirSync, writeFileSync, readFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync, readFileSync, copyFileSync, existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createServer } from 'vite';
@@ -19,6 +19,18 @@ const url = server.resolvedUrls?.local?.[0] ?? 'http://localhost:5173/';
 const manifest = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
 const devDir = join(root, '.nwdev');
 mkdirSync(devDir, { recursive: true });
+
+// NW.js resolves window.icon relative to the manifest's own dir (.nwdev) and errors on an
+// absolute/out-of-tree path, so copy the icon in beside the dev manifest and reference it by name.
+const win = { ...manifest.window };
+const iconSrc = join(root, 'build-resources', 'icon.png');
+if (existsSync(iconSrc)) {
+  copyFileSync(iconSrc, join(devDir, 'icon.png'));
+  win.icon = 'icon.png';
+} else {
+  delete win.icon;
+}
+
 writeFileSync(
   join(devDir, 'package.json'),
   JSON.stringify(
@@ -26,7 +38,7 @@ writeFileSync(
       name: 'casewright-dev',
       main: url,
       'node-remote': url.replace(/\/$/, ''),
-      window: manifest.window,
+      window: win,
     },
     null,
     2,

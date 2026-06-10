@@ -8,7 +8,8 @@
      • `services/format/*.test.ts` — serialize/parse round-trip tests
    The `conflict` export illustrates the merge model for the deferred 3-way engine.
    ============================================================ */
-import type { Case, Conflict, Recent, Run, TreeNode, Workspace } from '@/types';
+import type { Case, Conflict, Recent, Run, RunRow, TreeNode, Workspace } from '@/types';
+import { runCaseFileName } from '@/services/format/filename';
 
 export const recents: Recent[] = [
   {
@@ -353,49 +354,64 @@ export const trees: Record<string, TreeNode[]> = {
   ],
 };
 
+/** A run row before the run-folder fields (checks/file) are filled in below. */
+type SeedRow = Pick<RunRow, 'case_id' | 'display_id' | 'title' | 'result' | 'tester' | 'executed_at' | 'notes'>;
+
+/** Build a sample `Run` (folder model): seed rows get empty checks + a sidecar path. */
+function sampleRun(
+  meta: { id: string; name: string; created: string; status: 'open' | 'closed'; scope: string },
+  seedRows: SeedRow[],
+): Run {
+  const file = `.casewright/runs/${meta.id}`;
+  return {
+    id: file,
+    file,
+    name: meta.name,
+    created: meta.created,
+    status: meta.status,
+    scope: meta.scope,
+    summary: '',
+    notes: '',
+    testerApproval: null,
+    reviewerApproval: null,
+    rows: seedRows.map((r, i) => ({
+      ...r,
+      checks: {},
+      failNotes: {},
+      itemText: {},
+      file: `${file}/${runCaseFileName(i, r)}`,
+    })),
+  };
+}
+
 export const runs: Run[] = [
-  {
-    id: '.casewright/runs/2026-06-05-release-readiness',
-    name: 'Release readiness — cross-team',
-    file: '.casewright/runs/2026-06-05-release-readiness.csv',
-    created: '2026-06-05',
-    status: 'open',
-    scope: 'repo',
-    rows: [
+  sampleRun(
+    { id: '2026-06-05-release-readiness', name: 'Release readiness — cross-team', created: '2026-06-05', status: 'open', scope: 'repo' },
+    [
       { case_id: '9f3a7c1e8b', display_id: 'PAY-0042', title: 'User can reset password from the login screen', result: 'pass', tester: 'amartin', executed_at: '2026-06-05 09:10', notes: '' },
       { case_id: 'e019b7c33a', display_id: 'PAY-0088', title: 'Coupon applies a percentage discount at checkout', result: 'pass', tester: 'amartin', executed_at: '2026-06-05 09:24', notes: '' },
       { case_id: 'b1c0de4471', display_id: 'ONB-0001', title: 'New user verifies their email during sign-up', result: 'pass', tester: 'okeefe', executed_at: '2026-06-05 09:40', notes: '' },
       { case_id: 'a3b4c5d6e7', display_id: 'ONB-0007', title: 'Team invite email lets a colleague join the workspace', result: 'not_run', tester: '', executed_at: '', notes: '' },
     ],
-  },
-  {
-    id: '.casewright/runs/2026-06-01-regression-sprint12',
-    name: 'Regression — Sprint 12',
-    file: '.casewright/runs/2026-06-01-regression-sprint12.csv',
-    created: '2026-06-01',
-    status: 'open',
-    scope: 'tag: Regression',
-    rows: [
+  ),
+  sampleRun(
+    { id: '2026-06-01-regression-sprint12', name: 'Regression — Sprint 12', created: '2026-06-01', status: 'open', scope: 'tag: Regression' },
+    [
       { case_id: '9f3a7c1e8b', display_id: 'PAY-0042', title: 'User can reset password from the login screen', result: 'pass', tester: 'amartin', executed_at: '2026-06-01 09:14', notes: '' },
       { case_id: 'c4d8e012af', display_id: 'PAY-0043', title: 'Account locks after five failed sign-in attempts', result: 'pass', tester: 'amartin', executed_at: '2026-06-01 09:31', notes: '' },
       { case_id: 'e019b7c33a', display_id: 'PAY-0088', title: 'Coupon applies a percentage discount at checkout', result: 'fail', tester: 'jpatel', executed_at: '2026-06-01 10:02', notes: 'DEF-2291 — discount rounds down by 1 cent' },
       { case_id: '12be77a4c0', display_id: 'PAY-0091', title: 'Refund returns funds to the original payment method', result: 'blocked', tester: 'jpatel', executed_at: '2026-06-01 10:20', notes: 'gateway sandbox down' },
       { case_id: '5d6e9981bb', display_id: 'PAY-0102', title: 'Plan upgrade prorates the remaining period', result: 'not_run', tester: '', executed_at: '', notes: '' },
     ],
-  },
-  {
-    id: '.casewright/runs/2026-05-18-smoke',
-    name: 'Smoke — pre-release',
-    file: '.casewright/runs/2026-05-18-smoke.csv',
-    created: '2026-05-18',
-    status: 'closed',
-    scope: 'tag: Smoke',
-    rows: [
+  ),
+  sampleRun(
+    { id: '2026-05-18-smoke', name: 'Smoke — pre-release', created: '2026-05-18', status: 'closed', scope: 'tag: Smoke' },
+    [
       { case_id: '9f3a7c1e8b', display_id: 'PAY-0042', title: 'User can reset password from the login screen', result: 'pass', tester: 'amartin', executed_at: '2026-05-18 16:40', notes: '' },
       { case_id: 'e019b7c33a', display_id: 'PAY-0088', title: 'Coupon applies a percentage discount at checkout', result: 'pass', tester: 'amartin', executed_at: '2026-05-18 16:52', notes: '' },
       { case_id: 'b1c0de4471', display_id: 'ONB-0001', title: 'New user verifies their email during sign-up', result: 'pass', tester: 'okeefe', executed_at: '2026-05-18 17:05', notes: '' },
     ],
-  },
+  ),
 ];
 
 // ============================================================

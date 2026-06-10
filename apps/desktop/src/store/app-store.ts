@@ -2,8 +2,8 @@ import type { Dispatch, SetStateAction } from 'react';
 import { create } from 'zustand';
 
 import { serializeCase } from '@/services/format/case';
-import { caseFileName, runFileStem } from '@/services/format/filename';
-import { serializeRunCsv, serializeRunSidecar } from '@/services/format/run';
+import { caseFileName, runCaseFileName, runFileStem } from '@/services/format/filename';
+import { serializeRunCase, serializeRunDetails, type RunCaseFile, type RunCaseItem } from '@/services/format/run';
 import { serializeWorkspaceYaml } from '@/services/format/workspace';
 import {
   deletePath,
@@ -30,17 +30,22 @@ import {
   status as gitStatus,
 } from '@/services/git';
 import type { LintWarning } from '@/schemas';
-import { randomId, slug } from '@/utils/ids';
+import { nowStamp, randomId, slug } from '@/utils/ids';
+import { buildRunSummary, deriveItems, serializeRunSummary } from '@/utils/run-items';
 import { isNwjs, pickDirectory } from '@/lib/nwjs';
 import type {
+  Approval,
   Case,
   Change,
+  CheckState,
   Conflict,
   CreateRunArgs,
+  DialogRequest,
   ModalKind,
   Recent,
   Renaming,
   Resolutions,
+  Result,
   Run,
   RunRow,
   Screen,
@@ -148,16 +153,28 @@ export interface AppState {
   /* case + suite mutations */
   updateCase: (id: string, patch: Partial<Case>) => void;
   duplicateCase: (id: string) => void;
-  deleteCase: (id: string) => void;
+  deleteCase: (id: string) => Promise<void>;
   createCase: (parentSuiteId: string | null) => void;
   createSuite: (parentId: string | null) => void;
   renameSuite: (id: string, name: string) => void;
-  deleteSuite: (id: string) => void;
+  deleteSuite: (id: string) => Promise<void>;
   moveNodeToParent: (dragId: string, parentId: string | null, index: number) => void;
 
   /* runs */
   updateRunRow: (runId: string, i: number, patch: Partial<RunRow>) => void;
   createRun: (args: CreateRunArgs) => void;
+  /** Cycle one checklist item: none → pass → fail → none (persisted to the case sidecar). */
+  cycleRunCheck: (runId: string, i: number, key: string) => void;
+  setRunFailNote: (runId: string, i: number, key: string, note: string) => void;
+  setRunGroupChecks: (runId: string, i: number, keys: string[], state: CheckState) => void;
+  recordRunResult: (runId: string, i: number, patch: { result: Result; tester: string; notes: string }) => void;
+  /** Rename a run (display name only; the run folder/id is unchanged). */
+  setRunName: (runId: string, name: string) => void;
+  setRunNotes: (runId: string, notes: string) => void;
+  /** Save (name + now) or clear (empty name → null) a tester/reviewer approval. */
+  setRunApproval: (runId: string, who: 'tester' | 'reviewer', name: string) => void;
+  /** Create a fresh run from an existing one: copy cases, reset results/checks/approvals. */
+  rerunRun: (runId: string) => void;
   lastTester: string;
   setLastTester: (v: string) => void;
 
@@ -174,6 +191,15 @@ export interface AppState {
   caseWorkspace: (caseId: string) => Workspace | null;
   toast: (msg: string) => void;
   toasts: Toast[];
+
+  /* generic dialogs (shadcn) — replace native window.confirm/alert */
+  dialog: DialogRequest | null;
+  /** Ask the user to confirm; resolves true if they accept, false if they cancel/dismiss. */
+  confirm: (opts: Omit<DialogRequest, 'kind'>) => Promise<boolean>;
+  /** Show a message with a single acknowledge button; resolves when dismissed. */
+  alert: (opts: { title: string; message?: string; okLabel?: string }) => Promise<void>;
+  /** Resolve the open dialog (true = primary action). Called by the dialog host. */
+  closeDialog: (result: boolean) => void;
 
   /* git */
   branch: string;
@@ -203,6 +229,10 @@ const RUNS_REL = '.casewright/runs';
 const changeKey = (c: Change) => c.kind + ':' + c.refId;
 
 export const useAppStore = create<AppState>()((set, get) => {
+  // Resolver for the currently-open generic dialog (confirm/alert). Only one dialog shows
+  // at a time; a new request cancels any pending one (resolves it false).
+  let pendingDialog: ((result: boolean) => void) | null = null;
+
   // suite paths in the tree are full repo-relative (workspaces are top-level folders)
   const casePath = (c: Case): string => {
     const dir = buildSuiteIndex(get().tree).path[c.suite] ?? '';
@@ -211,7 +241,6 @@ export const useAppStore = create<AppState>()((set, get) => {
 
   /* ---- disk persistence (optimistic in-memory + write; reload on error) ---- */
   const suiteRel = (suiteId: string): string => buildSuiteIndex(get().tree).path[suiteId] ?? '';
-  const runRel = (run: Run): string => run.file; // already full repo-relative
 
   /** The workspace owning a given repo-relative path (longest matching prefix). The
    *  repo-root workspace (`path === ''`) owns everything; a more specific workspace wins. */
@@ -397,17 +426,138 @@ export const useAppStore = create<AppState>()((set, get) => {
     }
   };
 
-  const writeRunNow = async (runId: string) => {
+  /**
+   * Build a per-case sidecar from a run row. The row's `itemText` snapshot — captured
+   * when the run was seeded — is authoritative, so editing a case after a run exists never
+   * silently rewrites that run's recorded checklist (PRD: runs are immune to later case
+   * edits). We only fall back to deriving from the live `kase` for a brand-new run whose
+   * snapshot hasn't been populated yet.
+   */
+  const buildRunCaseFile = (row: RunRow, kase: Case | undefined): RunCaseFile => {
+    const overlay = (key: string, text: string): RunCaseItem => ({
+      key,
+      text,
+      state: row.checks[key] ?? 'none',
+      failNote: row.failNotes[key] ?? '',
+    });
+    const snapshot = row.itemText ?? {};
+    const hasSnapshot = Object.keys(snapshot).length > 0;
+    const group = (prefix: string): RunCaseItem[] => {
+      if (hasSnapshot) {
+        return Object.keys(snapshot)
+          .filter((k) => k.startsWith(`${prefix}:`))
+          .sort((a, b) => Number(a.split(':')[1]) - Number(b.split(':')[1]))
+          .map((k) => overlay(k, snapshot[k]));
+      }
+      if (!kase) return [];
+      const d = deriveItems(kase);
+      const arr = prefix === 'setup' ? d.setup : prefix === 'step' ? d.steps : d.accept;
+      return arr.map((it) => overlay(it.key, it.text));
+    };
+    const setup = group('setup');
+    const steps = group('step');
+    const accept = group('accept');
+    return {
+      caseId: row.case_id,
+      displayId: row.display_id,
+      title: row.title,
+      result: row.result,
+      tester: row.tester,
+      executedAt: row.executed_at,
+      notes: row.notes,
+      setup,
+      steps,
+      accept,
+    };
+  };
+
+  /** Snapshot a case's current checklist item text, keyed by position — frozen into a new run. */
+  const snapshotItemText = (caseId: string): Record<string, string> => {
+    const kase = get().cases.find((c) => c.id === caseId);
+    const text: Record<string, string> = {};
+    if (!kase) return text;
+    const { setup, steps, accept } = deriveItems(kase);
+    [...setup, ...steps, ...accept].forEach((it) => (text[it.key] = it.text));
+    return text;
+  };
+
+  const runDetailsOf = (run: Run) => ({
+    name: run.name,
+    status: run.status,
+    created: run.created,
+    scope: run.scope,
+    testerApproval: run.testerApproval,
+    reviewerApproval: run.reviewerApproval,
+    // The Summary is generated from results, not user-authored — regenerated on every write so
+    // the committed `_run.md` always reflects the run's actual pass/fail state.
+    summary: serializeRunSummary(buildRunSummary(run, get().cases)),
+    notes: run.notes,
+  });
+
+  const writeRunDetailsNow = async (runId: string) => {
     const { repoPath } = get();
     const run = get().runs.find((r) => r.id === runId);
     if (!repoPath || !run) return;
     try {
-      await writeFileAt(repoPath, runRel(run), serializeRunCsv(run.rows));
+      await writeFileAt(repoPath, relJoin(run.file, '_run.md'), serializeRunDetails(runDetailsOf(run)));
       scheduleRefresh();
     } catch (e) {
       onWriteError(e);
     }
   };
+
+  const writeRunCaseNow = async (runId: string, i: number) => {
+    const { repoPath } = get();
+    const run = get().runs.find((r) => r.id === runId);
+    const row = run?.rows[i];
+    if (!repoPath || !run || !row) return;
+    const kase = get().cases.find((c) => c.id === row.case_id);
+    try {
+      await writeFileAt(repoPath, row.file, serializeRunCase(buildRunCaseFile(row, kase)));
+      scheduleRefresh();
+    } catch (e) {
+      onWriteError(e);
+    }
+  };
+
+  /** Fan-out write of a brand-new run folder: `_run.md` + every case sidecar. */
+  const writeWholeRun = (run: Run) => {
+    const rp = get().repoPath;
+    if (!rp) return;
+    void makeDir(rp, run.file)
+      .then(() =>
+        Promise.all([
+          writeFileAt(rp, relJoin(run.file, '_run.md'), serializeRunDetails(runDetailsOf(run))),
+          ...run.rows.map((row) =>
+            writeFileAt(rp, row.file, serializeRunCase(buildRunCaseFile(row, get().cases.find((c) => c.id === row.case_id)))),
+          ),
+        ]),
+      )
+      .then(scheduleRefresh)
+      .catch(onWriteError);
+  };
+
+  /** Persist one case sidecar (debounced) + flag the run as modified. Also refreshes the
+   *  run-details sidecar, whose generated Summary depends on this row's result/failures. */
+  const persistRunCase = (runId: string, i: number) => {
+    const run = get().runs.find((r) => r.id === runId);
+    if (run) upsertChange({ kind: 'run', refId: runId, path: run.file, status: 'M', label: run.name });
+    schedulePersist(`runcase:${runId}:${i}`, () => writeRunCaseNow(runId, i));
+    schedulePersist(`rundetails:${runId}`, () => writeRunDetailsNow(runId));
+  };
+
+  /** Persist the run-details sidecar (debounced) + flag the run as modified. */
+  const persistRunDetails = (runId: string) => {
+    const run = get().runs.find((r) => r.id === runId);
+    if (run) upsertChange({ kind: 'run', refId: runId, path: run.file, status: 'M', label: run.name });
+    schedulePersist(`rundetails:${runId}`, () => writeRunDetailsNow(runId));
+  };
+
+  /** Replace one row in a run, immutably. */
+  const patchRow = (runId: string, i: number, patch: Partial<RunRow>) =>
+    set((s) => ({
+      runs: s.runs.map((r) => (r.id !== runId ? r : { ...r, rows: r.rows.map((row, j) => (j === i ? { ...row, ...patch } : row)) })),
+    }));
 
   const writeWsYaml = async (wsId: string) => {
     const rp = get().repoPath;
@@ -429,6 +579,45 @@ export const useAppStore = create<AppState>()((set, get) => {
         ? { changes: s.changes.map((c) => (changeKey(c) === k ? { ...c, ...change } : c)) }
         : { changes: [...s.changes, change] };
     });
+
+  /** Collapse raw per-file git changes into user-facing entities: one row per test run (its whole
+   *  folder, not its files) and one per test case, labelled by run name / case title rather than
+   *  the raw path. A run's `path` is its folder, so committing it stages every file inside. */
+  const groupChanges = (raw: Change[]): Change[] => {
+    const { runs, cases } = get();
+    const caseByPath = new Map<string, Case>();
+    cases.forEach((c) => {
+      caseByPath.set(casePath(c), c);
+      const last = lastCasePath.get(c.id);
+      if (last) caseByPath.set(last, c);
+    });
+    const runFolderOf = (p: string): string | null => {
+      const known = runs.find((r) => p === r.file || p.startsWith(r.file + '/'));
+      if (known) return known.file;
+      const m = /^(.*\/runs\/[^/]+)(?:\/|$)/.exec(p);
+      return m ? m[1] : null;
+    };
+
+    const out: Change[] = [];
+    const idx = new Map<string, number>();
+    for (const ch of raw) {
+      const folder = ch.kind === 'run' ? runFolderOf(ch.path) : null;
+      if (folder) {
+        const at = idx.get(folder);
+        if (at === undefined) {
+          idx.set(folder, out.length);
+          const run = runs.find((r) => r.file === folder);
+          out.push({ kind: 'run', refId: folder, path: folder, status: ch.status, label: run?.name ?? folder.split('/').pop() ?? folder });
+        } else if (out[at].status !== ch.status) {
+          out[at] = { ...out[at], status: 'M' }; // mixed adds/mods/deletes in one run folder → modified
+        }
+      } else {
+        const c = caseByPath.get(ch.path);
+        out.push({ ...ch, kind: 'case', refId: c?.id ?? ch.refId, label: c?.title ?? ch.label });
+      }
+    }
+    return out;
+  };
 
   const applyMerge = (resolutions: Resolutions) => {
     const conflict = get().conflict;
@@ -515,6 +704,7 @@ export const useAppStore = create<AppState>()((set, get) => {
     modal: null,
     wsModalId: null,
     toasts: [],
+    dialog: null,
     collapsed: {},
     renaming: null,
 
@@ -526,6 +716,26 @@ export const useAppStore = create<AppState>()((set, get) => {
       const id = Math.random();
       set((s) => ({ toasts: [...s.toasts, { id, msg }] }));
       setTimeout(() => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })), 2600);
+    },
+
+    /* ---- generic dialogs ---- */
+    confirm: (opts) =>
+      new Promise<boolean>((resolve) => {
+        pendingDialog?.(false); // a fresh request supersedes any pending one
+        pendingDialog = resolve;
+        set({ dialog: { kind: 'confirm', ...opts } });
+      }),
+    alert: (opts) =>
+      new Promise<void>((resolve) => {
+        pendingDialog?.(false);
+        pendingDialog = () => resolve();
+        set({ dialog: { kind: 'alert', title: opts.title, message: opts.message, confirmLabel: opts.okLabel } });
+      }),
+    closeDialog: (result) => {
+      const resolve = pendingDialog;
+      pendingDialog = null;
+      set({ dialog: null });
+      resolve?.(result);
     },
 
     /* ---- repo ---- */
@@ -705,10 +915,13 @@ export const useAppStore = create<AppState>()((set, get) => {
       const { repoPath, workspace } = get();
       if (!repoPath || !workspace) return;
       if (
-        !window.confirm(
-          `Remove workspace "${workspace.name}"?\n\n` +
+        !(await get().confirm({
+          title: `Remove workspace "${workspace.name}"?`,
+          message:
             'This deletes only its casewright.yaml marker — the case and suite files in the folder are left untouched.',
-        )
+          confirmLabel: 'Remove',
+          danger: true,
+        }))
       )
         return;
       try {
@@ -808,18 +1021,20 @@ export const useAppStore = create<AppState>()((set, get) => {
       get().toast('Duplicated — resolve the display ID conflict');
     },
 
-    deleteCase: (id) => {
+    deleteCase: async (id) => {
       const { cases, runs } = get();
       const c = cases.find((x) => x.id === id);
       if (!c) return;
       const used = runs.some((r) => r.rows.some((row) => row.case_id === id));
       if (
-        !window.confirm(
-          `Delete "${c.title}"?` +
-            (used
-              ? '\n\nThis case is referenced by a run — its snapshot rows are kept but will no longer resolve to a live file.'
-              : ''),
-        )
+        !(await get().confirm({
+          title: `Delete "${c.title}"?`,
+          message: used
+            ? 'This case is referenced by a run — its snapshot rows are kept but will no longer resolve to a live file.'
+            : undefined,
+          confirmLabel: 'Delete',
+          danger: true,
+        }))
       )
         return;
       const rel = lastCasePath.get(id) ?? casePath(c);
@@ -922,7 +1137,7 @@ export const useAppStore = create<AppState>()((set, get) => {
       }
     },
 
-    deleteSuite: (id) => {
+    deleteSuite: async (id) => {
       const node = findSuiteNode(get().tree, id);
       if (!node) return;
       const collectCases = (n: TreeNode, acc: string[]): string[] => {
@@ -932,9 +1147,11 @@ export const useAppStore = create<AppState>()((set, get) => {
       };
       const caseIds = collectCases(node, []);
       if (
-        !window.confirm(
-          `Delete suite "${node.name}"` + (caseIds.length ? ` and its ${caseIds.length} case(s)` : '') + '?',
-        )
+        !(await get().confirm({
+          title: `Delete suite "${node.name}"${caseIds.length ? ` and its ${caseIds.length} case(s)` : ''}?`,
+          confirmLabel: 'Delete',
+          danger: true,
+        }))
       )
         return;
       const rel = suiteRel(id);
@@ -1013,61 +1230,157 @@ export const useAppStore = create<AppState>()((set, get) => {
 
     /* ---- runs ---- */
     updateRunRow: (runId, i, patch) => {
-      const run = get().runs.find((r) => r.id === runId);
-      set((s) => ({
-        runs: s.runs.map((r) =>
-          r.id !== runId ? r : { ...r, rows: r.rows.map((row, j) => (j === i ? { ...row, ...patch } : row)) },
-        ),
-      }));
-      if (run) upsertChange({ kind: 'run', refId: runId, path: run.file, status: 'M', label: run.name });
-      schedulePersist('run:' + runId, () => writeRunNow(runId));
+      patchRow(runId, i, patch);
+      persistRunCase(runId, i);
     },
 
-    createRun: ({ name, scope, tag, suite }) => {
-      const { cases, workspace, tree } = get();
-      const idx = buildSuiteIndex(tree);
-      // Seed rows by scope across the whole repo (runs are repo-level, PRD §4 req 17, 19).
-      const inActiveWs = (c: Case) => {
-        if (!workspace) return true;
-        const p = idx.path[c.suite] ?? '';
-        return workspace.path === '' || p === workspace.path || p.startsWith(workspace.path + '/');
-      };
-      const ids =
-        scope === 'tag'
-          ? cases.filter((c) => c.tags.includes(tag)).map((c) => c.id)
-          : scope === 'suite'
-            ? idx.inSuite(suite)
-            : scope === 'workspace'
-              ? cases.filter(inActiveWs).map((c) => c.id)
-              : cases.map((c) => c.id); // 'all' → whole repo
-      const rows: RunRow[] = ids.map((id) => {
-        const c = cases.find((x) => x.id === id)!;
-        return { case_id: id, display_id: c.displayId, title: c.title, result: 'not_run', tester: '', executed_at: '', notes: '' };
-      });
+    createRun: ({ name, caseIds, scopeLabel }) => {
+      const { cases } = get();
       const date = new Date().toISOString().slice(0, 10);
-      const stem = runFileStem(name, date);
-      const file = relJoin(RUNS_REL, `${stem}.csv`); // .casewright/runs/<stem>.csv
-      const scopeLabel =
-        scope === 'tag'
-          ? `tag: ${tag}`
-          : scope === 'suite'
-            ? `suite: ${findSuiteNode(tree, suite)?.name ?? suite}`
-            : scope === 'workspace'
-              ? `workspace: ${workspace?.name ?? ''}`
-              : 'repo';
-      const run: Run = { id: file.replace(/\.csv$/, ''), name, file, created: date, status: 'open', scope: scopeLabel, rows };
-      set((s) => ({ runs: [run, ...s.runs], modal: null, sel: { ...s.sel, kind: 'run', runId: run.id, guideIndex: 0 }, view: 'guide' }));
+      const dir = relJoin(RUNS_REL, runFileStem(name, date));
+      const rows: RunRow[] = caseIds.map((id, i) => {
+        const c = cases.find((x) => x.id === id);
+        const display_id = c?.displayId ?? id;
+        const title = c?.title ?? '';
+        return {
+          case_id: id,
+          display_id,
+          title,
+          result: 'not_run',
+          tester: '',
+          executed_at: '',
+          notes: '',
+          checks: {},
+          failNotes: {},
+          itemText: snapshotItemText(id),
+          file: relJoin(dir, runCaseFileName(i, { display_id, title })),
+        };
+      });
+      const run: Run = {
+        id: dir,
+        name,
+        file: dir,
+        created: date,
+        status: 'open',
+        scope: scopeLabel ?? '',
+        rows,
+        summary: '',
+        notes: '',
+        testerApproval: null,
+        reviewerApproval: null,
+      };
+      set((s) => ({ runs: [run, ...s.runs], modal: null, sel: { ...s.sel, kind: 'run', runId: run.id, guideIndex: 0 }, view: 'run' }));
       upsertChange({ kind: 'run', refId: run.id, path: run.file, status: 'A', label: run.name });
-      const rp = get().repoPath;
-      if (rp) {
-        void Promise.all([
-          writeFileAt(rp, run.file, serializeRunCsv(run.rows)),
-          writeFileAt(rp, run.file.replace(/\.csv$/, '.md'), serializeRunSidecar({ name, status: 'open' })),
-        ])
-          .then(scheduleRefresh)
-          .catch(onWriteError);
-      }
+      writeWholeRun(run);
       get().toast(`Created run · ${rows.length} cases seeded`);
+    },
+
+    cycleRunCheck: (runId, i, key) => {
+      const row = get().runs.find((r) => r.id === runId)?.rows[i];
+      if (!row) return;
+      const cur = row.checks[key] ?? 'none';
+      const next: CheckState = cur === 'none' ? 'pass' : cur === 'pass' ? 'fail' : 'none';
+      const checks = { ...row.checks, [key]: next };
+      const failNotes = { ...row.failNotes };
+      if (next !== 'fail') delete failNotes[key]; // a note only belongs to a failed item
+      patchRow(runId, i, { checks, failNotes });
+      persistRunCase(runId, i);
+    },
+
+    setRunFailNote: (runId, i, key, note) => {
+      const row = get().runs.find((r) => r.id === runId)?.rows[i];
+      if (!row) return;
+      patchRow(runId, i, { failNotes: { ...row.failNotes, [key]: note } });
+      persistRunCase(runId, i);
+    },
+
+    setRunGroupChecks: (runId, i, keys, state) => {
+      const row = get().runs.find((r) => r.id === runId)?.rows[i];
+      if (!row) return;
+      const checks = { ...row.checks };
+      const failNotes = { ...row.failNotes };
+      for (const k of keys) {
+        checks[k] = state;
+        if (state !== 'fail') delete failNotes[k];
+      }
+      patchRow(runId, i, { checks, failNotes });
+      persistRunCase(runId, i);
+    },
+
+    recordRunResult: (runId, i, { result, tester, notes }) => {
+      patchRow(runId, i, { result, tester, notes, executed_at: result === 'not_run' ? '' : nowStamp() });
+      persistRunCase(runId, i);
+    },
+
+    setRunName: (runId, name) => {
+      set((s) => ({ runs: s.runs.map((r) => (r.id === runId ? { ...r, name } : r)) }));
+      persistRunDetails(runId);
+    },
+
+    setRunNotes: (runId, notes) => {
+      set((s) => ({ runs: s.runs.map((r) => (r.id === runId ? { ...r, notes } : r)) }));
+      persistRunDetails(runId);
+    },
+
+    setRunApproval: (runId, who, name) => {
+      const approval: Approval | null = name.trim() ? { name: name.trim(), at: nowStamp() } : null;
+      const field = who === 'tester' ? 'testerApproval' : 'reviewerApproval';
+      const wasClosed = get().runs.find((r) => r.id === runId)?.status === 'closed';
+      set((s) => ({
+        runs: s.runs.map((r) => {
+          if (r.id !== runId) return r;
+          const next = { ...r, [field]: approval };
+          // A run closes once both tester and reviewer have signed off; clearing either reopens it.
+          next.status = next.testerApproval && next.reviewerApproval ? 'closed' : 'open';
+          return next;
+        }),
+      }));
+      persistRunDetails(runId);
+      if (!wasClosed && get().runs.find((r) => r.id === runId)?.status === 'closed') {
+        get().toast('Run closed · tester and reviewer approved');
+      }
+    },
+
+    rerunRun: (runId) => {
+      const src = get().runs.find((r) => r.id === runId);
+      if (!src) return;
+      const name = `${src.name} (rerun)`;
+      const date = new Date().toISOString().slice(0, 10);
+      const dir = relJoin(RUNS_REL, runFileStem(name, date));
+      const rows: RunRow[] = src.rows.map((r, i) => {
+        // Re-snapshot from the live case where possible; otherwise carry the source snapshot.
+        const snap = snapshotItemText(r.case_id);
+        return {
+          case_id: r.case_id,
+          display_id: r.display_id,
+          title: r.title,
+          result: 'not_run',
+          tester: '',
+          executed_at: '',
+          notes: '',
+          checks: {},
+          failNotes: {},
+          itemText: Object.keys(snap).length ? snap : { ...(r.itemText ?? {}) },
+          file: relJoin(dir, runCaseFileName(i, { display_id: r.display_id, title: r.title })),
+        };
+      });
+      const run: Run = {
+        id: dir,
+        name,
+        file: dir,
+        created: date,
+        status: 'open',
+        scope: src.scope,
+        rows,
+        summary: '',
+        notes: '',
+        testerApproval: null,
+        reviewerApproval: null,
+      };
+      set((s) => ({ runs: [run, ...s.runs], sel: { ...s.sel, kind: 'run', runId: run.id, guideIndex: 0 }, view: 'run' }));
+      upsertChange({ kind: 'run', refId: run.id, path: run.file, status: 'A', label: run.name });
+      writeWholeRun(run);
+      get().toast(`Rerun created · ${rows.length} cases reset`);
     },
 
     setLastTester: (v) => set({ lastTester: v }),
@@ -1091,7 +1404,7 @@ export const useAppStore = create<AppState>()((set, get) => {
       if (!repoPath) return;
       try {
         const s = await gitStatus(repoPath);
-        set({ branch: s.branch, ahead: s.ahead, behind: s.behind, changes: s.changes });
+        set({ branch: s.branch, ahead: s.ahead, behind: s.behind, changes: groupChanges(s.changes) });
       } catch {
         /* status read failed — keep optimistic values */
       }
@@ -1109,7 +1422,7 @@ export const useAppStore = create<AppState>()((set, get) => {
             cases: s.cases.map((c) => (selectedKeys.includes('case:' + c.id) ? { ...c, modified: false } : c)),
           }));
           await get().refreshStatus();
-          get().toast(`Committed ${paths.length || selectedKeys.length} file(s)`);
+          get().toast(`Committed ${paths.length || selectedKeys.length} change(s)`);
         } catch (e) {
           set({ error: e instanceof Error ? e.message : String(e) });
           get().toast('Commit failed');

@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type DragEvent } from 'react';
+import { useMemo, useRef, useState, type DragEvent, type PointerEvent as ReactPointerEvent } from 'react';
 import { I } from '@/components/icons';
 import { Button, Input, RowContextMenu, type MenuItem } from '@/components/ui';
 import { cn } from '@/lib/utils';
@@ -26,6 +26,12 @@ function findSuiteNode(nodes: TreeNode[], id: string): SuiteNode | null {
   }
   return null;
 }
+
+/* resizable-sidebar bounds (px); width persists in localStorage */
+const SIDEBAR_MIN = 200;
+const SIDEBAR_MAX = 560;
+const SIDEBAR_DEFAULT = 290;
+const SIDEBAR_KEY = 'cw:sidebarWidth';
 
 const rowBase =
   'group relative flex h-7 cursor-pointer select-none items-center gap-1.5 rounded-sm px-1.5 text-ink hover:bg-raise';
@@ -59,6 +65,37 @@ export function Sidebar() {
   const [q, setQ] = useState('');
   const [status, setStatus] = useState<Status | null>(null);
   const [tag, setTag] = useState<string | null>(null);
+  const [width, setWidth] = useState(() => {
+    const v = Number(localStorage.getItem(SIDEBAR_KEY));
+    return v >= SIDEBAR_MIN && v <= SIDEBAR_MAX ? v : SIDEBAR_DEFAULT;
+  });
+
+  // Drag the right edge to resize; width is clamped and persisted on release.
+  const startResize = (e: ReactPointerEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = width;
+    let last = startW;
+    const onMove = (ev: PointerEvent) => {
+      last = Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, startW + ev.clientX - startX));
+      setWidth(last);
+    };
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      localStorage.setItem(SIDEBAR_KEY, String(last));
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  };
+  const resetWidth = () => {
+    setWidth(SIDEBAR_DEFAULT);
+    localStorage.setItem(SIDEBAR_KEY, String(SIDEBAR_DEFAULT));
+  };
   const [drag, setDrag] = useState<string | null>(null);
   const [dropPos, setDropPos] = useState<DropPos | null>(null);
   const treeRef = useRef<HTMLDivElement>(null);
@@ -418,7 +455,10 @@ export function Sidebar() {
   const runsActive = view === 'runs' || view === 'run' || view === 'guide';
 
   return (
-    <aside className="flex min-h-0 w-[290px] flex-none flex-col border-r border-border bg-panel-2">
+    <aside
+      className="relative flex min-h-0 flex-none flex-col border-r border-border bg-panel-2"
+      style={{ width }}
+    >
       <div className="flex gap-0.5 px-2.5 pt-2">
         <button
           className={cn(
@@ -515,6 +555,16 @@ export function Sidebar() {
           )}
         </div>
       </div>
+
+      {/* right-edge resize handle (double-click resets) */}
+      <div
+        role="separator"
+        aria-orientation="vertical"
+        title="Drag to resize · double-click to reset"
+        onPointerDown={startResize}
+        onDoubleClick={resetWidth}
+        className="absolute -right-0.5 top-0 z-20 h-full w-1.5 cursor-col-resize transition-colors hover:bg-accent/30 active:bg-accent/50"
+      />
     </aside>
   );
 }

@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { I } from '@/components/icons';
 import { Logo } from '@/components/Logo';
 import { Menu, type MenuItem } from '@/components/ui';
-import { nwWindow } from '@/lib/nwjs';
+import { WEBSITE_URL } from '@/components/common/AboutModal';
+import { nwWindow, openExternal } from '@/lib/nwjs';
 import { useApp } from '@/store/app-store';
 
 /* window-control glyphs (VS Code / Windows style) */
@@ -69,16 +70,19 @@ export function TitleBar() {
     {
       label: 'File',
       items: [
-        { icon: I.file, label: 'New Case', on: () => ctx.createCase(null) },
-        { icon: I.folder, label: 'New Suite', on: () => ctx.createSuite(null) },
-        { sep: true },
         { icon: I.plus, label: 'Add Workspace…', on: () => void ctx.addWorkspace() },
         { icon: I.edit, label: 'Edit Workspace…', on: () => ctx.editWorkspace() },
         { icon: I.trash, label: 'Remove Workspace…', danger: true, on: () => void ctx.removeWorkspace() },
         { sep: true },
-        { icon: I.commit, label: 'Commit…', on: () => ctx.setModal('commit') },
-        { sep: true },
+        { icon: I.repo, label: 'Repositories', on: () => ctx.goHome() },
         { icon: I.x, label: 'Exit', on: () => nwWindow()?.close() },
+      ],
+    },
+    {
+      label: 'Edit',
+      items: [
+        { icon: I.file, label: 'New Case', on: () => ctx.createCase(null) },
+        { icon: I.folder, label: 'New Suite', on: () => ctx.createSuite(null) },
       ],
     },
     {
@@ -92,19 +96,19 @@ export function TitleBar() {
       ],
     },
     {
-      label: 'Go',
+      label: 'Git',
       items: [
         { icon: I.pull, label: 'Pull', on: () => ctx.doPull() },
         { icon: I.push, label: 'Push', on: () => ctx.doPush() },
         { sep: true },
-        { icon: I.repo, label: 'Repositories', on: () => ctx.goHome() },
+        { icon: I.commit, label: 'Commit…', on: () => ctx.setModal('commit') },
       ],
     },
     {
       label: 'Help',
       items: [
-        { icon: I.eye, label: 'About Casewright', sub: 'v1', on: () => ctx.toast('Casewright v1 · local-first · no telemetry') },
-        { icon: I.link, label: 'Documentation', on: () => ctx.toast('Docs — coming soon') },
+        { icon: I.eye, label: 'About Casewright', on: () => ctx.setModal('about') },
+        { icon: I.link, label: 'Documentation', on: () => openExternal(WEBSITE_URL) },
       ],
     },
   ];

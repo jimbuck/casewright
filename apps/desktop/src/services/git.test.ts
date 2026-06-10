@@ -16,6 +16,7 @@ async function configure(dir: string, email: string, name: string) {
   await g.addConfig('user.email', email, false, 'local');
   await g.addConfig('user.name', name, false, 'local');
   await g.addConfig('core.autocrlf', 'false', false, 'local'); // keep test content byte-exact
+  await g.addConfig('commit.gpgsign', 'false', false, 'local'); // don't inherit ambient signing config
 }
 
 beforeAll(async () => {

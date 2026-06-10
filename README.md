@@ -1,7 +1,7 @@
 # Casewright
 
 A git-backed desktop application for writing and running test cases —
-_a craftsman's editor for manual test cases; markdown on disk, Git as the data store._
+_a bespoke editor for manual test cases; markdown on disk, Git as the data store._
 
 This is a [Turborepo](https://turbo.build/repo) monorepo (pnpm workspaces).
 

@@ -69,7 +69,16 @@ export interface Recent {
   lastWorkspaceId: string | null;
 }
 
-/* ---- runs (CSV-backed) ---- */
+/* ---- runs (folder of markdown sidecars) ---- */
+/** Tri-state checklist mark: `[ ]` empty, `[x]` passed, `[-]` failed. */
+export type CheckState = 'none' | 'pass' | 'fail';
+
+/** Who approved a run, and when (saved to the run-details sidecar). */
+export interface Approval {
+  name: string;
+  at: string;
+}
+
 export interface RunRow {
   case_id: string;
   display_id: string;
@@ -78,26 +87,39 @@ export interface RunRow {
   tester: string;
   executed_at: string;
   notes: string;
+  /** Per-item check states, keyed `setup:i` / `step:i` / `accept:i`. */
+  checks: Record<string, CheckState>;
+  /** Failure descriptions for items marked `fail`, same keys as `checks`. */
+  failNotes: Record<string, string>;
+  /** Snapshot of each item's line text at record time (for deleted/diverged cases). */
+  itemText?: Record<string, string>;
+  /** Repo-relative path of this case's sidecar markdown file. */
+  file: string;
 }
 
 export interface Run {
   id: string;
   name: string;
-  /** Repo-level path, `.casewright/runs/<stem>.csv`. */
+  /** Repo-level folder path, `.casewright/runs/<stem>`. */
   file: string;
   created: string;
   status: 'open' | 'closed';
   scope: string;
   rows: RunRow[];
+  /** Run-level summary prose (run-details sidecar `## Summary`). */
+  summary: string;
+  /** General run notes (run-details sidecar `## Notes`). */
+  notes: string;
+  testerApproval: Approval | null;
+  reviewerApproval: Approval | null;
 }
 
-/** Which cases a new run is seeded from (PRD §4 req 19). */
-export type RunScope = 'all' | 'workspace' | 'suite' | 'tag';
 export interface CreateRunArgs {
   name: string;
-  scope: RunScope;
-  tag: string;
-  suite: string;
+  /** Explicit set of case ids to seed, chosen in the create-run tree. */
+  caseIds: string[];
+  /** Human-readable scope label for the run-details sidecar. */
+  scopeLabel?: string;
 }
 
 /* ---- git working state ---- */
@@ -121,11 +143,23 @@ export interface Selection {
 
 export type View = 'editor' | 'runs' | 'run' | 'guide' | 'suite';
 export type Screen = 'launcher' | 'main';
-export type ModalKind = 'commit' | 'createRun' | 'merge' | 'workspace' | null;
+export type ModalKind = 'commit' | 'createRun' | 'merge' | 'workspace' | 'about' | null;
 
 export interface Toast {
   id: number;
   msg: string;
+}
+
+/** A pending generic dialog (replaces native window.confirm/alert). */
+export interface DialogRequest {
+  kind: 'confirm' | 'alert';
+  title: string;
+  message?: string;
+  /** Primary-button label (confirm action, or "OK" for an alert). */
+  confirmLabel?: string;
+  cancelLabel?: string;
+  /** Render the primary action as destructive. */
+  danger?: boolean;
 }
 
 export interface Renaming {

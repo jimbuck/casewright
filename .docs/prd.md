@@ -356,7 +356,7 @@ buttons, and resolves conflicts as plain "keep mine / keep theirs / edit" choice
 ## 8. Design direction & inspiration
 
 High-level only; the detailed token system is deferred to design. The name sets the tone:
-*wright* means a maker, so Casewright should feel like a **craftsman's tool — calm, precise, and
+*wright* means a maker, so Casewright should feel like a **maker's tool — calm, precise, and
 durable, never flashy**. The substrate (markdown, Git, plain files) reinforces that.
 
 **Direction: an engineering workbench, warmed by editorial calm.** A clean, efficient,
