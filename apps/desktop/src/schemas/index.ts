@@ -1,6 +1,8 @@
 export { ConfigYamlSchema, type ConfigYaml } from './config';
-export { WorkspaceYamlSchema, type WorkspaceYaml } from './workspace';
+export { FolderNoteFrontSchema, type FolderNoteFront } from './folder-note';
 export { CaseFrontMatterSchema, type CaseFrontMatter } from './case';
+// Legacy formats — read only, for migration + a fallback reader (removed after a release or two).
+export { WorkspaceYamlSchema, type WorkspaceYaml } from './workspace';
 export { SuiteFrontMatterSchema, type SuiteFrontMatter } from './suite';
 export {
   CheckStateSchema,

@@ -3,8 +3,10 @@
  * repository under apps/desktop/.fixture, using the same serializers the app uses.
  * This is the canonical dev/test target for the on-disk + Git backend.
  *
- * Layout (PRD §4): `.casewright/config.yaml` + `.casewright/.gitignore` + a flat
- * central `.casewright/runs/`, plus a `casewright.yaml` inside each workspace folder.
+ * Layout: `.casewright/config.yaml` (with the `workspaces:` list) + `.casewright/.gitignore`
+ * + a flat central `.casewright/runs/`. Each workspace/suite folder gets an OPTIONAL sibling
+ * "folder note" (`<folder>.md`) — written only when it has a custom name / prefix / description
+ * (single-word, metadata-free suites are just plain folders).
  *
  * Run via `pnpm --filter @casewright/desktop fixture` (uses vite-node so the `@`
  * alias + TS resolve). Pass `--with-origin` to also create a bare `.fixture-origin.git`
@@ -22,11 +24,17 @@ import { simpleGit } from 'simple-git';
 import { cases, runs, trees, workspaces } from '@/data/sample';
 import { serializeCase } from '@/services/format/case';
 import { CASEWRIGHT_GITIGNORE, serializeConfigYaml } from '@/services/format/config';
+import { serializeFolderNote } from '@/services/format/folder-note';
 import { serializeRunCase, serializeRunDetails, type RunCaseItem } from '@/services/format/run';
-import { serializeWorkspaceYaml } from '@/services/format/workspace';
 import { caseFileName } from '@/services/format/filename';
+import { folderSlug } from '@/utils/ids';
 import { deriveItems } from '@/utils/run-items';
 import type { Case, RunRow, TreeNode } from '@/types';
+
+/** Mirror of repo.ts `noteNeeded`: only write a folder note when it carries real metadata. */
+const noteNeeded = (base: string, name: string, prefix?: string, description?: string) =>
+  (!!name.trim() && name.trim() !== base) || !!(prefix ?? '').trim() || !!(description ?? '').trim();
+let folderNotes = 0;
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(here, '..', '.fixture');
@@ -36,20 +44,29 @@ const withOrigin = process.argv.includes('--with-origin');
 rmSync(repoRoot, { recursive: true, force: true });
 mkdirSync(repoRoot, { recursive: true });
 
-// --- .casewright/ scaffold (repo-wide config + central runs + gitignore) ---
+// --- .casewright/ scaffold (repo-wide config + workspace list + central runs + gitignore) ---
 const cwDir = join(repoRoot, '.casewright');
 mkdirSync(join(cwDir, 'runs'), { recursive: true });
-writeFileSync(join(cwDir, 'config.yaml'), serializeConfigYaml({ version: 1, name: 'Casewright Fixture' }));
+writeFileSync(
+  join(cwDir, 'config.yaml'),
+  serializeConfigYaml({ version: 1, name: 'Casewright Fixture', workspaces: workspaces.map((w) => w.path) }),
+);
 writeFileSync(join(cwDir, '.gitignore'), CASEWRIGHT_GITIGNORE);
 
-// --- one casewright.yaml + suite/case subtree per workspace ---
+// --- workspace list (config.yaml) + lazy sibling folder notes + suite/case subtrees ---
 const byId = new Map(cases.map((c) => [c.id, c]));
 
 function walk(nodes: TreeNode[], parentDir: string) {
   for (const n of nodes) {
     if (n.type === 'suite') {
-      const dir = join(parentDir, n.name);
+      const folder = folderSlug(n.name); // wiki-safe folder (e.g. "Team Invites" → "Team-Invites")
+      const dir = join(parentDir, folder);
       mkdirSync(dir, { recursive: true });
+      if (noteNeeded(folder, n.name, n.prefix, n.description)) {
+        // Sibling note lives next to the folder, in the parent dir.
+        writeFileSync(join(parentDir, `${folder}.md`), serializeFolderNote({ name: n.name, prefix: n.prefix, description: n.description }));
+        folderNotes++;
+      }
       walk(n.children, dir);
     } else {
       const c = byId.get(n.id);
@@ -61,10 +78,16 @@ function walk(nodes: TreeNode[], parentDir: string) {
 }
 
 for (const ws of workspaces) {
-  const dir = join(repoRoot, ...ws.path.split('/'));
+  const segs = ws.path.split('/');
+  const dir = join(repoRoot, ...segs);
   mkdirSync(dir, { recursive: true });
-  // Use the app's canonical serializer so the fixture round-trips (handles quoting).
-  writeFileSync(join(dir, 'casewright.yaml'), serializeWorkspaceYaml(ws));
+  // The workspace's sibling note (workspaces always carry a prefix → always written).
+  const parentDir = join(repoRoot, ...segs.slice(0, -1));
+  const folder = segs[segs.length - 1];
+  if (noteNeeded(folder, ws.name, ws.prefix, ws.description)) {
+    writeFileSync(join(parentDir, `${folder}.md`), serializeFolderNote({ name: ws.name, prefix: ws.prefix, description: ws.description }));
+    folderNotes++;
+  }
   walk(trees[ws.id] ?? [], dir);
 }
 
@@ -134,5 +157,7 @@ if (withOrigin) {
   console.log('Bare origin:', originDir);
 }
 
-const fileCount = cases.length + runs.length * 2 + workspaces.length + 2;
-console.log(`Fixture written to ${repoRoot} (~${fileCount} files, ${cases.length} cases, ${runs.length} runs, ${workspaces.length} workspaces).`);
+const fileCount = cases.length + runs.length * 2 + folderNotes + 2;
+console.log(
+  `Fixture written to ${repoRoot} (~${fileCount} files, ${cases.length} cases, ${runs.length} runs, ${workspaces.length} workspaces, ${folderNotes} folder notes).`,
+);

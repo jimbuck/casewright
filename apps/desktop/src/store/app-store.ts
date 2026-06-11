@@ -4,19 +4,23 @@ import { create } from 'zustand';
 import { serializeCase } from '@/services/format/case';
 import { caseFileName, runCaseFileName, runFileStem } from '@/services/format/filename';
 import { serializeRunCase, serializeRunDetails, type RunCaseFile, type RunCaseItem } from '@/services/format/run';
-import { serializeWorkspaceYaml } from '@/services/format/workspace';
 import {
   deletePath,
   derivePrefix,
+  ensureWikiSafeFolder,
+  folderNoteRel,
   initRepo as initRepoSvc,
   loadRepo,
   makeDir,
+  moveFolderNote,
   openRepo as openRepoSvc,
   relJoin,
   renamePath,
+  syncFolderNote,
   toRepoRelative,
   wasSelfWrite,
   writeFileAt,
+  writeWorkspacesList,
 } from '@/services/repo';
 import { addRecent, listRecents } from '@/services/recents';
 import { flushPersist, schedulePersist } from '@/services/persist';
@@ -30,7 +34,7 @@ import {
   status as gitStatus,
 } from '@/services/git';
 import type { LintWarning } from '@/schemas';
-import { nowStamp, randomId, slug } from '@/utils/ids';
+import { folderSlug, nowStamp, randomId, slug } from '@/utils/ids';
 import { buildRunSummary, deriveItems, serializeRunSummary } from '@/utils/run-items';
 import { isNwjs, openExternal, pickDirectory } from '@/lib/nwjs';
 import { downloadInstaller, fetchLatestUpdate, isInstalledBuild, runInstallerAndQuit } from '@/services/updater';
@@ -64,14 +68,19 @@ const baseName = (p: string): string => p.replace(/[/\\]+$/, '').split(/[/\\]/).
 /* ---- tree helpers ---- */
 function buildSuiteIndex(tree: TreeNode[]) {
   const path: Record<string, string> = {};
-  const walk = (nodes: TreeNode[]) =>
+  // Display-ID prefix resolved by inheritance: a suite uses its own prefix, else the
+  // nearest ancestor's, else 'CW'. Workspace roots carry their prefix, so this is uniform.
+  const resolvedPrefix: Record<string, string> = {};
+  const walk = (nodes: TreeNode[], inherited: string) =>
     nodes.forEach((n) => {
       if (n.type === 'suite') {
         path[n.id] = n.path;
-        walk(n.children);
+        const eff = (n.prefix && n.prefix.trim()) || inherited;
+        resolvedPrefix[n.id] = eff || 'CW';
+        walk(n.children, eff);
       }
     });
-  walk(tree);
+  walk(tree, '');
 
   const collect = (nodes: TreeNode[], acc: string[]) =>
     nodes.forEach((n) => (n.type === 'case' ? acc.push(n.id) : collect(n.children, acc)));
@@ -83,7 +92,7 @@ function buildSuiteIndex(tree: TreeNode[]) {
     return acc;
   };
 
-  return { path, inSuite };
+  return { path, resolvedPrefix, inSuite };
 }
 
 const clone = <T,>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
@@ -134,11 +143,15 @@ export interface AppState {
   goHome: () => void;
   setWorkspace: (w: Workspace) => Promise<void>;
   updateWorkspace: (wsId: string, patch: Partial<Workspace>) => void;
-  /** Pick a folder, declare it a workspace (write its `casewright.yaml`), then open the edit modal. */
+  /** Edit a suite's metadata (display name / prefix override / description) in its folder note. */
+  updateSuite: (suiteId: string, patch: { name?: string; prefix?: string; description?: string }) => void;
+  /** The display-ID prefix a suite resolves to (own override → nearest ancestor → 'CW'). */
+  resolveSuitePrefix: (suiteId: string) => string;
+  /** Pick a folder, declare it a workspace (in config.yaml + its folder note), then open the edit modal. */
   addWorkspace: () => Promise<void>;
   /** Open the workspace edit modal, pre-selecting the active workspace. */
   editWorkspace: () => void;
-  /** Confirm, then drop the active workspace's `casewright.yaml` (leaving its files untouched). */
+  /** Confirm, then drop the active workspace from config.yaml (leaving its files untouched). */
   removeWorkspace: () => Promise<void>;
   /** Workspace pre-selected in the edit modal's dropdown (set by add/edit). */
   wsModalId: string | null;
@@ -584,12 +597,29 @@ export const useAppStore = create<AppState>()((set, get) => {
       runs: s.runs.map((r) => (r.id !== runId ? r : { ...r, rows: r.rows.map((row, j) => (j === i ? { ...row, ...patch } : row)) })),
     }));
 
-  const writeWsYaml = async (wsId: string) => {
+  // Persist a workspace's metadata to its (lazy) sibling folder note — written only when
+  // it carries a custom name / prefix / description, else removed. Root → config.yaml.
+  const writeWorkspaceNote = async (wsId: string) => {
     const rp = get().repoPath;
     const ws = get().workspaces.find((w) => w.id === wsId);
     if (!rp || !ws) return;
     try {
-      await writeFileAt(rp, relJoin(ws.path, 'casewright.yaml'), serializeWorkspaceYaml(ws));
+      await syncFolderNote(rp, ws.path, { name: ws.name, prefix: ws.prefix, description: ws.description });
+      scheduleRefresh();
+    } catch (e) {
+      onWriteError(e);
+    }
+  };
+
+  // Persist a suite's metadata to its (lazy) sibling folder note (frontmatter only — the
+  // folder is not moved; clearing every field removes the note).
+  const writeSuiteNote = async (suiteId: string) => {
+    const rp = get().repoPath;
+    const n = findSuiteNode(get().tree, suiteId);
+    const rel = suiteRel(suiteId);
+    if (!rp || !n || n.type !== 'suite' || !rel) return;
+    try {
+      await syncFolderNote(rp, rel, { name: n.name, prefix: n.prefix, description: n.description });
       scheduleRefresh();
     } catch (e) {
       onWriteError(e);
@@ -740,6 +770,7 @@ export const useAppStore = create<AppState>()((set, get) => {
     /* ---- derived helpers ---- */
     casePath,
     casesInSuite: (suiteId) => buildSuiteIndex(get().tree).inSuite(suiteId),
+    resolveSuitePrefix: (suiteId) => buildSuiteIndex(get().tree).resolvedPrefix[suiteId] ?? 'CW',
     caseWorkspace,
     toast: (msg) => {
       const id = Math.random();
@@ -895,7 +926,21 @@ export const useAppStore = create<AppState>()((set, get) => {
           tree,
         };
       });
-      schedulePersist('ws:' + wsId, () => writeWsYaml(wsId));
+      schedulePersist('ws:' + wsId, () => writeWorkspaceNote(wsId));
+    },
+
+    updateSuite: (suiteId, patch) => {
+      set((s) => {
+        const tree = clone(s.tree);
+        const n = findSuiteNode(tree, suiteId);
+        if (n && n.type === 'suite') {
+          if (patch.name !== undefined) n.name = patch.name;
+          if (patch.prefix !== undefined) n.prefix = patch.prefix.trim() || undefined;
+          if (patch.description !== undefined) n.description = patch.description.trim() || undefined;
+        }
+        return { tree };
+      });
+      schedulePersist('suite:' + suiteId, () => writeSuiteNote(suiteId));
     },
 
     addWorkspace: async () => {
@@ -903,35 +948,42 @@ export const useAppStore = create<AppState>()((set, get) => {
       if (!repoPath) return;
       const picked = await pickDirectory();
       if (!picked) return;
-      const rel = toRepoRelative(repoPath, picked);
-      if (rel == null) {
+      const pickedRel = toRepoRelative(repoPath, picked);
+      if (pickedRel == null) {
         get().toast('Pick a folder inside this repository');
         return;
       }
       // Already a workspace → just open it for editing.
-      const existing = workspaces.find((w) => w.path === rel);
+      const existing = workspaces.find((w) => w.path === pickedRel);
       if (existing) {
         set({ modal: 'workspace', wsModalId: existing.id });
         return;
       }
-      // Workspaces can't nest (PRD §4 req 8).
+      // Workspaces can't nest (one folder can't be inside another workspace).
       const within = (a: string, b: string) => b === '' || a === b || a.startsWith(b + '/');
-      if (workspaces.some((w) => within(rel, w.path) || within(w.path, rel))) {
+      if (workspaces.some((w) => within(pickedRel, w.path) || within(w.path, pickedRel))) {
         get().toast('Workspaces cannot be nested inside one another');
         return;
       }
-      const name = baseName(rel) || baseName(repoPath);
-      const ws: Workspace = { id: slug(rel) || 'workspace', name, path: rel, description: '', prefix: derivePrefix(name) };
+      let rel = pickedRel;
       try {
-        await writeFileAt(repoPath, relJoin(rel, 'casewright.yaml'), serializeWorkspaceYaml(ws));
+        // Hyphenate the folder if the picked name has spaces (wiki-safe), then declare it
+        // in config.yaml and write its folder note (lazy — workspaces always carry a prefix).
+        rel = await ensureWikiSafeFolder(repoPath, pickedRel);
+        const name = baseName(rel) || baseName(repoPath);
+        const ws: Workspace = { id: slug(rel) || 'workspace', name, path: rel, description: '', prefix: derivePrefix(name) };
+        await writeWorkspacesList(repoPath, [...workspaces.map((w) => w.path), rel]);
+        await syncFolderNote(repoPath, rel, { name: ws.name, prefix: ws.prefix, description: ws.description });
       } catch (e) {
         onWriteError(e);
         return;
       }
       await refreshWorkspaces();
-      const added = get().workspaces.find((w) => w.path === rel) ?? ws;
-      set({ modal: 'workspace', wsModalId: added.id, workspace: added });
-      get().toast(`Added workspace "${added.name}"`);
+      const added = get().workspaces.find((w) => w.path === rel);
+      if (added) {
+        set({ modal: 'workspace', wsModalId: added.id, workspace: added });
+        get().toast(`Added workspace "${added.name}"`);
+      }
     },
 
     editWorkspace: () => {
@@ -941,20 +993,23 @@ export const useAppStore = create<AppState>()((set, get) => {
     },
 
     removeWorkspace: async () => {
-      const { repoPath, workspace } = get();
+      const { repoPath, workspace, workspaces } = get();
       if (!repoPath || !workspace) return;
       if (
         !(await get().confirm({
           title: `Remove workspace "${workspace.name}"?`,
           message:
-            'This deletes only its casewright.yaml marker — the case and suite files in the folder are left untouched.',
+            'This only removes it from .casewright/config.yaml — the folder, its cases, and its folder note are left untouched.',
           confirmLabel: 'Remove',
           danger: true,
         }))
       )
         return;
       try {
-        await deletePath(repoPath, relJoin(workspace.path, 'casewright.yaml'));
+        await writeWorkspacesList(
+          repoPath,
+          workspaces.filter((w) => w.id !== workspace.id).map((w) => w.path),
+        );
       } catch (e) {
         onWriteError(e);
         return;
@@ -1083,7 +1138,8 @@ export const useAppStore = create<AppState>()((set, get) => {
       const ws = workspaceOfPath(idx.path[suite] ?? '') ?? workspace;
       if (!ws) return;
       const newId = randomId();
-      const prefix = ws.prefix || 'CW';
+      // Prefix resolves by inheritance: this suite's own override → nearest ancestor → workspace.
+      const prefix = idx.resolvedPrefix[suite] ?? (ws.prefix || 'CW');
       const num =
         Math.max(
           0,
@@ -1130,7 +1186,7 @@ export const useAppStore = create<AppState>()((set, get) => {
       if (!parent || !targetId) return; // suites live inside a workspace
       const id = 'suite-' + randomId(6);
       const name = 'New Suite';
-      const path = parent.path + '/' + name;
+      const path = parent.path + '/' + folderSlug(name); // → "New-Suite" on disk
       set((s) => {
         const nextTree = clone(s.tree);
         findSuiteNode(nextTree, targetId)?.children.push({ type: 'suite', id, name, path, children: [] });
@@ -1144,26 +1200,43 @@ export const useAppStore = create<AppState>()((set, get) => {
       get().toast(`New suite in ${parent.name}`);
     },
 
+    // Sidebar inline rename — structural: sets the display name AND re-slugs the folder
+    // (renames the dir, moves/writes the sibling note). A multi-word name becomes a
+    // hyphenated folder + a note recording the custom display name.
     renameSuite: (id, name) => {
       const oldRel = suiteRel(id);
+      const folder = folderSlug(name) || baseName(oldRel);
       set((s) => {
         const next = clone(s.tree);
         const fix = (nodes: TreeNode[], parentPath: string) =>
           nodes.forEach((n) => {
-            if (n.type === 'suite') {
-              if (n.id === id) n.name = name;
-              n.path = parentPath ? parentPath + '/' + n.name : n.name;
-              fix(n.children, n.path);
+            if (n.type !== 'suite') return;
+            if (n.id === id) n.name = name;
+            if (!n.isWorkspace) {
+              const base = n.id === id ? folder : baseName(n.path);
+              n.path = parentPath ? parentPath + '/' + base : base;
             }
+            fix(n.children, n.path);
           });
         fix(next, '');
         return { tree: next };
       });
       const rp = get().repoPath;
       const newRel = suiteRel(id);
-      if (rp && oldRel && newRel && oldRel !== newRel) {
-        void renamePath(rp, oldRel, newRel).then(reseed).catch(onWriteError);
-      }
+      const renamed = findSuiteNode(get().tree, id);
+      if (!rp || !renamed) return;
+      void (async () => {
+        try {
+          if (oldRel && newRel && oldRel !== newRel) {
+            await deletePath(rp, folderNoteRel(oldRel)); // remove the stale sibling note (no-op if absent)
+            await renamePath(rp, oldRel, newRel);
+          }
+          await syncFolderNote(rp, newRel, { name: renamed.name, prefix: renamed.prefix, description: renamed.description });
+          reseed();
+        } catch (e) {
+          onWriteError(e);
+        }
+      })();
     },
 
     deleteSuite: async (id) => {
@@ -1198,7 +1271,17 @@ export const useAppStore = create<AppState>()((set, get) => {
         return { tree: next, cases: s.cases.filter((c) => !caseIds.includes(c.id)) };
       });
       const rp = get().repoPath;
-      if (rp && rel) void deletePath(rp, rel).then(reseed).catch(onWriteError);
+      if (rp && rel) {
+        void (async () => {
+          try {
+            await deletePath(rp, rel);
+            await deletePath(rp, folderNoteRel(rel)); // remove the sibling note too (no-op if absent)
+            reseed();
+          } catch (e) {
+            onWriteError(e);
+          }
+        })();
+      }
       get().toast(`Deleted suite "${node.name}"`);
     },
 
@@ -1262,7 +1345,17 @@ export const useAppStore = create<AppState>()((set, get) => {
       const newRel = movedCase ? casePath(movedCase) : suiteRel(dragId);
       const rp = get().repoPath;
       if (rp && oldRel && newRel && oldRel !== newRel) {
-        void renamePath(rp, oldRel, newRel).then(reseed).catch(onWriteError);
+        void (async () => {
+          try {
+            await renamePath(rp, oldRel, newRel);
+            // A moved suite's folder basename is unchanged — only its parent dir — so its
+            // sibling note follows it (no-op when the suite has no note).
+            if (!movedCase) await moveFolderNote(rp, oldRel, newRel);
+            reseed();
+          } catch (e) {
+            onWriteError(e);
+          }
+        })();
       }
     },
 

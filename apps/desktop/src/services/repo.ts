@@ -1,21 +1,25 @@
 import { node } from '@/lib/node';
-import { ConfigYamlSchema, WorkspaceYamlSchema, type LintWarning } from '@/schemas';
+import { ConfigYamlSchema, WorkspaceYamlSchema, type ConfigYaml, type LintWarning } from '@/schemas';
 import type { Case, Run, TreeNode, Workspace } from '@/types';
-import { slug } from '@/utils/ids';
+import { folderSlug, slug } from '@/utils/ids';
 import { parseCase } from './format/case';
 import { CASEWRIGHT_GITIGNORE, serializeConfigYaml } from './format/config';
+import { parseFolderNote, serializeFolderNote, type FolderNoteMeta } from './format/folder-note';
 import { parseRunCase, parseRunDetails, type RunCaseItem } from './format/run';
 import { parseSuite } from './format/suite';
 
 // ---------------------------------------------------------------------------
-// `.casewright/` layout (PRD §4). The repo is identified by `.casewright/`; each
-// workspace declares itself with a `casewright.yaml`; runs are centralized.
+// `.casewright/` layout. The repo is identified by `.casewright/`; `config.yaml`
+// lists the workspace folders; each workspace/suite folder may have an optional
+// sibling "folder note" (`<folder>.md`) for its name/prefix/description; runs are
+// centralized in `.casewright/runs/`.
 // ---------------------------------------------------------------------------
 
 const CASEWRIGHT_DIR = '.casewright';
 const CONFIG_REL = '.casewright/config.yaml';
 const RUNS_REL = '.casewright/runs';
-const WORKSPACE_MARKER = 'casewright.yaml';
+const WORKSPACE_MARKER = 'casewright.yaml'; // legacy workspace marker — read only (migration + fallback)
+const LEGACY_SUITE_FILE = '_suite.md'; // legacy suite metadata — read only (migration + fallback)
 
 const byName = (a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name);
 
@@ -74,6 +78,99 @@ export function derivePrefix(name: string): string {
 }
 
 // ---------------------------------------------------------------------------
+// Folder notes — optional sibling `<folder>.md` carrying a workspace/suite's
+// name/prefix/description. Lazy: written only when it has metadata to store.
+// ---------------------------------------------------------------------------
+
+/** Last path segment (folder basename) of a repo-relative path. */
+function baseOf(rel: string): string {
+  return rel.split('/').pop() ?? rel;
+}
+
+/** Parent directory of a repo-relative path (`''` for a top-level entry). */
+function parentOf(rel: string): string {
+  return rel.split('/').slice(0, -1).join('/');
+}
+
+/**
+ * Repo-relative path of the sibling folder note for a folder. Uses the **literal**
+ * (already wiki-safe) folder basename — never the id `slug()`. The repo root (`''`) has
+ * no parent dir for a sibling note, so its metadata lives in `config.yaml` instead.
+ */
+export function folderNoteRel(folderRel: string): string {
+  if (folderRel === '' || folderRel === '.') return CONFIG_REL;
+  return relJoin(parentOf(folderRel), `${baseOf(folderRel)}.md`);
+}
+
+/**
+ * Whether a folder note carries anything worth persisting: a custom display name (one
+ * that differs from the folder basename), a display-ID prefix, or a description. When
+ * none hold, the folder is left note-less (its name is used as the display name).
+ */
+export function noteNeeded(basename: string, meta: { name?: string; prefix?: string; description?: string }): boolean {
+  const name = (meta.name ?? '').trim();
+  return (!!name && name !== basename) || !!(meta.prefix ?? '').trim() || !!(meta.description ?? '').trim();
+}
+
+/**
+ * Whether an existing folder basename must be normalized for an Azure DevOps wiki: it
+ * contains whitespace or a filesystem/wiki-illegal character. A bare `-` is a valid encoded
+ * separator, so we deliberately do NOT flag plain kebab-case folders (avoids churning a repo
+ * full of `user-management/`-style names); only the names we *generate* encode `-` as `%2D`.
+ * When a flagged folder is renamed, `folderSlug` still encodes any literal `-` it contains.
+ */
+function needsWikiFix(base: string): boolean {
+  return /[\s/\\:*?"<>|]/.test(base);
+}
+
+/** Loaded folder metadata (from a folder note, with legacy fallbacks). */
+interface FolderMeta {
+  name?: string;
+  prefix?: string;
+  description: string;
+}
+
+/**
+ * Read a folder's metadata: the sibling folder note first, then legacy fallbacks
+ * (`casewright.yaml` for a workspace, `_suite.md` for a suite). Returns `null` when the
+ * folder has no note/marker — a perfectly normal, supported state (the caller defaults
+ * the display name to the folder basename).
+ */
+async function readFolderMeta(repoPath: string, folderRel: string, warnings: LintWarning[]): Promise<FolderMeta | null> {
+  const path = node.path();
+
+  // 1. New format: the sibling folder note.
+  if (folderRel !== '' && folderRel !== '.') {
+    const noteRel = folderNoteRel(folderRel);
+    const noteRaw = await readMaybe(path.join(repoPath, noteRel));
+    if (noteRaw != null) {
+      const { meta, description, warnings: w } = parseFolderNote(noteRaw);
+      for (const x of w) warnings.push({ ...x, file: noteRel });
+      return { name: meta.name, prefix: meta.displayIdPrefix, description };
+    }
+  }
+
+  // 2. Legacy: a `casewright.yaml` workspace marker inside the folder.
+  const legacyWsRel = relJoin(folderRel, WORKSPACE_MARKER);
+  const legacyWsRaw = await readMaybe(path.join(repoPath, legacyWsRel));
+  if (legacyWsRaw != null) {
+    const parsed = WorkspaceYamlSchema.safeParse(parseYamlDoc(legacyWsRaw));
+    const y = parsed.success ? parsed.data : WorkspaceYamlSchema.parse({});
+    warnings.push({ code: 'legacy-format', message: `Legacy casewright.yaml at "${folderRel || '.'}" — reopen to migrate it to a folder note.`, file: legacyWsRel });
+    return { name: y.name, prefix: y.displayIdPrefix, description: y.description ?? '' };
+  }
+
+  // 3. Legacy: a `_suite.md` inside the folder.
+  const legacySuiteRaw = await readMaybe(path.join(repoPath, relJoin(folderRel, LEGACY_SUITE_FILE)));
+  if (legacySuiteRaw != null) {
+    const { suite } = parseSuite(legacySuiteRaw);
+    return { name: suite.title, prefix: undefined, description: suite.description ?? '' };
+  }
+
+  return null;
+}
+
+// ---------------------------------------------------------------------------
 // Open repo → validate `.casewright/` + discover workspaces
 // ---------------------------------------------------------------------------
 
@@ -87,58 +184,48 @@ export interface OpenedRepo {
 }
 
 /**
- * Discover workspaces by walking from the repo root for `casewright.yaml` markers
- * (PRD §4 req 6–9). Skips `.git`, `.casewright`, and any dot-folder; a folder with
- * the marker is a workspace and the walk does **not** descend into it (no nesting).
- * If the root itself has the marker, the whole repo is one workspace (`'.'`).
+ * The workspace folders, read from `.casewright/config.yaml`'s `workspaces:` list — the
+ * single source of truth (no more tree-walking for markers). Normalizes `.`→`''` (root),
+ * strips `./` and trailing slashes, and de-dupes while preserving declaration order.
  */
-async function discoverWorkspaces(repoPath: string): Promise<string[]> {
-  const path = node.path();
-  const fsp = node.fsp();
-  const found: string[] = [];
-
-  const walk = async (relDir: string): Promise<void> => {
-    const absDir = relDir === '.' ? repoPath : path.join(repoPath, relDir);
-    const entries = await fsp.readdir(absDir, { withFileTypes: true }).catch(() => []);
-    if (entries.some((e) => e.isFile() && e.name === WORKSPACE_MARKER)) {
-      found.push(relDir); // this folder is a workspace — don't descend (req 8)
-      return;
-    }
-    for (const e of entries) {
-      if (!e.isDirectory() || e.name.startsWith('.')) continue; // skip .git/.casewright/dot-folders (req 7)
-      await walk(relDir === '.' ? e.name : `${relDir}/${e.name}`);
-    }
-  };
-
-  await walk('.');
-  return found;
+function discoverWorkspaces(configData: Record<string, unknown>): string[] {
+  const parsed = ConfigYamlSchema.safeParse(configData);
+  const list = parsed.success ? parsed.data.workspaces : [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of list) {
+    const norm = raw === '.' ? '' : raw.replace(/^\.\//, '').replace(/\/+$/, '');
+    if (seen.has(norm)) continue;
+    seen.add(norm);
+    out.push(norm);
+  }
+  return out;
 }
 
-async function loadWorkspaceMeta(repoPath: string, rel: string, warnings: LintWarning[]): Promise<Workspace> {
+async function loadWorkspaceMeta(repoPath: string, wsPath: string, warnings: LintWarning[]): Promise<Workspace> {
   const path = node.path();
-  const wsPath = rel === '.' ? '' : rel; // repo root is represented as '' (no './' prefix downstream)
-  const raw = await readMaybe(path.join(repoPath, wsPath, WORKSPACE_MARKER));
-  const parsed = WorkspaceYamlSchema.safeParse(raw ? parseYamlDoc(raw) : {});
-  const yaml = parsed.success ? parsed.data : WorkspaceYamlSchema.parse({});
-  const baseName = rel === '.' ? path.basename(repoPath) : path.basename(rel);
-  const markerFile = relJoin(wsPath, WORKSPACE_MARKER);
+  const baseName = wsPath === '' ? path.basename(repoPath) : path.basename(wsPath);
 
-  let name = yaml.name.trim();
-  if (!name) {
-    name = baseName;
-    warnings.push({ code: 'ws-name', message: `Workspace at "${wsPath || '.'}" has no name; using "${baseName}".`, file: markerFile });
+  let meta: FolderMeta | null;
+  if (wsPath === '') {
+    // Root workspace: metadata lives in config.yaml (no parent dir for a sibling note).
+    const cfgRaw = await readMaybe(path.join(repoPath, CONFIG_REL));
+    const parsed = ConfigYamlSchema.safeParse(cfgRaw ? parseYamlDoc(cfgRaw) : {});
+    const cfg = parsed.success ? parsed.data : ConfigYamlSchema.parse({});
+    meta = { name: cfg.name, prefix: cfg.displayIdPrefix, description: cfg.description ?? '' };
+  } else {
+    meta = await readFolderMeta(repoPath, wsPath, warnings);
   }
-  let prefix = yaml.displayIdPrefix.trim();
-  if (!prefix) {
-    prefix = derivePrefix(name);
-    warnings.push({ code: 'ws-prefix', message: `Workspace "${name}" has no displayIdPrefix; using "${prefix}".`, file: markerFile });
-  }
+
+  // A note-less folder is fine: fall back to the folder name and a derived prefix, silently.
+  const name = (meta?.name ?? '').trim() || baseName;
+  const prefix = (meta?.prefix ?? '').trim() || derivePrefix(name);
 
   return {
-    id: slug(rel) || slug(baseName) || 'workspace',
+    id: slug(wsPath) || slug(baseName) || 'workspace',
     name,
     path: wsPath,
-    description: yaml.description ?? '',
+    description: meta?.description ?? '',
     prefix,
   };
 }
@@ -163,27 +250,29 @@ export async function openRepo(repoPath: string): Promise<OpenedRepo> {
     return { repoPath, workspaces: [], branch, warnings, needsInit: true };
   }
 
+  // Auto-migrate a legacy repo (casewright.yaml/_suite.md → config + folder notes) and
+  // normalize folder names to be wiki-safe BEFORE discovery reads the config. Idempotent.
+  await migrateRepo(repoPath, warnings);
+
   const configRaw = await readMaybe(path.join(repoPath, CONFIG_REL));
-  if (configRaw && !ConfigYamlSchema.safeParse(parseYamlDoc(configRaw)).success) {
+  const configData = configRaw ? parseYamlDoc(configRaw) : {};
+  if (configRaw && !ConfigYamlSchema.safeParse(configData).success) {
     warnings.push({ code: 'config', message: '.casewright/config.yaml was invalid; using defaults.', file: CONFIG_REL });
   }
 
-  const relPaths = await discoverWorkspaces(repoPath);
+  const relPaths = discoverWorkspaces(configData);
   const workspaces: Workspace[] = [];
-  for (const rel of relPaths) workspaces.push(await loadWorkspaceMeta(repoPath, rel, warnings));
-  workspaces.sort((a, b) => a.name.localeCompare(b.name) || a.path.localeCompare(b.path)); // req 10
+  for (const rel of relPaths) {
+    if (rel !== '' && !(await isDir(path.join(repoPath, rel)))) {
+      warnings.push({ code: 'ws-missing', message: `Workspace folder "${rel}" is listed in config but does not exist.`, file: CONFIG_REL });
+      continue;
+    }
+    workspaces.push(await loadWorkspaceMeta(repoPath, rel, warnings));
+  }
+  workspaces.sort((a, b) => a.name.localeCompare(b.name) || a.path.localeCompare(b.path));
 
   if (!workspaces.length) {
-    warnings.push({ code: 'empty-repo', message: 'No workspaces found — create a casewright.yaml to declare one.' });
-  }
-
-  // Duplicate displayIdPrefix → warn, load anyway (req 14).
-  const seenPrefix = new Map<string, string>();
-  for (const ws of workspaces) {
-    if (!ws.prefix) continue;
-    const prev = seenPrefix.get(ws.prefix);
-    if (prev) warnings.push({ code: 'dup-prefix', message: `Display ID prefix "${ws.prefix}" is shared by "${prev}" and "${ws.name}".` });
-    else seenPrefix.set(ws.prefix, ws.name);
+    warnings.push({ code: 'empty-repo', message: 'No workspaces found — add one to .casewright/config.yaml.' });
   }
 
   return { repoPath, workspaces, branch, warnings, needsInit: false };
@@ -221,13 +310,31 @@ export interface LoadedRepo {
   warnings: LintWarning[];
 }
 
-async function suiteDisplayName(absDir: string, folderName: string): Promise<string> {
-  const raw = await readMaybe(node.path().join(absDir, '_suite.md'));
-  if (raw) {
-    const { suite } = parseSuite(raw);
-    if (suite.title) return suite.title;
+/**
+ * Read a suite folder's metadata from its sibling note (`<parentDir>/<name>.md`), using
+ * the already-listed parent `entries` to avoid a read when no note exists; falls back to a
+ * legacy `_suite.md` inside the folder. Returns `null` for the (normal) note-less folder.
+ */
+async function readSuiteMeta(
+  parentAbs: string,
+  parentEntries: { name: string; isFile: () => boolean }[],
+  name: string,
+): Promise<FolderMeta | null> {
+  const path = node.path();
+  const noteName = `${name}.md`;
+  if (parentEntries.some((e) => e.isFile() && e.name === noteName)) {
+    const raw = await readMaybe(path.join(parentAbs, noteName));
+    if (raw != null) {
+      const { meta, description } = parseFolderNote(raw);
+      return { name: meta.name, prefix: meta.displayIdPrefix, description };
+    }
   }
-  return folderName;
+  const legacy = await readMaybe(path.join(parentAbs, name, LEGACY_SUITE_FILE));
+  if (legacy != null) {
+    const { suite } = parseSuite(legacy);
+    return { name: suite.title, prefix: undefined, description: suite.description ?? '' };
+  }
+  return null;
 }
 
 /** Fold a per-case sidecar's checklist items into the `checks`/`failNotes`/`itemText` maps. */
@@ -341,7 +448,13 @@ export async function loadWorkspace(repoPath: string, ws: Workspace): Promise<Lo
   // to the workspace node (id = ws.id). Dot-folders (incl. `.casewright`) are skipped.
   const walk = async (absDir: string, fullRel: string): Promise<TreeNode[]> => {
     const entries = await fsp.readdir(absDir, { withFileTypes: true });
-    const files = entries.filter((e) => e.isFile() && e.name.endsWith('.md') && e.name !== '_suite.md').sort(byName);
+    const dirNames = new Set(entries.filter((e) => e.isDirectory() && !e.name.startsWith('.')).map((e) => e.name));
+    // A `.md` is a FOLDER NOTE (a sibling page for its folder) iff a directory of the same
+    // basename sits beside it; otherwise it's a test case. Legacy `_suite.md` is excluded too.
+    const isFolderNote = (fileName: string) => dirNames.has(fileName.slice(0, -3));
+    const files = entries
+      .filter((e) => e.isFile() && e.name.endsWith('.md') && e.name !== LEGACY_SUITE_FILE && !isFolderNote(e.name))
+      .sort(byName);
     const dirs = entries.filter((e) => e.isDirectory() && !e.name.startsWith('.')).sort(byName);
     const nodes: TreeNode[] = [];
     // The workspace-root level reuses the (already-normalized, never-empty) workspace
@@ -357,12 +470,15 @@ export async function loadWorkspace(repoPath: string, ws: Workspace): Promise<Lo
     }
     for (const d of dirs) {
       const childFull = relJoin(fullRel, d.name);
+      const meta = await readSuiteMeta(absDir, entries, d.name);
       const children = await walk(path.join(absDir, d.name), childFull);
       nodes.push({
         type: 'suite',
         id: slug(childFull),
-        name: await suiteDisplayName(path.join(absDir, d.name), d.name),
+        name: meta?.name?.trim() || d.name,
         path: childFull,
+        ...(meta?.prefix?.trim() ? { prefix: meta.prefix.trim() } : {}),
+        ...(meta?.description?.trim() ? { description: meta.description } : {}),
         children,
       });
     }
@@ -384,10 +500,36 @@ export async function loadRepo(repoPath: string, workspaces: Workspace[]): Promi
   const warnings: LintWarning[] = [];
   for (const ws of workspaces) {
     const loaded = await loadWorkspace(repoPath, ws);
-    tree.push({ type: 'suite', isWorkspace: true, id: ws.id, name: ws.name, path: ws.path, children: loaded.tree });
+    // The workspace root carries its own prefix/description so display-ID prefixes
+    // inherit uniformly down the combined tree (workspace → suite → case).
+    tree.push({
+      type: 'suite',
+      isWorkspace: true,
+      id: ws.id,
+      name: ws.name,
+      path: ws.path,
+      prefix: ws.prefix,
+      ...(ws.description.trim() ? { description: ws.description } : {}),
+      children: loaded.tree,
+    });
     cases.push(...loaded.cases);
     warnings.push(...loaded.warnings);
   }
+
+  // Duplicate displayIdPrefix anywhere in the tree (workspace or suite override) → warn, load anyway.
+  const seenPrefix = new Map<string, string>();
+  const checkDup = (nodes: TreeNode[]) =>
+    nodes.forEach((n) => {
+      if (n.type !== 'suite') return;
+      if (n.prefix) {
+        const prev = seenPrefix.get(n.prefix);
+        if (prev) warnings.push({ code: 'dup-prefix', message: `Display ID prefix "${n.prefix}" is shared by "${prev}" and "${n.name}".` });
+        else seenPrefix.set(n.prefix, n.name);
+      }
+      checkDup(n.children);
+    });
+  checkDup(tree);
+
   const runs = await loadRuns(repoPath, warnings);
   return { tree, cases, runs, warnings };
 }
@@ -452,4 +594,247 @@ export async function renamePath(repoPath: string, fromRel: string, toRel: strin
 export async function makeDir(repoPath: string, rel: string): Promise<void> {
   markWrite(rel);
   await node.fsp().mkdir(node.path().join(repoPath, rel), { recursive: true });
+}
+
+// ---------------------------------------------------------------------------
+// Folder-note + config writers — the lazy persistence layer the store composes.
+// ---------------------------------------------------------------------------
+
+/** Read + parse `.casewright/config.yaml` tolerantly (defaults when missing/invalid). */
+async function readConfig(repoPath: string): Promise<ConfigYaml> {
+  const raw = await readMaybe(node.path().join(repoPath, CONFIG_REL));
+  const parsed = ConfigYamlSchema.safeParse(raw ? parseYamlDoc(raw) : {});
+  return parsed.success ? parsed.data : ConfigYamlSchema.parse({});
+}
+
+/** Write the root workspace's metadata into `config.yaml` (it has no sibling note). */
+async function writeRootMeta(repoPath: string, meta: FolderNoteMeta): Promise<void> {
+  const cfg = await readConfig(repoPath);
+  await writeFileAt(
+    repoPath,
+    CONFIG_REL,
+    serializeConfigYaml({
+      version: cfg.version,
+      name: meta.name || cfg.name,
+      displayIdPrefix: meta.prefix,
+      description: meta.description,
+      workspaces: cfg.workspaces,
+    }),
+  );
+}
+
+/**
+ * Lazily persist a folder's note: write `<folder>.md` only when it carries metadata
+ * beyond the folder name ({@link noteNeeded}); otherwise delete any existing note. Skips
+ * the write when the on-disk content already matches (so it's safe to call on every edit
+ * and during idempotent migration). Returns `true` when it changed the disk.
+ */
+export async function syncFolderNote(repoPath: string, folderRel: string, meta: FolderNoteMeta): Promise<boolean> {
+  if (folderRel === '' || folderRel === '.') {
+    await writeRootMeta(repoPath, meta);
+    return true;
+  }
+  const noteRel = folderNoteRel(folderRel);
+  const abs = node.path().join(repoPath, noteRel);
+  const existing = await readMaybe(abs);
+  if (noteNeeded(baseOf(folderRel), meta)) {
+    const desired = serializeFolderNote(meta);
+    if (existing === desired) return false;
+    await writeFileAt(repoPath, noteRel, desired);
+    return true;
+  }
+  if (existing == null) return false;
+  await deletePath(repoPath, noteRel);
+  return true;
+}
+
+/** Move a folder's sibling note to follow the folder, if (and only if) a note exists. */
+export async function moveFolderNote(repoPath: string, fromFolderRel: string, toFolderRel: string): Promise<void> {
+  const from = folderNoteRel(fromFolderRel);
+  const to = folderNoteRel(toFolderRel);
+  if (from === to) return;
+  if ((await readMaybe(node.path().join(repoPath, from))) == null) return;
+  await renamePath(repoPath, from, to);
+}
+
+/** Rewrite `config.yaml`'s `workspaces:` list, preserving version/name/root metadata. */
+export async function writeWorkspacesList(repoPath: string, paths: string[]): Promise<void> {
+  const cfg = await readConfig(repoPath);
+  await writeFileAt(
+    repoPath,
+    CONFIG_REL,
+    serializeConfigYaml({
+      version: cfg.version,
+      name: cfg.name,
+      displayIdPrefix: cfg.displayIdPrefix,
+      description: cfg.description,
+      workspaces: paths.map((p) => (p === '' ? '.' : p)),
+    }),
+  );
+}
+
+/**
+ * If a folder's basename isn't wiki-safe (spaces/illegal chars), rename it (and move any
+ * sibling note alongside) to the slugged form, disambiguating on collision. Returns the
+ * (possibly new) repo-relative path. The original name is preserved by callers as the
+ * note's display `name`.
+ */
+export async function ensureWikiSafeFolder(repoPath: string, folderRel: string): Promise<string> {
+  if (folderRel === '' || folderRel === '.') return folderRel;
+  const base = baseOf(folderRel);
+  if (!needsWikiFix(base)) return folderRel;
+  const safe = folderSlug(base);
+  if (!safe || safe === base) return folderRel;
+  const parent = parentOf(folderRel);
+  let target = relJoin(parent, safe);
+  let n = 2;
+  while (target !== folderRel && (await isDir(node.path().join(repoPath, target)))) {
+    target = relJoin(parent, `${safe}-${n++}`);
+  }
+  await moveFolderNote(repoPath, folderRel, target);
+  await renamePath(repoPath, folderRel, target);
+  return target;
+}
+
+// ---------------------------------------------------------------------------
+// Migration — legacy (casewright.yaml/_suite.md) → config + folder notes, and
+// folder-name normalization to wiki-safe slugs. Runs on open; fully idempotent.
+// ---------------------------------------------------------------------------
+
+/** Walk the tree for legacy `casewright.yaml` markers (the old discovery walk). */
+async function findLegacyWorkspaceMarkers(repoPath: string): Promise<string[]> {
+  const path = node.path();
+  const fsp = node.fsp();
+  const found: string[] = [];
+  const walk = async (relDir: string): Promise<void> => {
+    const absDir = relDir === '' ? repoPath : path.join(repoPath, relDir);
+    const entries = await fsp.readdir(absDir, { withFileTypes: true }).catch(() => []);
+    if (entries.some((e) => e.isFile() && e.name === WORKSPACE_MARKER)) {
+      found.push(relDir);
+      return; // legacy: workspaces don't nest
+    }
+    for (const e of entries) {
+      if (!e.isDirectory() || e.name.startsWith('.')) continue;
+      await walk(relDir === '' ? e.name : `${relDir}/${e.name}`);
+    }
+  };
+  await walk('');
+  return found;
+}
+
+/** Convert every legacy `_suite.md` under `wsRel` into a sibling folder note (lazy), then
+ *  delete the legacy file. */
+async function migrateSuiteFilesIn(repoPath: string, wsRel: string): Promise<boolean> {
+  const path = node.path();
+  const fsp = node.fsp();
+  let changed = false;
+  const walk = async (dirRel: string): Promise<void> => {
+    const absDir = dirRel === '' ? repoPath : path.join(repoPath, dirRel);
+    const entries = await fsp.readdir(absDir, { withFileTypes: true }).catch(() => []);
+    for (const e of entries) {
+      if (!e.isDirectory() || e.name.startsWith('.')) continue;
+      const childRel = relJoin(dirRel, e.name);
+      const suiteFileRel = relJoin(childRel, LEGACY_SUITE_FILE);
+      const suiteRaw = await readMaybe(path.join(repoPath, suiteFileRel));
+      if (suiteRaw != null) {
+        const { suite } = parseSuite(suiteRaw);
+        await syncFolderNote(repoPath, childRel, { name: suite.title ?? '', description: suite.description ?? '' });
+        await deletePath(repoPath, suiteFileRel); // remove the legacy file once converted
+        changed = true;
+      }
+      await walk(childRel);
+    }
+  };
+  await walk(wsRel);
+  return changed;
+}
+
+/**
+ * Recursively rename folders with non-wiki-safe basenames to the slugged form (bottom-up,
+ * so a parent rename never invalidates a child operation), moving any sibling note along
+ * and recording the original name as the note's display `name`. Returns the (possibly new)
+ * path of `folderRel`.
+ */
+async function normalizeFoldersWikiSafe(repoPath: string, folderRel: string, warnings: LintWarning[]): Promise<string> {
+  const path = node.path();
+  const fsp = node.fsp();
+  const absDir = path.join(repoPath, folderRel);
+  const entries = await fsp.readdir(absDir, { withFileTypes: true }).catch(() => []);
+  for (const name of entries.filter((e) => e.isDirectory() && !e.name.startsWith('.')).map((e) => e.name)) {
+    await normalizeFoldersWikiSafe(repoPath, relJoin(folderRel, name), warnings);
+  }
+
+  const base = baseOf(folderRel);
+  if (!needsWikiFix(base)) return folderRel;
+  const safe = folderSlug(base);
+  if (!safe || safe === base) return folderRel;
+
+  const parent = parentOf(folderRel);
+  let target = relJoin(parent, safe);
+  let n = 2;
+  while (await isDir(path.join(repoPath, target))) target = relJoin(parent, `${safe}-${n++}`);
+
+  // Preserve any existing note's contents; default the display name to the original basename.
+  const oldNote = folderNoteRel(folderRel);
+  const noteRaw = await readMaybe(path.join(repoPath, oldNote));
+  let meta: FolderNoteMeta = { name: base };
+  if (noteRaw != null) {
+    const parsed = parseFolderNote(noteRaw);
+    meta = { name: parsed.meta.name || base, prefix: parsed.meta.displayIdPrefix, description: parsed.description };
+    await deletePath(repoPath, oldNote);
+  }
+  await renamePath(repoPath, folderRel, target);
+  await syncFolderNote(repoPath, target, meta);
+  warnings.push({ code: 'renamed', message: `Renamed "${folderRel}" → "${target}" for wiki compatibility (kept "${meta.name}" as its display name).` });
+  return target;
+}
+
+/**
+ * Auto-migrate a repo on open: legacy `casewright.yaml`/`_suite.md` → `config.yaml`
+ * `workspaces:` + sibling folder notes, then normalize folder names to wiki-safe slugs.
+ * The legacy files are **deleted** once converted; a fallback reader still understands any
+ * that linger (e.g. from a partial run). Idempotent — a migrated repo is a no-op on re-open.
+ */
+export async function migrateRepo(repoPath: string, warnings: LintWarning[]): Promise<void> {
+  const cfg = await readConfig(repoPath);
+  let wsList = cfg.workspaces.map((p) => (p === '.' ? '' : p));
+  const before = [...wsList];
+  let changed = false;
+
+  // 1. Legacy markers → workspace list + folder notes (then delete the legacy files).
+  for (const rel of await findLegacyWorkspaceMarkers(repoPath)) {
+    if (!wsList.includes(rel)) {
+      wsList.push(rel);
+      changed = true;
+    }
+    const markerRel = relJoin(rel, WORKSPACE_MARKER);
+    const wsRaw = await readMaybe(node.path().join(repoPath, markerRel));
+    if (wsRaw != null) {
+      const parsed = WorkspaceYamlSchema.safeParse(parseYamlDoc(wsRaw));
+      const y = parsed.success ? parsed.data : WorkspaceYamlSchema.parse({});
+      if (rel === '') await writeRootMeta(repoPath, { name: y.name, prefix: y.displayIdPrefix, description: y.description ?? '' });
+      else await syncFolderNote(repoPath, rel, { name: y.name, prefix: y.displayIdPrefix, description: y.description ?? '' });
+      await deletePath(repoPath, markerRel); // remove the legacy marker once converted
+      changed = true;
+    }
+    if (await migrateSuiteFilesIn(repoPath, rel)) changed = true;
+  }
+
+  // 2. Normalize folder names (rename folders with spaces/illegal chars) within each workspace.
+  const remap: Record<string, string> = {};
+  for (const rel of wsList) {
+    if (rel === '') continue;
+    const next = await normalizeFoldersWikiSafe(repoPath, rel, warnings);
+    if (next !== rel) {
+      remap[rel] = next;
+      changed = true;
+    }
+  }
+  if (Object.keys(remap).length) wsList = wsList.map((p) => remap[p] ?? p);
+
+  // 3. Persist the workspace list if anything changed.
+  if (changed || JSON.stringify(before) !== JSON.stringify(wsList)) {
+    await writeWorkspacesList(repoPath, wsList);
+    warnings.push({ code: 'migrated', message: `Migrated to the config + folder-note format (${wsList.length} workspace${wsList.length === 1 ? '' : 's'}). Review and commit.` });
+  }
 }

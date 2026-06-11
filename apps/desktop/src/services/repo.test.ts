@@ -95,12 +95,13 @@ describe('openRepo / loadWorkspace / loadRepo', () => {
     repoPath = await mkRepo('cw-repo-');
 
     await fsp.mkdir(path.join(repoPath, '.casewright', 'runs'), { recursive: true });
-    await fsp.writeFile(path.join(repoPath, '.casewright', 'config.yaml'), 'version: 1\nname: QA\n');
+    await fsp.writeFile(path.join(repoPath, '.casewright', 'config.yaml'), 'version: 1\nname: QA\nworkspaces:\n  - areas/payments\n');
     await writeSmokeRun(repoPath, '2026-06-01-smoke');
 
     const ws = path.join(repoPath, 'areas', 'payments');
     await fsp.mkdir(path.join(ws, 'Auth', 'Sessions'), { recursive: true });
-    await fsp.writeFile(path.join(ws, 'casewright.yaml'), 'name: Payments QA\ndisplayIdPrefix: PAY\n');
+    // The workspace's metadata is its sibling folder note (areas/payments.md), not a marker inside.
+    await fsp.writeFile(path.join(repoPath, 'areas', 'payments.md'), '---\nname: Payments QA\ndisplayIdPrefix: PAY\n---\n');
     await fsp.writeFile(path.join(ws, 'Auth', 'PAY-0001-first-case.md'), serializeCase(c1));
     await fsp.writeFile(path.join(ws, 'Auth', 'Sessions', 'PAY-0002-nested-case.md'), serializeCase(c2));
 
@@ -111,7 +112,7 @@ describe('openRepo / loadWorkspace / loadRepo', () => {
     await node.fsp().rm(repoPath, { recursive: true, force: true });
   });
 
-  it('validates the worktree and discovers the workspace from its casewright.yaml', async () => {
+  it('validates the worktree and discovers the workspace from config + its folder note', async () => {
     const { workspaces, branch, needsInit } = await openRepo(repoPath);
     expect(branch).toBe('main');
     expect(needsInit).toBe(false);
@@ -172,9 +173,9 @@ describe('openRepo / loadWorkspace / loadRepo', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Discovery walk: markers found, dot-folders skipped, alphabetical by name
+// Discovery from the config workspaces list (sorted by name; unlisted ignored)
 // ---------------------------------------------------------------------------
-describe('workspace discovery walk', () => {
+describe('workspace discovery from config', () => {
   let repoPath: string;
 
   beforeAll(async () => {
@@ -182,17 +183,17 @@ describe('workspace discovery walk', () => {
     const path = node.path();
     repoPath = await mkRepo('cw-discover-');
     await fsp.mkdir(path.join(repoPath, '.casewright'), { recursive: true });
-    await fsp.writeFile(path.join(repoPath, '.casewright', 'config.yaml'), 'version: 1\n');
-
-    // two real workspaces (names chosen so alphabetical-by-name ≠ path order)
+    // names chosen so alphabetical-by-name ≠ path order; `areas/ghost` is listed but absent
+    await fsp.writeFile(
+      path.join(repoPath, '.casewright', 'config.yaml'),
+      'version: 1\nworkspaces:\n  - areas/beta\n  - areas/alpha\n  - areas/ghost\n',
+    );
     await fsp.mkdir(path.join(repoPath, 'areas', 'alpha'), { recursive: true });
-    await fsp.writeFile(path.join(repoPath, 'areas', 'alpha', 'casewright.yaml'), 'name: Zeta\ndisplayIdPrefix: ZET\n');
+    await fsp.writeFile(path.join(repoPath, 'areas', 'alpha.md'), '---\nname: Zeta\ndisplayIdPrefix: ZET\n---\n');
     await fsp.mkdir(path.join(repoPath, 'areas', 'beta'), { recursive: true });
-    await fsp.writeFile(path.join(repoPath, 'areas', 'beta', 'casewright.yaml'), 'name: Alpha\ndisplayIdPrefix: ALP\n');
-    // a dot-folder marker (must be skipped) and a plain folder (no marker)
-    await fsp.mkdir(path.join(repoPath, '.hidden'), { recursive: true });
-    await fsp.writeFile(path.join(repoPath, '.hidden', 'casewright.yaml'), 'name: Hidden\ndisplayIdPrefix: HID\n');
-    await fsp.mkdir(path.join(repoPath, 'docs'), { recursive: true });
+    await fsp.writeFile(path.join(repoPath, 'areas', 'beta.md'), '---\nname: Alpha\ndisplayIdPrefix: ALP\n---\n');
+    // a folder that is NOT in the config list → must be ignored
+    await fsp.mkdir(path.join(repoPath, 'areas', 'gamma'), { recursive: true });
 
     await gitInit(repoPath);
   });
@@ -201,34 +202,37 @@ describe('workspace discovery walk', () => {
     await node.fsp().rm(repoPath, { recursive: true, force: true });
   });
 
-  it('finds every casewright.yaml, skips dot-folders, sorts by display name', async () => {
-    const { workspaces } = await openRepo(repoPath);
-    expect(workspaces).toHaveLength(2); // .hidden is skipped
+  it('reads the config list, sorts by display name, ignores unlisted folders, warns on a missing one', async () => {
+    const { workspaces, warnings } = await openRepo(repoPath);
+    expect(workspaces).toHaveLength(2); // ghost is missing; gamma is unlisted
     expect(workspaces.map((w) => w.name)).toEqual(['Alpha', 'Zeta']);
     expect(workspaces.map((w) => w.path)).toEqual(['areas/beta', 'areas/alpha']);
-    expect(workspaces.some((w) => w.name === 'Hidden')).toBe(false);
+    expect(workspaces.some((w) => w.path === 'areas/gamma')).toBe(false);
+    expect(warnings.some((w) => w.code === 'ws-missing')).toBe(true);
   });
 });
 
 // ---------------------------------------------------------------------------
-// No nesting: a marker inside a workspace is a suite, not a second workspace
+// Folder notes vs test cases: a `.md` with a sibling dir is a note, else a case
 // ---------------------------------------------------------------------------
-describe('no nested workspaces', () => {
+describe('folder notes vs test cases', () => {
   let repoPath: string;
 
   beforeAll(async () => {
     const fsp = node.fsp();
     const path = node.path();
-    repoPath = await mkRepo('cw-nest-');
+    repoPath = await mkRepo('cw-notes-');
     await fsp.mkdir(path.join(repoPath, '.casewright'), { recursive: true });
-    await fsp.writeFile(path.join(repoPath, '.casewright', 'config.yaml'), 'version: 1\n');
+    await fsp.writeFile(path.join(repoPath, '.casewright', 'config.yaml'), 'version: 1\nworkspaces:\n  - areas/payments\n');
 
     const ws = path.join(repoPath, 'areas', 'payments');
-    await fsp.mkdir(path.join(ws, 'Deep'), { recursive: true });
-    await fsp.writeFile(path.join(ws, 'casewright.yaml'), 'name: Payments\ndisplayIdPrefix: PAY\n');
-    // a (mistaken) marker nested inside the workspace — must be treated as a suite, not a workspace
-    await fsp.writeFile(path.join(ws, 'Deep', 'casewright.yaml'), 'name: Deep\ndisplayIdPrefix: DEP\n');
-    await fsp.writeFile(path.join(ws, 'Deep', 'PAY-0009-deep.md'), serializeCase({ ...c1, id: 'ccc3333cccc', displayId: 'PAY-0009' }));
+    await fsp.mkdir(path.join(ws, 'Auth'), { recursive: true });
+    await fsp.writeFile(path.join(repoPath, 'areas', 'payments.md'), '---\nname: Payments\ndisplayIdPrefix: PAY\n---\n');
+    // Auth.md sits beside Auth/ → it's the folder note (suite metadata), not a case.
+    await fsp.writeFile(path.join(ws, 'Auth.md'), '---\nname: Authentication\ndisplayIdPrefix: AUTH\n---\n\nAuth suite.\n');
+    await fsp.writeFile(path.join(ws, 'Auth', 'PAY-0009-deep.md'), serializeCase({ ...c1, id: 'ccc3333cccc', displayId: 'PAY-0009', title: 'Deep case' }));
+    // Login.md has no sibling Login/ dir → it's a test case at the workspace root.
+    await fsp.writeFile(path.join(ws, 'Login.md'), serializeCase({ ...c1, id: 'ddd4444dddd', displayId: 'PAY-0010', title: 'Login case' }));
 
     await gitInit(repoPath);
   });
@@ -237,14 +241,17 @@ describe('no nested workspaces', () => {
     await node.fsp().rm(repoPath, { recursive: true, force: true });
   });
 
-  it('does not descend into a workspace to find more workspaces', async () => {
+  it('treats a .md with a sibling dir as a folder note (suite metadata + prefix), and a lone .md as a case', async () => {
     const { workspaces } = await openRepo(repoPath);
-    expect(workspaces).toHaveLength(1);
-    expect(workspaces[0].path).toBe('areas/payments');
+    const { tree, cases } = await loadWorkspace(repoPath, workspaces[0]);
 
-    const { tree } = await loadWorkspace(repoPath, workspaces[0]);
-    const deep = tree.find((n) => n.type === 'suite' && n.name === 'Deep');
-    expect(deep).toBeTruthy(); // Deep is a suite within the workspace
+    const auth = tree.find((n) => n.type === 'suite' && n.path === 'areas/payments/Auth');
+    expect(auth && auth.type === 'suite' && auth.name).toBe('Authentication');
+    expect(auth && auth.type === 'suite' && auth.prefix).toBe('AUTH');
+    expect(auth && auth.type === 'suite' && auth.description).toBe('Auth suite.');
+
+    // Two cases: the deep one and Login.md. Auth.md is NOT a case.
+    expect(cases.map((c) => c.title).sort()).toEqual(['Deep case', 'Login case']);
   });
 });
 
@@ -259,10 +266,13 @@ describe('repo root as a single workspace', () => {
     const path = node.path();
     repoPath = await mkRepo('cw-root-');
     await fsp.mkdir(path.join(repoPath, '.casewright', 'runs'), { recursive: true });
-    await fsp.writeFile(path.join(repoPath, '.casewright', 'config.yaml'), 'version: 1\n');
+    // The root workspace ('.') has no parent dir for a sibling note, so its metadata
+    // (name/displayIdPrefix/description) lives in config.yaml itself.
+    await fsp.writeFile(
+      path.join(repoPath, '.casewright', 'config.yaml'),
+      'version: 1\nname: Root WS\ndisplayIdPrefix: RT\nworkspaces:\n  - .\n',
+    );
     await writeSmokeRun(repoPath, '2026-06-02-smoke');
-    // root-level marker → the whole repo is one workspace
-    await fsp.writeFile(path.join(repoPath, 'casewright.yaml'), 'name: Root WS\ndisplayIdPrefix: RT\n');
     await fsp.writeFile(path.join(repoPath, 'CW-0002-root-case.md'), serializeCase(c2)); // case at the workspace root
     await fsp.mkdir(path.join(repoPath, 'Auth'), { recursive: true });
     await fsp.writeFile(path.join(repoPath, 'Auth', 'CW-0001-nested.md'), serializeCase(c1));
@@ -274,12 +284,13 @@ describe('repo root as a single workspace', () => {
     await node.fsp().rm(repoPath, { recursive: true, force: true });
   });
 
-  it('declares a single workspace at path "" with no further discovery', async () => {
+  it('declares a single workspace at path "" with metadata from config.yaml', async () => {
     const { workspaces, needsInit } = await openRepo(repoPath);
     expect(needsInit).toBe(false);
     expect(workspaces).toHaveLength(1);
     expect(workspaces[0].path).toBe('');
     expect(workspaces[0].name).toBe('Root WS');
+    expect(workspaces[0].prefix).toBe('RT');
     expect(workspaces[0].id).not.toBe('');
   });
 
@@ -323,7 +334,7 @@ describe('missing and empty .casewright/', () => {
     await node.fsp().rm(repoPath, { recursive: true, force: true });
   });
 
-  it('reports an empty-repo warning when .casewright/ exists but no markers', async () => {
+  it('reports an empty-repo warning when .casewright/ exists but no workspaces are listed', async () => {
     const repoPath = await mkRepo('cw-empty-');
     await node.fsp().mkdir(node.path().join(repoPath, '.casewright'), { recursive: true });
     await node.fsp().writeFile(node.path().join(repoPath, '.casewright', 'config.yaml'), 'version: 1\n');
@@ -362,6 +373,98 @@ describe('initRepo scaffold', () => {
     expect(opened.needsInit).toBe(false);
     expect(opened.workspaces).toHaveLength(0);
     expect(opened.warnings.some((w) => w.code === 'empty-repo')).toBe(true);
+
+    await fsp.rm(repoPath, { recursive: true, force: true });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Suite-level prefix override carried onto the tree (inheritance source data)
+// ---------------------------------------------------------------------------
+describe('suite prefix override', () => {
+  it('carries a suite folder note prefix onto its SuiteNode', async () => {
+    const fsp = node.fsp();
+    const path = node.path();
+    const repoPath = await mkRepo('cw-prefix-');
+    await fsp.mkdir(path.join(repoPath, '.casewright'), { recursive: true });
+    await fsp.writeFile(path.join(repoPath, '.casewright', 'config.yaml'), 'version: 1\nworkspaces:\n  - areas/payments\n');
+    const ws = path.join(repoPath, 'areas', 'payments');
+    await fsp.mkdir(path.join(ws, 'Sessions'), { recursive: true });
+    await fsp.writeFile(path.join(repoPath, 'areas', 'payments.md'), '---\nname: Payments\ndisplayIdPrefix: PAY\n---\n');
+    await fsp.writeFile(path.join(ws, 'Sessions.md'), '---\nname: Sessions\ndisplayIdPrefix: SESS\n---\n');
+    await fsp.writeFile(path.join(ws, 'Sessions', 'SESS-0001-x.md'), serializeCase({ ...c1, id: 'eee5555eeee', displayId: 'SESS-0001' }));
+    await gitInit(repoPath);
+
+    const { workspaces } = await openRepo(repoPath);
+    const { tree } = await loadRepo(repoPath, workspaces);
+    const wsNode = tree[0];
+    expect(wsNode.type === 'suite' && wsNode.prefix).toBe('PAY'); // workspace root carries its prefix
+    if (wsNode.type === 'suite') {
+      const sessions = wsNode.children.find((n) => n.type === 'suite');
+      expect(sessions && sessions.type === 'suite' && sessions.prefix).toBe('SESS'); // suite override
+    }
+
+    await fsp.rm(repoPath, { recursive: true, force: true });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Migration: legacy casewright.yaml/_suite.md → config + folder notes, space
+// folders renamed to wiki-safe slugs; idempotent on re-open.
+// ---------------------------------------------------------------------------
+describe('migration (legacy → config + folder notes)', () => {
+  const read = (p: string) => node.fsp().readFile(p, 'utf8');
+  const exists = (p: string) =>
+    node
+      .fsp()
+      .stat(p)
+      .then(() => true)
+      .catch(() => false);
+
+  it('converts markers + _suite.md, renames space folders, and re-opens as a no-op', async () => {
+    const fsp = node.fsp();
+    const path = node.path();
+    const repoPath = await mkRepo('cw-migrate-');
+    await fsp.mkdir(path.join(repoPath, '.casewright'), { recursive: true });
+    await fsp.writeFile(path.join(repoPath, '.casewright', 'config.yaml'), 'version: 1\n'); // no workspaces yet
+
+    const ws = path.join(repoPath, 'areas', 'payments');
+    await fsp.mkdir(path.join(ws, 'User Management'), { recursive: true }); // a space-named folder
+    await fsp.mkdir(path.join(ws, 'Auth'), { recursive: true });
+    await fsp.writeFile(path.join(ws, 'casewright.yaml'), 'name: Payments QA\ndisplayIdPrefix: PAY\ndescription: Billing.\n');
+    await fsp.writeFile(path.join(ws, 'User Management', '_suite.md'), '---\ntitle: User Mgmt\ndescription: Manage users.\n---\n');
+    await fsp.writeFile(path.join(ws, 'User Management', 'PAY-0001-x.md'), serializeCase({ ...c1, id: 'fff6666ffff', displayId: 'PAY-0001' }));
+    await gitInit(repoPath);
+
+    // First open migrates the repo.
+    const opened = await openRepo(repoPath);
+    expect(opened.workspaces.map((w) => w.path)).toEqual(['areas/payments']);
+    expect(opened.workspaces[0]).toMatchObject({ name: 'Payments QA', prefix: 'PAY' });
+
+    // config.yaml now lists the workspace; the workspace folder note was written.
+    expect(await read(path.join(repoPath, '.casewright', 'config.yaml'))).toMatch(/workspaces:\n {2}- areas\/payments/);
+    const wsNote = await read(path.join(repoPath, 'areas', 'payments.md'));
+    expect(wsNote).toMatch(/name: Payments QA/);
+    expect(wsNote).toMatch(/displayIdPrefix: PAY/);
+
+    // The space-named folder was renamed; its note preserves the friendly display name.
+    expect(await exists(path.join(ws, 'User Management'))).toBe(false);
+    expect(await exists(path.join(ws, 'User-Management'))).toBe(true);
+    expect(await read(path.join(ws, 'User-Management.md'))).toMatch(/name: User Mgmt/);
+
+    // Legacy files are deleted once converted.
+    expect(await exists(path.join(ws, 'casewright.yaml'))).toBe(false);
+    expect(await exists(path.join(ws, 'User-Management', '_suite.md'))).toBe(false);
+
+    // Loads correctly: the suite shows its display name and keeps its case.
+    const { tree, cases } = await loadRepo(repoPath, opened.workspaces);
+    const wsNode = tree[0];
+    expect(wsNode.type === 'suite' && wsNode.children.some((n) => n.type === 'suite' && n.name === 'User Mgmt')).toBe(true);
+    expect(cases.some((c) => c.displayId === 'PAY-0001')).toBe(true);
+
+    // Re-opening is a no-op (no further 'migrated' warning).
+    const again = await openRepo(repoPath);
+    expect(again.warnings.some((w) => w.code === 'migrated')).toBe(false);
 
     await fsp.rm(repoPath, { recursive: true, force: true });
   });

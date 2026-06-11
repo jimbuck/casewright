@@ -9,13 +9,32 @@ export function randomId(len = 11): string {
   return len === 11 ? gen11() : customAlphabet(ALPHABET, len)();
 }
 
-/** Filename-safe slug from a title. */
+/** Filename-safe slug from a title (lowercase, truncated) — used for stable tree ids. */
 export function slug(s: string): string {
   return (s || '')
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/(^-|-$)/g, '')
     .slice(0, 48);
+}
+
+/**
+ * Wiki/filesystem-safe folder name (and its matching `<name>.md` folder-note filename)
+ * from a display name. Unlike {@link slug} (used for ids), this **preserves case** and
+ * most characters. It follows the Azure DevOps wiki encoding so a folder + its sibling
+ * `<name>.md` render as one page with the right title:
+ *   - a literal `-` becomes `%2D` (AzDO reads a bare `-` as an encoded space, so a real
+ *     hyphen must be escaped) — e.g. `"PAY-0042"` → `"PAY%2D0042"`;
+ *   - spaces become the separator `-` — e.g. `"User Management"` → `"User-Management"`;
+ *   - filesystem/wiki-illegal characters are dropped.
+ */
+export function folderSlug(name: string): string {
+  return (name || '')
+    .trim()
+    .replace(/-/g, '%2D')
+    .replace(/[/\\:*?"<>|]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/^-+|-+$/g, '');
 }
 
 /** A `YYYY-MM-DD HH:MM` timestamp for the current moment (run `executed_at`). */

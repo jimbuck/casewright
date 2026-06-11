@@ -14,6 +14,18 @@ describe('ConfigYamlSchema', () => {
   it('preserves unknown keys (looseObject)', () => {
     expect(ConfigYamlSchema.parse({ version: 1, future: 'x' })).toMatchObject({ future: 'x' });
   });
+
+  it('defaults workspaces to [] and accepts a list (+ root metadata fields)', () => {
+    expect(ConfigYamlSchema.parse({}).workspaces).toEqual([]);
+    const p = ConfigYamlSchema.parse({ workspaces: ['areas/payments', '.'], displayIdPrefix: 'RT', description: 'root' });
+    expect(p.workspaces).toEqual(['areas/payments', '.']);
+    expect(p.displayIdPrefix).toBe('RT');
+    expect(p.description).toBe('root');
+  });
+
+  it('coerces a malformed workspaces value to [] instead of throwing', () => {
+    expect(ConfigYamlSchema.parse({ workspaces: 'nope' }).workspaces).toEqual([]);
+  });
 });
 
 describe('WorkspaceYamlSchema', () => {

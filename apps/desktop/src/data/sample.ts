@@ -335,6 +335,10 @@ export const trees: Record<string, TreeNode[]> = {
           id: 'sessions',
           name: 'Sessions',
           path: 'Authentication/Sessions',
+          // A suite-level prefix override + description → this suite gets a folder note,
+          // and new cases under it are numbered SESS-NNNN (inheritance demo).
+          prefix: 'SESS',
+          description: 'Session lifecycle, idle timeout, and re-authentication.',
           children: [{ type: 'case', id: '7b22aa90d1' }],
         },
       ],
@@ -374,10 +378,12 @@ export const trees: Record<string, TreeNode[]> = {
       ],
     },
     {
+      // A multi-word display name → the folder is the wiki-safe slug `Team-Invites`, with a
+      // folder note (`Team-Invites.md`) recording the friendly "Team Invites" display name.
       type: 'suite',
       id: 'invites',
-      name: 'Invites',
-      path: 'Invites',
+      name: 'Team Invites',
+      path: 'Team-Invites',
       children: [{ type: 'case', id: 'a3b4c5d6e7' }],
     },
   ],

@@ -36,30 +36,47 @@ function StatCount({ label, n, dot }: { label: string; n: number; dot?: string }
   );
 }
 
-/** Editable casewright.yaml settings (commits on blur; Name + prefix can't be saved blank). */
-function WorkspaceSettings({ ws }: { ws: Workspace }) {
-  const { updateWorkspace } = useApp();
-  const [name, setName] = useState(ws.name);
-  const [description, setDescription] = useState(ws.description);
-  const [prefix, setPrefix] = useState(ws.prefix);
+/**
+ * Editable metadata for a workspace OR a suite, persisted to its (optional, lazy) sibling
+ * folder note (`<folder>.md`). Commits on blur. A workspace's Name + prefix are required
+ * (revert when blank); a suite's prefix is optional — blank means "inherit from the parent".
+ */
+function FolderSettings({ node, ws }: { node: SuiteNode; ws: Workspace | null }) {
+  const { updateWorkspace, updateSuite, resolveSuitePrefix } = useApp();
+  const isWs = !!node.isWorkspace && !!ws;
 
-  // resync when the workspace changes underneath us (e.g. reload / switching)
+  const init = isWs && ws
+    ? { name: ws.name, description: ws.description, prefix: ws.prefix }
+    : { name: node.name, description: node.description ?? '', prefix: node.prefix ?? '' };
+  const [name, setName] = useState(init.name);
+  const [description, setDescription] = useState(init.description);
+  const [prefix, setPrefix] = useState(init.prefix);
+
+  // resync when the selected node / workspace changes underneath us (reload, switching)
   useEffect(() => {
-    setName(ws.name);
-    setDescription(ws.description);
-    setPrefix(ws.prefix);
-  }, [ws.id, ws.name, ws.description, ws.prefix]);
+    setName(init.name);
+    setDescription(init.description);
+    setPrefix(init.prefix);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [node.id, ws?.id, init.name, init.description, init.prefix]);
 
-  const commit = (patch: Partial<Workspace>) => updateWorkspace(ws.id, patch);
-  // Required fields revert to the saved value when left blank (PRD §4 req 15).
-  const commitName = () => (name.trim() ? commit({ name: name.trim() }) : setName(ws.name));
-  const commitPrefix = () => (prefix.trim() ? commit({ prefix: prefix.trim() }) : setPrefix(ws.prefix));
+  const commit = (patch: { name?: string; description?: string; prefix?: string }) =>
+    isWs && ws ? updateWorkspace(ws.id, patch) : updateSuite(node.id, patch);
+  const commitName = () => (name.trim() ? commit({ name: name.trim() }) : setName(init.name));
+  // Workspace prefix is required (revert when blank); a suite's blank prefix clears the
+  // override so it inherits from an ancestor.
+  const commitPrefix = () =>
+    isWs ? (prefix.trim() ? commit({ prefix: prefix.trim() }) : setPrefix(init.prefix)) : commit({ prefix: prefix.trim() });
+
+  const inherited = resolveSuitePrefix(node.id);
+  const effectivePrefix = prefix.trim() || (isWs ? 'CW' : inherited);
+  const notePath = isWs ? (ws?.path ? `${ws.path}.md` : '.casewright/config.yaml') : `${node.path}.md`;
 
   return (
     <section className="rounded-lg border border-border bg-panel-2">
       <div className="flex items-center gap-2.5 border-b border-border px-4 py-3">
-        <span className="text-[11px] font-bold uppercase tracking-[0.06em] text-ink-2">Workspace settings</span>
-        <span className="font-mono text-[11px] text-ink-faint">{ws.path ? `${ws.path}/` : ''}casewright.yaml</span>
+        <span className="text-[11px] font-bold uppercase tracking-[0.06em] text-ink-2">{isWs ? 'Workspace settings' : 'Suite settings'}</span>
+        <span className="font-mono text-[11px] text-ink-faint">{notePath}</span>
       </div>
       <div className="flex flex-col gap-3.5 p-4">
         <Field label="Name">
@@ -69,17 +86,26 @@ function WorkspaceSettings({ ws }: { ws: Workspace }) {
           <Textarea
             rows={2}
             value={description}
-            placeholder="What this workspace is for…"
+            placeholder={isWs ? 'What this workspace is for…' : 'What this suite covers…'}
             onChange={(e) => setDescription(e.target.value)}
             onBlur={() => commit({ description })}
           />
         </Field>
         <Field label="Display ID prefix">
-          <Input mono value={prefix} placeholder="PAY" onChange={(e) => setPrefix(e.target.value)} onBlur={commitPrefix} />
+          <Input
+            mono
+            value={prefix}
+            placeholder={isWs ? 'PAY' : inherited}
+            onChange={(e) => setPrefix(e.target.value)}
+            onBlur={commitPrefix}
+          />
         </Field>
         <div className="text-[11.5px] text-ink-faint">
-          New cases here are numbered <span className="font-mono">{prefix || 'CW'}-NNNN</span>; runs are stored centrally in{' '}
-          <span className="font-mono">.casewright/runs/</span>.
+          New cases here are numbered <span className="font-mono">{effectivePrefix}-NNNN</span>
+          {!isWs && !prefix.trim() && (
+            <> (inherited from <span className="font-mono">{inherited}</span>)</>
+          )}
+          ; runs are stored centrally in <span className="font-mono">.casewright/runs/</span>.
         </div>
       </div>
     </section>
@@ -138,7 +164,7 @@ export function SuiteSummary() {
 
       <div className="min-h-0 flex-1 overflow-auto">
         <div className="mx-auto flex max-w-[820px] flex-col gap-6 px-[26px] py-[26px]">
-          {isWorkspace && ws && <WorkspaceSettings ws={ws} />}
+          <FolderSettings node={node} ws={ws} />
 
           <section>
             <div className="mb-2.5 flex items-center gap-2">

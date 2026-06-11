@@ -10,6 +10,19 @@ describe('serializeConfigYaml', () => {
   it('omits a blank name', () => {
     expect(serializeConfigYaml({ version: 1, name: '   ' })).toBe('version: 1\n');
   });
+
+  it('emits a workspaces block (and omits it when empty)', () => {
+    expect(serializeConfigYaml({ version: 1, name: 'QA', workspaces: ['areas/payments', 'areas/onboarding'] })).toBe(
+      'version: 1\nname: QA\nworkspaces:\n  - areas/payments\n  - areas/onboarding\n',
+    );
+    expect(serializeConfigYaml({ version: 1, workspaces: [] })).toBe('version: 1\n');
+  });
+
+  it('emits root-workspace metadata (displayIdPrefix + description) when present', () => {
+    expect(serializeConfigYaml({ version: 1, name: 'Root', displayIdPrefix: 'RT', description: 'the root', workspaces: ['.'] })).toBe(
+      'version: 1\nname: Root\ndisplayIdPrefix: RT\ndescription: the root\nworkspaces:\n  - .\n',
+    );
+  });
 });
 
 describe('CASEWRIGHT_GITIGNORE', () => {

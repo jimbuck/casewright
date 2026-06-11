@@ -37,8 +37,13 @@ export interface Case {
 export interface SuiteNode {
   type: 'suite';
   id: string;
+  /** Display name (from the optional folder note, else the folder basename). */
   name: string;
   path: string;
+  /** This folder note's own display-ID prefix override (absent = inherit from an ancestor). */
+  prefix?: string;
+  /** This folder note's description (markdown body), when set. */
+  description?: string;
   children: TreeNode[];
   /** True for a workspace root folder (top-level in the tree; not draggable/renamable). */
   isWorkspace?: boolean;
