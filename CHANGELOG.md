@@ -2,6 +2,13 @@
 
 All notable changes to Casewright. Generated automatically from Conventional Commits — do not edit by hand.
 
+# [0.4.0](https://github.com/jimbuck/casewright/compare/v0.3.1...v0.4.0) (2026-06-11)
+
+
+### Features
+
+* enhance suite and workspace management with folder notes and slugging ([89fbd55](https://github.com/jimbuck/casewright/commit/89fbd550bbe458ccf1915993556dee84dac2b461))
+
 ## [0.3.1](https://github.com/jimbuck/casewright/compare/v0.3.0...v0.3.1) (2026-06-10)
 
 
