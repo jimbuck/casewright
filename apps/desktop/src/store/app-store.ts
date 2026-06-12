@@ -37,6 +37,9 @@ import type { LintWarning } from '@/schemas';
 import { folderSlug, nowStamp, randomId, slug } from '@/utils/ids';
 import { buildRunSummary, deriveItems, serializeRunSummary } from '@/utils/run-items';
 import { isNwjs, openExternal, pickDirectory } from '@/lib/nwjs';
+import { groupRunBySuite } from '@/services/report/suite-grouping';
+import { exportRunReport } from '@/services/report/run-report';
+import type { RunReportModel } from '@/services/report/run-report-html';
 import { downloadInstaller, fetchLatestUpdate, isInstalledBuild, runInstallerAndQuit } from '@/services/updater';
 import type {
   Approval,
@@ -193,6 +196,8 @@ export interface AppState {
   setRunApproval: (runId: string, who: 'tester' | 'reviewer', name: string) => void;
   /** Create a fresh run from an existing one: copy cases, reset results/checks/approvals. */
   rerunRun: (runId: string) => void;
+  /** Render a single run to a PDF report the user picks a destination for (NW.js only). */
+  exportRunToPdf: (runId: string) => Promise<void>;
   lastTester: string;
   setLastTester: (v: string) => void;
 
@@ -1524,6 +1529,41 @@ export const useAppStore = create<AppState>()((set, get) => {
       upsertChange({ kind: 'run', refId: run.id, path: run.file, status: 'A', label: run.name });
       writeWholeRun(run);
       get().toast(`Rerun created · ${rows.length} cases reset`);
+    },
+
+    exportRunToPdf: async (runId) => {
+      const { runs, cases, tree, repoPath } = get();
+      const run = runs.find((r) => r.id === runId);
+      if (!run) return;
+      if (!isNwjs()) {
+        get().toast('PDF export needs the desktop app');
+        return;
+      }
+      const model: RunReportModel = {
+        runName: run.name,
+        status: run.status,
+        created: run.created,
+        testDate: run.testDate ?? run.created,
+        repoName: baseName(repoPath),
+        generatedAt: nowStamp(),
+        summary: buildRunSummary(run, cases),
+        suites: groupRunBySuite(run, cases, tree),
+        testerApproval: run.testerApproval,
+        reviewerApproval: run.reviewerApproval,
+      };
+      get().toast('Generating PDF…');
+      try {
+        const res = await exportRunReport(model);
+        if (res.ok && res.path) {
+          get().toast('PDF saved');
+          // Open the saved PDF in the OS default viewer.
+          openExternal('file:///' + res.path.replace(/\\/g, '/').replace(/^\/+/, ''));
+        } else if (res.reason !== 'cancelled') {
+          get().toast('Could not generate PDF');
+        }
+      } catch {
+        get().toast('Could not generate PDF');
+      }
     },
 
     setLastTester: (v) => set({ lastTester: v }),

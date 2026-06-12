@@ -1,5 +1,5 @@
 import { I } from '@/components/icons';
-import { Button, RES, Tag } from '@/components/ui';
+import { Button, RES, RowContextMenu, Tag } from '@/components/ui';
 import { cn } from '@/lib/utils';
 import { useApp } from '@/store/app-store';
 import type { Result, RunRow } from '@/types';
@@ -36,8 +36,11 @@ export function RunsList() {
             const t = tally(run.rows);
             const total = run.rows.length;
             return (
-              <button
+              <RowContextMenu
                 key={run.id}
+                items={[{ label: 'Export PDF…', icon: I.download, on: () => ctx.exportRunToPdf(run.id) }]}
+              >
+              <button
                 className="flex items-center gap-4 rounded-lg border border-border bg-panel px-[18px] py-[15px] text-left transition hover:border-accent-line hover:shadow-[0_2px_8px_var(--shadow)]"
                 onClick={() => openRun(run.id)}
               >
@@ -62,6 +65,7 @@ export function RunsList() {
                 </div>
                 <span className="grid place-items-center text-ink-faint">{I.chevron({ size: 16 })}</span>
               </button>
+              </RowContextMenu>
             );
           })}
         </div>

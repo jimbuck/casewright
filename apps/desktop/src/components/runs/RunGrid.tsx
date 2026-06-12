@@ -153,6 +153,9 @@ export function RunGrid() {
           <Button variant="ghost" onClick={() => ctx.rerunRun(run.id)} title="Create a fresh run from this one">
             {I.sync({ size: 13 })} Rerun
           </Button>
+          <Button variant="ghost" onClick={() => ctx.exportRunToPdf(run.id)} title="Export this run as a PDF report">
+            {I.download({ size: 13 })} Export PDF
+          </Button>
           <Button variant="primary" onClick={() => ctx.startGuide(run.id, firstUnrun(run))}>
             {I.play({ size: 13 })} Start testing
           </Button>

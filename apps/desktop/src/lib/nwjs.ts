@@ -2,6 +2,18 @@
  * Thin, typed access to the NW.js window APIs, with graceful fallbacks so the
  * app still runs in a plain browser (dev preview, tests) where `nw` is absent.
  */
+/** Options for NW.js's headless print-to-PDF (`win.print`). */
+export interface NwPrintOptions {
+  /** Destination path — when set, prints silently to this PDF instead of a printer. */
+  pdf_path: string;
+  headerFooterEnabled?: boolean;
+  landscape?: boolean;
+  /** 0 default · 1 none · 2 minimum. */
+  marginsType?: 0 | 1 | 2;
+  shouldPrintBackgrounds?: boolean;
+  scaleFactor?: number;
+}
+
 export interface NwWindow {
   minimize(): void;
   maximize(): void;
@@ -10,12 +22,22 @@ export interface NwWindow {
   close(force?: boolean): void;
   reload(): void;
   showDevTools?(): void;
+  print(options: NwPrintOptions): void;
   on(event: string, listener: () => void): void;
   removeAllListeners(event: string): void;
 }
 
+interface NwWinOpenOptions {
+  show?: boolean;
+  focus?: boolean;
+  new_instance?: boolean;
+}
+
 interface NwGlobal {
-  Window: { get(): NwWindow };
+  Window: {
+    get(): NwWindow;
+    open(url: string, options: NwWinOpenOptions, cb: (win: NwWindow) => void): void;
+  };
   App?: { dataPath: string; argv: string[]; quit?(): void };
   Shell?: { openExternal(uri: string): void };
   require?: NodeRequire;
@@ -105,4 +127,102 @@ export function pickDirectory(): Promise<string | null> {
 function pathOf(input: HTMLInputElement): string | null {
   const file = input.files?.[0] as (File & { path?: string }) | undefined;
   return file?.path ?? (input.value || null);
+}
+
+/**
+ * Prompt the user for a save destination via NW.js's `<input nwsaveas>`.
+ * Resolves to the absolute path, or `null` if cancelled / not in NW.js.
+ * Mirrors {@link pickDirectory}, including its focus-based cancel detection.
+ */
+export function saveFile(defaultName: string): Promise<string | null> {
+  return new Promise((resolve) => {
+    if (typeof document === 'undefined') {
+      resolve(null);
+      return;
+    }
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.setAttribute('nwsaveas', defaultName);
+    input.style.display = 'none';
+
+    let settled = false;
+    // The dialog blurs the window when it opens; only a refocus *after* that means it
+    // closed. Without this gate, a spurious focus right after click() cancels the very
+    // first export (the window's focus isn't yet "warm"), so it silently no-ops until
+    // a second try.
+    let armed = false;
+    const finish = (value: string | null) => {
+      if (settled) return;
+      settled = true;
+      window.removeEventListener('focus', onFocus);
+      window.removeEventListener('blur', onBlur);
+      input.remove();
+      resolve(value);
+    };
+    const onBlur = () => {
+      armed = true;
+    };
+    // `<input type=file>` fires no event on cancel — detect it via the post-open refocus.
+    const onFocus = () => {
+      if (!armed) return;
+      setTimeout(() => finish(input.files?.length ? pathOf(input) : null), 350);
+    };
+
+    input.onchange = () => finish(pathOf(input));
+    window.addEventListener('blur', onBlur);
+    window.addEventListener('focus', onFocus);
+    document.body.appendChild(input);
+    input.click();
+  });
+}
+
+/**
+ * Render `url` to a PDF at `pdfPath` using NW.js's native print-to-PDF: open a hidden
+ * window, wait for it to finish loading, print it, then close. Resolves once the PDF is
+ * written. Rejects (and still closes the window) on error or a 15s timeout.
+ */
+export function printToPdf(url: string, pdfPath: string, opts: Partial<NwPrintOptions> = {}): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const nw = window.nw;
+    if (!nw) {
+      reject(new Error('Not in NW.js'));
+      return;
+    }
+    nw.Window.open(url, { show: false, focus: false }, (win) => {
+      let settled = false;
+      const done = (err?: Error) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        try {
+          win.close(true);
+        } catch {
+          /* window may already be gone */
+        }
+        if (err) reject(err);
+        else resolve();
+      };
+      // Guard against a window that never fires `loaded` (or a hung print).
+      const timer = setTimeout(() => done(new Error('PDF render timed out')), 15000);
+      // Print only after the document has fully loaded — printing earlier yields a blank page.
+      win.on('loaded', () => {
+        try {
+          win.print({
+            pdf_path: pdfPath,
+            headerFooterEnabled: false,
+            // 0 = Chromium's default margins. These repeat on every page (unlike a CSS
+            // `@page` margin, which this print path ignores) so multi-page reports stay
+            // padded. `1` (no margins) prints edge-to-edge.
+            marginsType: 0,
+            shouldPrintBackgrounds: true,
+            ...opts,
+          });
+          // Give Chromium a beat to finish writing the file before we close + clean up.
+          setTimeout(() => done(), 400);
+        } catch (e) {
+          done(e as Error);
+        }
+      });
+    });
+  });
 }
