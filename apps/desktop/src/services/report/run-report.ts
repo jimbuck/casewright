@@ -13,6 +13,8 @@ export interface ExportResult {
   ok: boolean;
   /** Absolute path of the written PDF, when `ok`. */
   path?: string;
+  /** A `file://` URL for the written PDF (properly encoded), for opening it, when `ok`. */
+  url?: string;
   reason?: ExportReason;
 }
 
@@ -36,19 +38,21 @@ export async function exportRunReport(model: RunReportModel): Promise<ExportResu
   const dest = await saveFile(defaultFileName(model.runName));
   if (!dest) return { ok: false, reason: 'cancelled' };
 
-  const fsp = node.fsp();
-  const path = node.path();
-  const tmp = path.join(node.os().tmpdir(), `casewright-report-${Date.now()}.html`);
-
+  // Keep the Node setup inside the try so a runtime-require failure surfaces as { ok: false }
+  // rather than a rejected promise.
+  let fsp: ReturnType<typeof node.fsp> | undefined;
+  let tmp: string | undefined;
   try {
+    fsp = node.fsp();
+    const url = node.url();
+    tmp = node.path().join(node.os().tmpdir(), `casewright-report-${Date.now()}.html`);
     await fsp.writeFile(tmp, buildRunReportHtml(model), 'utf8');
-    // file:// URL via Node so Windows path separators / drive letters are handled correctly.
-    const fileUrl = node.url().pathToFileURL(tmp).href;
-    await printToPdf(fileUrl, dest);
-    return { ok: true, path: dest };
+    // file:// URLs via Node so Windows path separators / drive letters / spaces are encoded.
+    await printToPdf(url.pathToFileURL(tmp).href, dest);
+    return { ok: true, path: dest, url: url.pathToFileURL(dest).href };
   } catch {
     return { ok: false, reason: 'error' };
   } finally {
-    await fsp.rm(tmp, { force: true }).catch(() => {});
+    if (fsp && tmp) await fsp.rm(tmp, { force: true }).catch(() => {});
   }
 }

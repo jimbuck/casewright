@@ -136,7 +136,9 @@ function pathOf(input: HTMLInputElement): string | null {
  */
 export function saveFile(defaultName: string): Promise<string | null> {
   return new Promise((resolve) => {
-    if (typeof document === 'undefined') {
+    // Honor the documented contract: null when not in NW.js (dev preview / tests), rather
+    // than opening a plain browser file input.
+    if (typeof document === 'undefined' || !window.nw) {
       resolve(null);
       return;
     }

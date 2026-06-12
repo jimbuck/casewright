@@ -1556,8 +1556,8 @@ export const useAppStore = create<AppState>()((set, get) => {
         const res = await exportRunReport(model);
         if (res.ok && res.path) {
           get().toast('PDF saved');
-          // Open the saved PDF in the OS default viewer.
-          openExternal('file:///' + res.path.replace(/\\/g, '/').replace(/^\/+/, ''));
+          // Open the saved PDF in the OS default viewer (url is a properly-encoded file://).
+          if (res.url) openExternal(res.url);
         } else if (res.reason !== 'cancelled') {
           get().toast('Could not generate PDF');
         }

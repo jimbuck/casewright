@@ -97,6 +97,21 @@ describe('groupRunBySuite', () => {
     expect(unknown.cases.map((c) => c.display_id)).toEqual(['GONE-1', 'GONE-2']);
   });
 
+  it('keeps suites that share a display name separate (buckets by id, not name)', () => {
+    // Two distinct suite ids resolving to the same name — e.g. duplicate folder names
+    // across workspaces. They must not merge into one bucket.
+    const dupTree: TreeNode[] = [
+      { type: 'suite', id: 's1', name: 'Billing', path: 'a/Billing', children: [] },
+      { type: 'suite', id: 's2', name: 'Billing', path: 'b/Billing', children: [] },
+    ];
+    const run: Run = { ...baseRun, rows: [mkRow('c1', 'pass'), mkRow('c3', 'fail')] }; // c1→s1, c3→s2
+    const rows = groupRunBySuite(run, cases, dupTree);
+    expect(rows).toHaveLength(2);
+    expect(rows.map((r) => r.name)).toEqual(['Billing', 'Billing']);
+    expect(rows[0].counts).toMatchObject({ pass: 1, fail: 0 });
+    expect(rows[1].counts).toMatchObject({ pass: 0, fail: 1 });
+  });
+
   it('falls back to the raw suite id when the tree has no matching node', () => {
     const run: Run = { ...baseRun, rows: [mkRow('c1', 'pass')] };
     const rows = groupRunBySuite(run, cases, []);
