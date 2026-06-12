@@ -2,6 +2,13 @@
 
 All notable changes to Casewright. Generated automatically from Conventional Commits — do not edit by hand.
 
+# [0.6.0](https://github.com/jimbuck/casewright/compare/v0.5.0...v0.6.0) (2026-06-12)
+
+
+### Features
+
+* **runs:** add duplicate and delete actions for runs ([dd9f671](https://github.com/jimbuck/casewright/commit/dd9f67120e723550ebd2492e28c216338866b907))
+
 # [0.5.0](https://github.com/jimbuck/casewright/compare/v0.4.0...v0.5.0) (2026-06-12)
 
 
