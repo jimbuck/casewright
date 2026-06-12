@@ -2,6 +2,13 @@
 
 All notable changes to Casewright. Generated automatically from Conventional Commits — do not edit by hand.
 
+# [0.5.0](https://github.com/jimbuck/casewright/compare/v0.4.0...v0.5.0) (2026-06-12)
+
+
+### Features
+
+* **runs:** export a test run to a PDF report ([#8](https://github.com/jimbuck/casewright/issues/8)) ([3ec5eeb](https://github.com/jimbuck/casewright/commit/3ec5eeb264fb90c1b3c8136946a903835875d400))
+
 # [0.4.0](https://github.com/jimbuck/casewright/compare/v0.3.1...v0.4.0) (2026-06-11)
 
 
