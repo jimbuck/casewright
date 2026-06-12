@@ -257,11 +257,6 @@ export function CaseEditor() {
             onChange={(v) => patch({ expected: v })}
             placeholder="Expected outcome…"
           />
-          <div className="flex items-center gap-[7px] rounded-md border border-dashed border-border-2 bg-panel-2 px-3 py-[9px] text-[12px] text-ink-3">
-            {I.check({ size: 14 })} Round-trips to five reserved <span className="font-mono">##</span> sections · inline
-            formatting only · <span className="font-mono">{'{{today}}'}</span> variables resolve at run time · single trailing
-            newline.
-          </div>
         </div>
       </div>
 
