@@ -194,8 +194,10 @@ export interface AppState {
   setRunNotes: (runId: string, notes: string) => void;
   /** Save (name + now) or clear (empty name → null) a tester/reviewer approval. */
   setRunApproval: (runId: string, who: 'tester' | 'reviewer', name: string) => void;
-  /** Create a fresh run from an existing one: copy cases, reset results/checks/approvals. */
-  rerunRun: (runId: string) => void;
+  /** Duplicate a run: copy its cases into a fresh run with results/checks/approvals reset. */
+  duplicateRun: (runId: string) => void;
+  /** Delete a run — removes its whole folder from disk, after confirming. */
+  deleteRun: (runId: string) => Promise<void>;
   /** Render a single run to a PDF report the user picks a destination for (NW.js only). */
   exportRunToPdf: (runId: string) => Promise<void>;
   lastTester: string;
@@ -1488,10 +1490,10 @@ export const useAppStore = create<AppState>()((set, get) => {
       }
     },
 
-    rerunRun: (runId) => {
+    duplicateRun: (runId) => {
       const src = get().runs.find((r) => r.id === runId);
       if (!src) return;
-      const name = `${src.name} (rerun)`;
+      const name = `${src.name} (copy)`;
       const date = new Date().toISOString().slice(0, 10);
       const dir = relJoin(RUNS_REL, runFileStem(name, date));
       const rows: RunRow[] = src.rows.map((r, i) => {
@@ -1528,7 +1530,34 @@ export const useAppStore = create<AppState>()((set, get) => {
       set((s) => ({ runs: [run, ...s.runs], sel: { ...s.sel, kind: 'run', runId: run.id, guideIndex: 0 }, view: 'run' }));
       upsertChange({ kind: 'run', refId: run.id, path: run.file, status: 'A', label: run.name });
       writeWholeRun(run);
-      get().toast(`Rerun created · ${rows.length} cases reset`);
+      get().toast(`Run duplicated · ${rows.length} cases reset`);
+    },
+
+    deleteRun: async (runId) => {
+      const run = get().runs.find((r) => r.id === runId);
+      if (!run) return;
+      if (
+        !(await get().confirm({
+          title: `Delete run "${run.name}"?`,
+          message: 'This removes the run and all its recorded results from disk.',
+          confirmLabel: 'Delete',
+          danger: true,
+        }))
+      )
+        return;
+      set((s) => {
+        // If the deleted run was open (run view / guide), drop back to the runs list.
+        const wasActive = s.sel.runId === runId;
+        return {
+          runs: s.runs.filter((r) => r.id !== runId),
+          sel: wasActive ? { ...s.sel, runId: null, guideIndex: undefined } : s.sel,
+          view: wasActive && (s.view === 'run' || s.view === 'guide') ? 'runs' : s.view,
+        };
+      });
+      upsertChange({ kind: 'run', refId: runId, path: run.file, status: 'D', label: run.name });
+      const rp = get().repoPath;
+      if (rp) void deletePath(rp, run.file).then(scheduleRefresh).catch(onWriteError);
+      get().toast(`Deleted run "${run.name}"`);
     },
 
     exportRunToPdf: async (runId) => {

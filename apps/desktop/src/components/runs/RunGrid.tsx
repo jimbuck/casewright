@@ -125,7 +125,9 @@ export function RunGrid() {
         </div>
         <div className="ml-auto flex items-center gap-[14px]">
           <div
-            className="flex h-[30px] w-[220px] overflow-hidden rounded-md border border-border"
+            // Drop the segmented bar on narrow windows so the action buttons never get clipped;
+            // the pass-rate % beside it still conveys completion.
+            className="hidden h-[30px] w-[220px] overflow-hidden rounded-md border border-border xl:flex"
             title={`${t.pass} pass · ${t.fail} fail · ${t.blocked} blocked · ${t.skipped} skipped · ${t.not_run} not run`}
           >
             {SEGS.map((s) =>
@@ -150,11 +152,14 @@ export function RunGrid() {
             </div>
             <div className="text-[10.5px] uppercase tracking-[0.05em] text-ink-faint">pass rate</div>
           </div>
-          <Button variant="ghost" onClick={() => ctx.rerunRun(run.id)} title="Create a fresh run from this one">
-            {I.sync({ size: 13 })} Rerun
-          </Button>
           <Button variant="ghost" onClick={() => ctx.exportRunToPdf(run.id)} title="Export this run as a PDF report">
             {I.download({ size: 13 })} Export PDF
+          </Button>
+          <Button variant="ghost" onClick={() => ctx.duplicateRun(run.id)} title="Copy this run into a fresh one with results reset">
+            {I.copy({ size: 13 })} Duplicate
+          </Button>
+          <Button variant="danger" onClick={() => ctx.deleteRun(run.id)} title="Delete this run and its results">
+            {I.trash({ size: 13 })} Delete
           </Button>
           <Button variant="primary" onClick={() => ctx.startGuide(run.id, firstUnrun(run))}>
             {I.play({ size: 13 })} Start testing

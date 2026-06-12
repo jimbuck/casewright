@@ -38,7 +38,12 @@ export function RunsList() {
             return (
               <RowContextMenu
                 key={run.id}
-                items={[{ label: 'Export PDF…', icon: I.download, on: () => ctx.exportRunToPdf(run.id) }]}
+                items={[
+                  { label: 'Duplicate', icon: I.copy, on: () => ctx.duplicateRun(run.id) },
+                  { label: 'Export PDF…', icon: I.download, on: () => ctx.exportRunToPdf(run.id) },
+                  { sep: true },
+                  { label: 'Delete', icon: I.trash, danger: true, on: () => ctx.deleteRun(run.id) },
+                ]}
               >
               <button
                 className="flex items-center gap-4 rounded-lg border border-border bg-panel px-[18px] py-[15px] text-left transition hover:border-accent-line hover:shadow-[0_2px_8px_var(--shadow)]"
