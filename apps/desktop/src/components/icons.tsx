@@ -70,6 +70,13 @@ export const I = {
       <path d="M14 3v4h4" />
     </Icon>
   ),
+  download: (p?: IconProps) => (
+    <Icon {...p}>
+      <path d="M12 4v11" />
+      <path d="M7 11l5 4 5-4" />
+      <path d="M5 20h14" />
+    </Icon>
+  ),
   search: (p?: IconProps) => (
     <Icon {...p}>
       <circle cx="11" cy="11" r="7" />

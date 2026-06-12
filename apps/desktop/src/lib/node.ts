@@ -17,6 +17,7 @@ import type * as papa from 'papaparse';
 type Fsp = typeof import('node:fs/promises');
 type PathMod = typeof import('node:path');
 type OsMod = typeof import('node:os');
+type UrlMod = typeof import('node:url');
 type ChildProc = typeof import('node:child_process');
 
 export class NotInNwjsError extends Error {
@@ -58,6 +59,7 @@ export const node = {
   fsp: () => load<Fsp>('node:fs/promises'),
   path: () => load<PathMod>('node:path'),
   os: () => load<OsMod>('node:os'),
+  url: () => load<UrlMod>('node:url'),
   childProcess: () => load<ChildProc>('node:child_process'),
   /** The `simpleGit` factory: `node.simpleGit()(repoPath)` → a SimpleGit instance. */
   simpleGit: () => load<typeof SimpleGitFactory>('simple-git'),
