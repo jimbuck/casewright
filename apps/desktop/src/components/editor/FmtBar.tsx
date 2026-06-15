@@ -26,23 +26,23 @@ export function FmtBar({ targetRef, onApply, hint = true }: FmtBarProps) {
   const prevent = (e: { preventDefault: () => void }) => e.preventDefault();
   return (
     <div className="mb-2 flex items-center gap-0.5">
-      <button className={fmtBtn} title="Bold" onMouseDown={prevent} onClick={() => apply('**', '**')}>
+      <button className={fmtBtn} title="Bold (Ctrl+B)" onMouseDown={prevent} onClick={() => apply('**', '**')}>
         {I.bold({ size: 15 })}
       </button>
-      <button className={fmtBtn} title="Italic" onMouseDown={prevent} onClick={() => apply('*', '*')}>
+      <button className={fmtBtn} title="Italic (Ctrl+I)" onMouseDown={prevent} onClick={() => apply('*', '*')}>
         {I.italic({ size: 15 })}
       </button>
-      <button className={fmtBtn} title="Strikethrough" onMouseDown={prevent} onClick={() => apply('~~', '~~')}>
+      <button className={fmtBtn} title="Strikethrough (Ctrl+Shift+X)" onMouseDown={prevent} onClick={() => apply('~~', '~~')}>
         {I.strike({ size: 15 })}
       </button>
       <span className="mx-1 h-4 w-px bg-border" />
-      <button className={fmtBtn} title="Inline code" onMouseDown={prevent} onClick={() => apply('`', '`')}>
+      <button className={fmtBtn} title="Inline code (Ctrl+E)" onMouseDown={prevent} onClick={() => apply('`', '`')}>
         {I.code({ size: 15 })}
       </button>
-      <button className={fmtBtn} title="Link" onMouseDown={prevent} onClick={() => apply('[', '](https://)')}>
+      <button className={fmtBtn} title="Link (Ctrl+K)" onMouseDown={prevent} onClick={() => apply('[', '](https://)')}>
         {I.link({ size: 15 })}
       </button>
-      {hint && <span className="ml-auto text-[11px] text-ink-faint">inline only — bold, italic, strike, code, links</span>}
+      {hint && <span className="ml-auto text-[11px] text-ink-faint">markdown — lists, quotes, code blocks &amp; inline formatting</span>}
     </div>
   );
 }

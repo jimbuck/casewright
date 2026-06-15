@@ -23,6 +23,32 @@ export const ContextMenuContent = React.forwardRef<
 ));
 ContextMenuContent.displayName = ContextMenuPrimitive.Content.displayName;
 
+export const ContextMenuItem = React.forwardRef<
+  React.ElementRef<typeof ContextMenuPrimitive.Item>,
+  React.ComponentPropsWithoutRef<typeof ContextMenuPrimitive.Item> & { danger?: boolean }
+>(({ className, danger, ...props }, ref) => (
+  <ContextMenuPrimitive.Item
+    ref={ref}
+    className={cn(
+      'group flex w-full cursor-pointer items-center gap-[9px] rounded-sm px-[9px] py-1.5 text-left text-[12.5px] outline-none',
+      danger
+        ? 'text-fail data-[highlighted]:bg-fail-soft data-[highlighted]:text-fail'
+        : 'text-ink data-[highlighted]:bg-accent-soft data-[highlighted]:text-accent-ink',
+      className,
+    )}
+    {...props}
+  />
+));
+ContextMenuItem.displayName = ContextMenuPrimitive.Item.displayName;
+
+export const ContextMenuSeparator = React.forwardRef<
+  React.ElementRef<typeof ContextMenuPrimitive.Separator>,
+  React.ComponentPropsWithoutRef<typeof ContextMenuPrimitive.Separator>
+>(({ className, ...props }, ref) => (
+  <ContextMenuPrimitive.Separator ref={ref} className={cn('mx-1.5 my-1 h-px bg-border', className)} {...props} />
+));
+ContextMenuSeparator.displayName = ContextMenuPrimitive.Separator.displayName;
+
 /**
  * A right-click context menu built from a list of `MenuItem`s, wrapping `children`
  * as the trigger. Reproduces the old `.ctx-menu` look.
@@ -34,18 +60,9 @@ export function RowContextMenu({ items, children }: { items: MenuItem[]; childre
       <ContextMenuContent>
         {items.map((it, i) =>
           it.sep ? (
-            <ContextMenuPrimitive.Separator key={i} className="mx-1.5 my-1 h-px bg-border" />
+            <ContextMenuSeparator key={i} />
           ) : (
-            <ContextMenuPrimitive.Item
-              key={i}
-              onSelect={() => it.on?.()}
-              className={cn(
-                'group flex w-full cursor-pointer items-center gap-[9px] rounded-sm px-[9px] py-1.5 text-left text-[12.5px] outline-none',
-                it.danger
-                  ? 'text-fail data-[highlighted]:bg-fail-soft data-[highlighted]:text-fail'
-                  : 'text-ink data-[highlighted]:bg-accent-soft data-[highlighted]:text-accent-ink',
-              )}
-            >
+            <ContextMenuItem key={i} danger={it.danger} onSelect={() => it.on?.()}>
               {it.icon && (
                 <span
                   className={cn(
@@ -67,7 +84,7 @@ export function RowContextMenu({ items, children }: { items: MenuItem[]; childre
                   ↗
                 </span>
               )}
-            </ContextMenuPrimitive.Item>
+            </ContextMenuItem>
           ),
         )}
       </ContextMenuContent>

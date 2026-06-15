@@ -1,11 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { I } from '@/components/icons';
 import { Button } from '@/components/ui';
 import { cn } from '@/lib/utils';
-import { renderInlineResolved } from '@/utils/markdown';
+import { editorKeyDown, renderInlineResolved, renderMarkdownResolved } from '@/utils/markdown';
 import { numberSteps } from '@/utils/steps';
 import { findVariableLint } from '@/utils/variables';
-import { useApp } from '@/store/app-store';
+import { useApp, useAppStore } from '@/store/app-store';
 import type { Case, Status } from '@/types';
 import { ListControl } from './ListControl';
 import { ObjectiveEditor } from './ObjectiveEditor';
@@ -23,6 +23,44 @@ export function CaseEditor() {
   const ctx = useApp();
   const [previewVars, setPreviewVars] = useState(false);
   const [previewDate, setPreviewDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  // Ctrl+Z / Ctrl+Y (or Ctrl+Shift+Z) → document-level undo/redo of case edits. A window listener
+  // so it works wherever focus is in the editor; native per-input undo is bypassed (our programmatic
+  // formatting edits don't feed the browser's history anyway, and undo also navigates between fields).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (useAppStore.getState().modal) return; // a modal owns its own text + native undo
+      if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+      const k = e.key.toLowerCase();
+      if (k !== 'z' && k !== 'y') return;
+      // if focus is in an editable element outside this editor, let its native undo win
+      const ae = document.activeElement;
+      const editable =
+        ae instanceof HTMLElement && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.isContentEditable);
+      if (editable && rootRef.current && !rootRef.current.contains(ae)) return;
+      e.preventDefault();
+      if (k === 'y' || e.shiftKey) ctx.redo();
+      else ctx.undo();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [ctx.undo, ctx.redo]);
+
+  // After an undo/redo lands on a case + field, scroll that section into view and focus it.
+  useEffect(() => {
+    const focus = ctx.editorFocus;
+    const root = rootRef.current;
+    if (!focus || !root) return;
+    const section = root.querySelector(`[data-edit-field="${focus.field}"]`);
+    if (!(section instanceof HTMLElement)) return;
+    section.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    const target = section.matches('input, textarea, select')
+      ? section
+      : section.querySelector('input, textarea, select');
+    if (target instanceof HTMLElement) target.focus();
+  }, [ctx.editorFocus]);
+
   const c = ctx.cases.find((x) => x.id === ctx.sel.id);
   if (!c) return null;
   const patch = (p: Partial<Case>) => ctx.updateCase(c.id, p);
@@ -50,7 +88,7 @@ export function CaseEditor() {
     .filter(Boolean);
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col bg-panel">
+    <div ref={rootRef} className="flex min-h-0 flex-1 flex-col bg-panel">
       <div className="flex flex-none items-center gap-2.5 border-b border-border bg-panel-2 px-[26px] py-[7px]">
         <span className="text-[11px] font-semibold uppercase tracking-[0.05em] text-ink-faint">Variables</span>
         <Button
@@ -82,7 +120,9 @@ export function CaseEditor() {
             className="-mx-[7px] -my-[3px] min-w-0 flex-1 rounded-md border border-transparent bg-transparent px-[7px] py-[3px] text-[21px] font-semibold tracking-[-0.01em] text-ink hover:bg-raise focus:border-accent focus:bg-panel focus:shadow-[0_0_0_3px_var(--accent-soft)] focus:outline-none"
             value={c.title}
             onChange={(e) => patch({ title: e.target.value })}
+            onKeyDown={editorKeyDown}
             placeholder="Untitled case"
+            data-edit-field="title"
           />
           <Button size="sm" variant="ghost" title="Duplicate" onClick={() => ctx.duplicateCase(c.id)}>
             {I.copy({ size: 14 })} Duplicate
@@ -101,6 +141,7 @@ export function CaseEditor() {
                 autoFocus
                 title="This ID conflicts — edit to resolve"
                 onChange={(e) => patch({ displayId: e.target.value })}
+                data-edit-field="displayId"
               />
             ) : (
               <span
@@ -126,6 +167,7 @@ export function CaseEditor() {
               )}
               value={c.status}
               onChange={(e) => patch({ status: e.target.value as Status })}
+              data-edit-field="status"
             >
               {/* color each option so the open menu shows each status in its own color,
                   rather than inheriting the select's current-status color */}
@@ -141,7 +183,7 @@ export function CaseEditor() {
             </select>
           </div>
           <span className="mx-0.5 my-1.5 w-px self-stretch bg-border" />
-          <div className="inline-flex min-w-0 flex-1 items-center gap-1.5 font-mono text-[12px]">
+          <div className="inline-flex min-w-0 flex-1 items-center gap-1.5 font-mono text-[12px]" data-edit-field="tags">
             <span className="text-ink-faint">Tags</span>
             <TagEditor tags={c.tags} onChange={(t) => patch({ tags: t })} />
           </div>
@@ -188,7 +230,7 @@ export function CaseEditor() {
               </div>
               {c.objective.trim() && (
                 <div className="font-read text-[14.5px] leading-[1.6] text-ink-2">
-                  {renderInlineResolved(c.objective, previewDate, 'pvo')}
+                  {renderMarkdownResolved(c.objective, previewDate, 'pvo')}
                 </div>
               )}
               {c.systems.length > 0 && (
@@ -205,7 +247,9 @@ export function CaseEditor() {
                   {c.setup.map((s, i) => (
                     <div key={i} className="text-[13px] text-ink-2">
                       <span className="font-semibold">{renderInlineResolved(s.name, previewDate, `pvn${i}`)}</span>
-                      {s.body.trim() && <span className="text-ink-3"> — {renderInlineResolved(s.body, previewDate, `pvb${i}`)}</span>}
+                      {s.body.trim() && (
+                        <div className="mt-0.5 text-ink-3">{renderMarkdownResolved(s.body, previewDate, `pvb${i}`)}</div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -232,31 +276,41 @@ export function CaseEditor() {
               )}
             </section>
           )}
-          <ObjectiveEditor value={c.objective} onChange={(v) => patch({ objective: v })} />
+          <div data-edit-field="objective">
+            <ObjectiveEditor value={c.objective} onChange={(v) => patch({ objective: v })} />
+          </div>
           <hr className="m-0 h-px border-0 bg-border" />
-          <ListControl
-            icon={I.layers({ size: 15 })}
-            title="Systems in Scope"
-            mark="## Systems in Scope"
-            marker="–"
-            items={c.systems}
-            onChange={(v) => patch({ systems: v })}
-            placeholder="System or component…"
-          />
+          <div data-edit-field="systems">
+            <ListControl
+              icon={I.layers({ size: 15 })}
+              title="Systems in Scope"
+              mark="## Systems in Scope"
+              marker="–"
+              items={c.systems}
+              onChange={(v) => patch({ systems: v })}
+              placeholder="System or component…"
+            />
+          </div>
           <hr className="m-0 h-px border-0 bg-border" />
-          <SetupControl items={c.setup} onChange={(v) => patch({ setup: v })} />
+          <div data-edit-field="setup">
+            <SetupControl items={c.setup} onChange={(v) => patch({ setup: v })} />
+          </div>
           <hr className="m-0 h-px border-0 bg-border" />
-          <StepsControl steps={c.steps} onChange={(v) => patch({ steps: v })} />
+          <div data-edit-field="steps">
+            <StepsControl steps={c.steps} onChange={(v) => patch({ steps: v })} />
+          </div>
           <hr className="m-0 h-px border-0 bg-border" />
-          <ListControl
-            icon={I.check({ size: 15 })}
-            title="Acceptance Criteria"
-            mark="## Acceptance Criteria"
-            marker="–"
-            items={c.expected}
-            onChange={(v) => patch({ expected: v })}
-            placeholder="Expected outcome…"
-          />
+          <div data-edit-field="expected">
+            <ListControl
+              icon={I.check({ size: 15 })}
+              title="Acceptance Criteria"
+              mark="## Acceptance Criteria"
+              marker="–"
+              items={c.expected}
+              onChange={(v) => patch({ expected: v })}
+              placeholder="Expected outcome…"
+            />
+          </div>
         </div>
       </div>
 

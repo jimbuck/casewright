@@ -169,6 +169,11 @@ export interface AppState {
 
   /* case + suite mutations */
   updateCase: (id: string, patch: Partial<Case>) => void;
+  /** Undo / redo the case content-edit history (Ctrl+Z / Ctrl+Y), navigating to the changed case + field. */
+  undo: () => void;
+  redo: () => void;
+  /** A pulse asking the editor to scroll/focus a field after an undo/redo lands there (nonce retriggers). */
+  editorFocus: { field: string; nonce: number } | null;
   duplicateCase: (id: string) => void;
   deleteCase: (id: string) => Promise<void>;
   createCase: (parentSuiteId: string | null) => void;
@@ -455,6 +460,54 @@ export const useAppStore = create<AppState>()((set, get) => {
     } catch (e) {
       onWriteError(e);
     }
+  };
+
+  /* ---- undo / redo history (case content edits) ---- */
+  type HistoryEntry = { caseId: string; field: string; snapshot: Case };
+  const undoStack: HistoryEntry[] = [];
+  const redoStack: HistoryEntry[] = [];
+  const HISTORY_LIMIT = 200;
+  const COALESCE_MS = 700;
+  let coalesceKey: string | null = null;
+  let coalesceAt = 0;
+
+  const primaryField = (patch: Partial<Case>): string => Object.keys(patch).find((k) => k !== 'modified') ?? 'title';
+
+  /** Snapshot a case's pre-edit state for undo, coalescing a rapid run of edits to the same field. */
+  const recordEdit = (id: string, field: string) => {
+    const c = get().cases.find((x) => x.id === id);
+    if (!c) return;
+    const now = Date.now();
+    const key = `${id}:${field}`;
+    const top = undoStack[undoStack.length - 1];
+    const coalesce =
+      !!top && top.caseId === id && top.field === field && key === coalesceKey && now - coalesceAt < COALESCE_MS;
+    coalesceKey = key;
+    coalesceAt = now;
+    if (coalesce) return; // same burst → the existing entry already snapshots the pre-burst state
+    undoStack.push({ caseId: id, field, snapshot: { ...c } });
+    if (undoStack.length > HISTORY_LIMIT) undoStack.shift();
+    redoStack.length = 0; // a fresh edit forks history — drop the redo branch
+  };
+
+  /** Restore a snapshot (from undo/redo) without recording new history, and navigate to it. */
+  const applyHistory = (entry: HistoryEntry) => {
+    coalesceKey = null; // never coalesce across an undo/redo boundary
+    set((s) => ({
+      cases: s.cases.map((x) => (x.id === entry.caseId ? { ...entry.snapshot, modified: true } : x)),
+      sel: { ...s.sel, kind: 'case', id: entry.caseId, runId: null },
+      view: 'editor',
+      editorFocus: { field: entry.field, nonce: (s.editorFocus?.nonce ?? 0) + 1 },
+    }));
+    const c = get().cases.find((x) => x.id === entry.caseId);
+    if (c) upsertChange({ kind: 'case', refId: entry.caseId, path: casePath(c), status: 'M', label: c.title });
+    schedulePersist('case:' + entry.caseId, () => writeCaseNow(entry.caseId));
+  };
+
+  /** Drop any history entries for a case (e.g. after it's deleted) so undo can't resurrect it. */
+  const pruneHistory = (id: string) => {
+    for (let i = undoStack.length - 1; i >= 0; i--) if (undoStack[i].caseId === id) undoStack.splice(i, 1);
+    for (let i = redoStack.length - 1; i >= 0; i--) if (redoStack[i].caseId === id) redoStack.splice(i, 1);
   };
 
   const deleteCaseOnDisk = async (rel: string, id: string) => {
@@ -756,6 +809,7 @@ export const useAppStore = create<AppState>()((set, get) => {
     screen: 'launcher',
     view: 'editor',
     sel: { kind: 'case', id: undefined, runId: null },
+    editorFocus: null,
     changes: [],
     gitBusy: false,
     mergeBanner: null,
@@ -1057,6 +1111,7 @@ export const useAppStore = create<AppState>()((set, get) => {
     /* ---- case mutations ---- */
     updateCase: (id, patch) => {
       const c = get().cases.find((x) => x.id === id);
+      recordEdit(id, primaryField(patch)); // snapshot the pre-edit state for undo (before we mutate)
       set((s) => ({ cases: s.cases.map((x) => (x.id === id ? { ...x, ...patch, modified: true } : x)) }));
       if (c) {
         const merged = { ...c, ...patch };
@@ -1070,6 +1125,22 @@ export const useAppStore = create<AppState>()((set, get) => {
         });
       }
       schedulePersist('case:' + id, () => writeCaseNow(id));
+    },
+
+    undo: () => {
+      const entry = undoStack.pop();
+      if (!entry) return;
+      const cur = get().cases.find((x) => x.id === entry.caseId);
+      if (cur) redoStack.push({ caseId: entry.caseId, field: entry.field, snapshot: { ...cur } });
+      applyHistory(entry);
+    },
+
+    redo: () => {
+      const entry = redoStack.pop();
+      if (!entry) return;
+      const cur = get().cases.find((x) => x.id === entry.caseId);
+      if (cur) undoStack.push({ caseId: entry.caseId, field: entry.field, snapshot: { ...cur } });
+      applyHistory(entry);
     },
 
     duplicateCase: (id) => {
@@ -1130,6 +1201,7 @@ export const useAppStore = create<AppState>()((set, get) => {
         return;
       const rel = lastCasePath.get(id) ?? casePath(c);
       const rest = cases.filter((x) => x.id !== id);
+      pruneHistory(id); // the case is gone — its undo/redo snapshots can't be restored
       set({ cases: rest, sel: { kind: 'case', id: rest[0]?.id, runId: null }, view: 'editor' });
       upsertChange({ kind: 'case', refId: id, path: casePath(c), status: 'D', label: c.title });
       void deleteCaseOnDisk(rel, id);

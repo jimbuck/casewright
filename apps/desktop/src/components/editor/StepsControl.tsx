@@ -2,6 +2,7 @@ import { Fragment, useRef, useState } from 'react';
 import { I } from '@/components/icons';
 import { Button } from '@/components/ui';
 import { cn } from '@/lib/utils';
+import { editorKeyDown, renderInline } from '@/utils/markdown';
 import { numberSteps } from '@/utils/steps';
 import type { Step } from '@/types';
 
@@ -20,6 +21,7 @@ export function StepsControl({ steps, onChange }: StepsControlProps) {
   const [drag, setDrag] = useState<number | null>(null);
   const [dropIdx, setDropIdx] = useState<number | null>(null);
   const [dropDepth, setDropDepth] = useState(0);
+  const [preview, setPreview] = useState(false);
   const nums = numberSteps(steps);
 
   const setText = (i: number, v: string) => onChange(steps.map((s, j) => (j === i ? { ...s, text: v } : s)));
@@ -78,8 +80,28 @@ export function StepsControl({ steps, onChange }: StepsControlProps) {
         <span className="text-[13px] font-semibold tracking-[0.01em] text-ink">Steps</span>
         <span className="font-mono text-[11px] text-ink-faint">## Steps</span>
         <span className="flex-1" />
-        <span className="text-[11px] text-ink-3">Tab to nest · drag ↔ to re-parent</span>
+        {!preview && <span className="text-[11px] text-ink-3">Tab to nest · drag ↔ to re-parent</span>}
+        <Button variant="ghost" size="sm" onClick={() => setPreview((p) => !p)}>
+          {preview ? I.edit({ size: 13 }) : I.eye({ size: 13 })} {preview ? 'Edit' : 'Preview'}
+        </Button>
       </div>
+      {preview ? (
+        <div className="rounded-md border border-dashed border-border px-4 py-[14px] font-ui text-[14.5px] leading-[1.6] text-[oklch(0.30_0.012_60)]">
+          {steps.length ? (
+            <ol className="flex flex-col gap-1.5">
+              {steps.map((s, i) => (
+                <li key={i} className="flex gap-2" style={{ marginLeft: s.depth * 22 }}>
+                  <span className="shrink-0 select-none font-mono text-ink-faint">{nums[i]}.</span>
+                  <span>{s.text.trim() ? renderInline(s.text, `sp${i}`) : <span className="text-ink-3">Empty</span>}</span>
+                </li>
+              ))}
+            </ol>
+          ) : (
+            <span className="text-ink-3">No steps yet.</span>
+          )}
+        </div>
+      ) : (
+        <>
       <div className="flex flex-col" ref={listRef} onDragOver={(e) => e.preventDefault()} onDrop={() => doDrop()}>
         {steps.map((s, i) => (
           <Fragment key={i}>
@@ -118,6 +140,7 @@ export function StepsControl({ steps, onChange }: StepsControlProps) {
                 placeholder="Describe the action…"
                 onChange={(e) => setText(i, e.target.value)}
                 onKeyDown={(e) => {
+                  if (editorKeyDown(e)) return;
                   if (e.key === 'Enter') {
                     e.preventDefault();
                     addAfter(i);
@@ -153,6 +176,8 @@ export function StepsControl({ steps, onChange }: StepsControlProps) {
       >
         {I.plus({ size: 14 })} Add step
       </button>
+        </>
+      )}
     </div>
   );
 }

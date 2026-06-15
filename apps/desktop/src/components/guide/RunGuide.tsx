@@ -3,10 +3,10 @@ import { I } from '@/components/icons';
 import { Button, Field, Input, RES, RESULTS, Textarea } from '@/components/ui';
 import { cn } from '@/lib/utils';
 import { useApp } from '@/store/app-store';
-import { renderInline } from '@/utils/markdown';
+import { renderInline, renderMarkdown } from '@/utils/markdown';
 import { resolveVariables } from '@/utils/variables';
 import { buildDefectText, deriveItems, effectiveTestDate, type ChecklistItem } from '@/utils/run-items';
-import type { Result } from '@/types';
+import type { CheckState, Result } from '@/types';
 import { GuideChecklist } from './GuideChecklist';
 
 export function RunGuide() {
@@ -37,7 +37,21 @@ export function RunGuide() {
   const myChecks = row.checks;
   const myFailNotes = row.failNotes;
   const cycle = (key: string) => ctx.cycleRunCheck(run.id, idx, key);
+  const setCheck = (key: string, state: CheckState) => ctx.setRunGroupChecks(run.id, idx, [key], state);
   const setFailNote = (key: string, value: string) => ctx.setRunFailNote(run.id, idx, key, value);
+  const copyText = (text: string) => {
+    const t = text.trim();
+    if (!t) return;
+    const writing = navigator.clipboard?.writeText(t);
+    if (!writing) {
+      ctx.toast('Clipboard unavailable');
+      return;
+    }
+    void writing.then(
+      () => ctx.toast('Copied'),
+      () => ctx.toast('Could not copy'),
+    );
+  };
 
   // ---- derive checklist items from the live case, resolving {{today}} against the test date ----
   const testDate = effectiveTestDate(run, row);
@@ -171,14 +185,14 @@ export function RunGuide() {
                   <span className="text-[11px] font-bold uppercase tracking-[0.06em] text-ink-2">Brief</span>
                 </div>
                 <div className="px-[18px] py-4 font-read text-[16.5px] leading-[1.6] text-[oklch(0.30_0.012_60)]">
-                  {renderInline(resolveVariables(kase.objective, testDate), 'gobj')}
+                  {renderMarkdown(resolveVariables(kase.objective, testDate), 'gobj')}
                 </div>
                 <div className="px-[18px] pb-4">
                   <div className="mb-[7px] text-[11px] font-semibold uppercase tracking-[0.05em] text-ink-faint">Systems in scope</div>
                   <div className="flex flex-wrap gap-1.5">
                     {kase.systems.map((s, i) => (
                       <span key={i} className="rounded-full border border-border bg-panel px-[11px] py-[3px] text-[12.5px] text-ink-2">
-                        {resolveVariables(s, testDate)}
+                        {renderInline(resolveVariables(s, testDate), `gsys${i}`)}
                       </span>
                     ))}
                   </div>
@@ -194,6 +208,8 @@ export function RunGuide() {
                 cycle={cycle}
                 onFailNote={setFailNote}
                 setGroup={(state) => setGroup(setupItems.map((i) => i.key), state)}
+                setState={setCheck}
+                copy={copyText}
               />
               <GuideChecklist
                 title="Steps"
@@ -205,6 +221,8 @@ export function RunGuide() {
                 cycle={cycle}
                 onFailNote={setFailNote}
                 setGroup={(state) => setGroup(stepItems.map((i) => i.key), state)}
+                setState={setCheck}
+                copy={copyText}
               />
               <GuideChecklist
                 title="Acceptance Criteria"
@@ -215,6 +233,8 @@ export function RunGuide() {
                 cycle={cycle}
                 onFailNote={setFailNote}
                 setGroup={(state) => setGroup(acceptItems.map((i) => i.key), state)}
+                setState={setCheck}
+                copy={copyText}
               />
             </>
           )}
