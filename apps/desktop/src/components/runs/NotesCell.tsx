@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { renderInline } from '@/utils/markdown';
+import { editorKeyDown, renderMarkdown } from '@/utils/markdown';
 
 export interface NotesCellProps {
   value: string;
@@ -38,27 +38,19 @@ export function NotesCell({ value, onChange }: NotesCellProps) {
         }}
         onBlur={() => setEditing(false)}
         onKeyDown={(e) => {
+          if (editorKeyDown(e)) return;
           if (e.key === 'Escape') setEditing(false);
         }}
       />
     );
   }
-  const lines = (value || '').split('\n');
   return (
     <div
       className="min-h-[26px] cursor-text whitespace-normal rounded-sm border border-transparent px-1.5 py-1 text-[12.5px] leading-[1.4] text-ink hover:border-border hover:bg-panel"
       onClick={() => setEditing(true)}
       title="Click to edit — markdown supported"
     >
-      {value ? (
-        lines.map((ln, i) => (
-          <div key={i} className="min-h-[1.4em]">
-            {ln ? renderInline(ln, 'n' + i) : <br />}
-          </div>
-        ))
-      ) : (
-        <span className="text-ink-3">—</span>
-      )}
+      {value.trim() ? renderMarkdown(value, 'n') : <span className="text-ink-3">—</span>}
     </div>
   );
 }

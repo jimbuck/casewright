@@ -2,6 +2,7 @@ import { Fragment, useRef, useState, type ReactNode } from 'react';
 import { I } from '@/components/icons';
 import { Button } from '@/components/ui';
 import { cn } from '@/lib/utils';
+import { editorKeyDown, renderInline } from '@/utils/markdown';
 
 export interface ListControlProps {
   icon: ReactNode;
@@ -21,6 +22,7 @@ export function ListControl({ icon, title, mark, marker, items, onChange, placeh
   const refs = useRef<Record<number, HTMLInputElement | null>>({});
   const [drag, setDrag] = useState<number | null>(null);
   const [dropIdx, setDropIdx] = useState<number | null>(null);
+  const [preview, setPreview] = useState(false);
 
   const setItem = (i: number, v: string) => onChange(items.map((x, j) => (j === i ? v : x)));
   const remove = (i: number) => onChange(items.filter((_, j) => j !== i));
@@ -58,7 +60,28 @@ export function ListControl({ icon, title, mark, marker, items, onChange, placeh
         <span className="grid place-items-center text-ink-3">{icon}</span>
         <span className="text-[13px] font-semibold tracking-[0.01em] text-ink">{title}</span>
         <span className="font-mono text-[11px] text-ink-faint">{mark}</span>
+        <span className="flex-1" />
+        <Button variant="ghost" size="sm" onClick={() => setPreview((p) => !p)}>
+          {preview ? I.edit({ size: 13 }) : I.eye({ size: 13 })} {preview ? 'Edit' : 'Preview'}
+        </Button>
       </div>
+      {preview ? (
+        <div className="rounded-md border border-dashed border-border px-4 py-[14px] font-ui text-[14.5px] leading-[1.6] text-[oklch(0.30_0.012_60)]">
+          {items.length ? (
+            <ul className="flex flex-col gap-1.5">
+              {items.map((it, i) => (
+                <li key={i} className="flex gap-2">
+                  <span className="shrink-0 select-none font-mono text-ink-faint">{marker}</span>
+                  <span>{it.trim() ? renderInline(it, `lp${i}`) : <span className="text-ink-3">Empty</span>}</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <span className="text-ink-3">Nothing yet.</span>
+          )}
+        </div>
+      ) : (
+        <>
       <div className="flex flex-col" onDragOver={(e) => e.preventDefault()} onDrop={() => doDrop()}>
         {items.map((it, i) => (
           <Fragment key={i}>
@@ -89,6 +112,7 @@ export function ListControl({ icon, title, mark, marker, items, onChange, placeh
                 placeholder={placeholder}
                 onChange={(e) => setItem(i, e.target.value)}
                 onKeyDown={(e) => {
+                  if (editorKeyDown(e)) return;
                   if (e.key === 'Enter') {
                     e.preventDefault();
                     onChange([...items.slice(0, i + 1), '', ...items.slice(i + 1)]);
@@ -122,6 +146,8 @@ export function ListControl({ icon, title, mark, marker, items, onChange, placeh
       >
         {I.plus({ size: 14 })} Add item
       </button>
+        </>
+      )}
     </div>
   );
 }

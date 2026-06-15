@@ -1,5 +1,6 @@
 import type { InputHTMLAttributes } from 'react';
 import { cn } from '@/lib/utils';
+import { editorKeyDown } from '@/utils/markdown';
 
 /** Shared control surface for Input / Textarea / Select — reproduces the `.input` look. */
 export const controlBase =
@@ -9,6 +10,14 @@ export interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
   mono?: boolean;
 }
 
-export function Input({ mono, className, ...rest }: InputProps) {
-  return <input className={cn(controlBase, mono && 'font-mono', className)} {...rest} />;
+export function Input({ mono, className, onKeyDown, ...rest }: InputProps) {
+  return (
+    <input
+      className={cn(controlBase, mono && 'font-mono', className)}
+      onKeyDown={(e) => {
+        if (!editorKeyDown(e)) onKeyDown?.(e);
+      }}
+      {...rest}
+    />
+  );
 }

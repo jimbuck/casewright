@@ -3,7 +3,7 @@ import { I } from '@/components/icons';
 import { Button } from '@/components/ui';
 import { cn } from '@/lib/utils';
 import type { SetupItem } from '@/types';
-import { hasHeadings13, stripHeadings13 } from '@/utils/markdown';
+import { editorKeyDown, hasHeadings13, renderInline, renderMarkdown, stripHeadings13 } from '@/utils/markdown';
 import { FmtBar } from './FmtBar';
 
 export interface SetupControlProps {
@@ -27,6 +27,7 @@ function SetupBody({ value, onChange }: { value: string; onChange: (value: strin
         value={value}
         placeholder="Describe this setup step… (markdown — no #, ## or ### headings)"
         onChange={(e) => onChange(e.target.value)}
+        onKeyDown={editorKeyDown}
       />
       {badHeadings && (
         <div className="mt-2 flex items-center gap-[7px] rounded-md border border-[oklch(0.85_0.06_80)] bg-blocked-soft px-2.5 py-[7px] text-[12px] text-[oklch(0.5_0.12_66)]">
@@ -46,6 +47,7 @@ export function SetupControl({ items, onChange }: SetupControlProps) {
   const nameRefs = useRef<Record<number, HTMLInputElement | null>>({});
   const [drag, setDrag] = useState<number | null>(null);
   const [dropIdx, setDropIdx] = useState<number | null>(null);
+  const [preview, setPreview] = useState(false);
 
   const setName = (i: number, v: string) => onChange(items.map((x, j) => (j === i ? { ...x, name: v } : x)));
   const setBody = (i: number, v: string) => onChange(items.map((x, j) => (j === i ? { ...x, body: v } : x)));
@@ -84,7 +86,32 @@ export function SetupControl({ items, onChange }: SetupControlProps) {
         <span className="grid place-items-center text-ink-3">{I.list({ size: 15 })}</span>
         <span className="text-[13px] font-semibold tracking-[0.01em] text-ink">Setup</span>
         <span className="font-mono text-[11px] text-ink-faint">## Setup</span>
+        <span className="flex-1" />
+        <Button variant="ghost" size="sm" onClick={() => setPreview((p) => !p)}>
+          {preview ? I.edit({ size: 13 }) : I.eye({ size: 13 })} {preview ? 'Edit' : 'Preview'}
+        </Button>
       </div>
+      {preview ? (
+        <div className="rounded-md border border-dashed border-border px-4 py-[14px] font-ui text-[14.5px] leading-[1.6] text-[oklch(0.30_0.012_60)]">
+          {items.length ? (
+            <div className="flex flex-col gap-3">
+              {items.map((it, i) => (
+                <div key={i}>
+                  <div className="font-semibold text-ink">
+                    {it.name.trim() ? renderInline(it.name, `setn${i}`) : <span className="font-normal text-ink-3">Unnamed step</span>}
+                  </div>
+                  {it.body.trim() && (
+                    <div className="mt-1 text-[13.5px] text-ink-3">{renderMarkdown(it.body, `setb${i}`)}</div>
+                  )}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <span className="text-ink-3">No setup steps yet.</span>
+          )}
+        </div>
+      ) : (
+        <>
       <div className="flex flex-col gap-2" onDragOver={(e) => e.preventDefault()} onDrop={() => doDrop()}>
         {items.map((it, i) => (
           <Fragment key={i}>
@@ -115,6 +142,7 @@ export function SetupControl({ items, onChange }: SetupControlProps) {
                   value={it.name}
                   placeholder="Setup step name…"
                   onChange={(e) => setName(i, e.target.value)}
+                  onKeyDown={editorKeyDown}
                 />
                 <Button
                   icon
@@ -139,6 +167,8 @@ export function SetupControl({ items, onChange }: SetupControlProps) {
       >
         {I.plus({ size: 14 })} Add setup step
       </button>
+        </>
+      )}
     </div>
   );
 }

@@ -86,5 +86,18 @@ export function App() {
     };
   }, [checkForUpdate]);
 
+  // Periodically `git fetch` so the Pull button's commits-behind badge stays current and the
+  // user knows when they need to update before continuing. No-ops outside NW.js.
+  const fetchRemote = useAppStore((s) => s.fetchRemote);
+  useEffect(() => {
+    if (!isNwjs()) return;
+    const first = setTimeout(() => void fetchRemote(), 5_000);
+    const interval = setInterval(() => void fetchRemote(), 60_000);
+    return () => {
+      clearTimeout(first);
+      clearInterval(interval);
+    };
+  }, [fetchRemote]);
+
   return <Workbench />;
 }

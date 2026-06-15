@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { node } from '@/lib/node';
-import { abortMerge, pull, push, stageAndCommit, status } from './git';
+import { abortMerge, fetch, pull, push, stageAndCommit, status } from './git';
 
 let tmp: string;
 let repo: string;
@@ -107,4 +107,43 @@ describe('git service', () => {
     await abortMerge(repo);
     expect((await status(repo)).conflicted).toHaveLength(0);
   });
+
+  it('fetch surfaces commits-behind without merging', async () => {
+    const fsp = node.fsp();
+    const path = node.path();
+    const o = path.join(tmp, 'fetch-origin.git');
+    const a = path.join(tmp, 'fetch-a');
+    const b = path.join(tmp, 'fetch-b');
+
+    // a bare origin seeded from clone `a`
+    await fsp.mkdir(o, { recursive: true });
+    await node.simpleGit()(o).init(true, ['-b', 'main']);
+    await fsp.mkdir(a, { recursive: true });
+    const ga = node.simpleGit()(a);
+    await ga.init();
+    await configure(a, 'a@cw.dev', 'A');
+    await write(a, 'x.md', '1\n');
+    await ga.add('.');
+    await ga.commit('init');
+    await ga.branch(['-M', 'main']);
+    await ga.addRemote('origin', o);
+    await ga.push(['-u', 'origin', 'main']);
+
+    // a second clone `b` pushes a new upstream commit
+    await node.simpleGit()().clone(o, b);
+    await configure(b, 'b@cw.dev', 'B');
+    const gb = node.simpleGit()(b);
+    await write(b, 'x.md', '2\n');
+    await gb.add('.');
+    await gb.commit('upstream change');
+    await gb.push();
+
+    // a's stale remote-tracking ref → status sees nothing behind yet
+    expect((await status(a)).behind).toBe(0);
+
+    // fetch refreshes the ref → status now reports 1 behind, and the working tree is untouched
+    await fetch(a);
+    expect((await status(a)).behind).toBe(1);
+    expect(await read(a, 'x.md')).toBe('1\n');
+  }, 20_000); // spins up its own origin + two clones — slower than the shared-repo cases
 });

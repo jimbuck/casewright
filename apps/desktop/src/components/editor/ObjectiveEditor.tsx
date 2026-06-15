@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import { I } from '@/components/icons';
 import { Button } from '@/components/ui';
-import { hasBlockConstructs, renderInline, sanitizeInline } from '@/utils/markdown';
+import { editorKeyDown, hasHeadings13, renderMarkdown, stripHeadings13 } from '@/utils/markdown';
 import { FmtBar } from './FmtBar';
 
 export interface ObjectiveEditorProps {
@@ -13,7 +13,7 @@ export interface ObjectiveEditorProps {
 export function ObjectiveEditor({ value, onChange }: ObjectiveEditorProps) {
   const ref = useRef<HTMLTextAreaElement>(null);
   const [preview, setPreview] = useState(false);
-  const blocked = hasBlockConstructs(value);
+  const badHeadings = hasHeadings13(value);
   return (
     <div className="flex flex-col gap-2.5">
       <div className="flex items-center gap-[9px]">
@@ -29,7 +29,7 @@ export function ObjectiveEditor({ value, onChange }: ObjectiveEditorProps) {
         {!preview && <FmtBar targetRef={ref} onApply={onChange} />}
         {preview ? (
           <div className="rounded-md border border-dashed border-border px-4 py-[14px] font-ui text-[15px] leading-[1.6] text-[oklch(0.30_0.012_60)]">
-            {renderInline(value, 'obj') || <span className="text-ink-3">No objective yet.</span>}
+            {value.trim() ? renderMarkdown(value, 'obj') : <span className="text-ink-3">No objective yet.</span>}
           </div>
         ) : (
           <textarea
@@ -38,13 +38,14 @@ export function ObjectiveEditor({ value, onChange }: ObjectiveEditorProps) {
             value={value}
             placeholder="Describe what this case verifies, and why it matters…"
             onChange={(e) => onChange(e.target.value)}
+            onKeyDown={editorKeyDown}
           />
         )}
-        {blocked && (
+        {badHeadings && (
           <div className="mt-2 flex items-center gap-[7px] rounded-md border border-[oklch(0.85_0.06_80)] bg-blocked-soft px-2.5 py-[7px] text-[12px] text-[oklch(0.5_0.12_66)]">
             {I.warn({ size: 14 })}
-            <span>Block-level markdown isn't allowed in fields — only inline formatting.</span>
-            <Button size="sm" className="ml-auto" onClick={() => onChange(sanitizeInline(value))}>
+            <span>Top-level headings (#, ##, ###) aren't allowed here — they'd split the file's sections. Lists, quotes and code blocks are fine.</span>
+            <Button size="sm" className="ml-auto" onClick={() => onChange(stripHeadings13(value))}>
               Clean up
             </Button>
           </div>
