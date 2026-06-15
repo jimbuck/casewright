@@ -105,6 +105,19 @@ export async function push(repoPath: string): Promise<void> {
   }
 }
 
+/**
+ * Update the remote-tracking refs (so a subsequent {@link status} reports the true
+ * ahead/behind counts) without touching the working tree. Used by the background poll
+ * that keeps the Pull badge current.
+ */
+export async function fetch(repoPath: string): Promise<void> {
+  try {
+    await git(repoPath).fetch();
+  } catch (e) {
+    wrapAuth(e);
+  }
+}
+
 export interface PullResult {
   ok: boolean;
   conflicted: string[];

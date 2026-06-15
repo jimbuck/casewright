@@ -37,7 +37,15 @@ export function TopBar() {
       </span>
 
       <div className="ml-auto flex items-center gap-[7px]">
-        <Button onClick={doPull} disabled={gitBusy}>
+        <Button
+          onClick={doPull}
+          disabled={gitBusy}
+          title={
+            behind
+              ? `Pull ${behind} commit${behind > 1 ? 's' : ''} waiting on origin/${branch}`
+              : `Up to date with origin/${branch}`
+          }
+        >
           {I.pull({ size: 15 })}Pull
           {behind ? (
             <span className="inline-grid h-4 min-w-4 place-items-center rounded-full bg-blocked-soft px-[5px] font-mono text-[10.5px] font-semibold text-[oklch(0.5_0.12_66)]">

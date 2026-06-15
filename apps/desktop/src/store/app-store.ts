@@ -27,6 +27,7 @@ import { flushPersist, schedulePersist } from '@/services/persist';
 import { watchRepo, type RepoWatcher } from '@/services/watch';
 import {
   abortMerge as gitAbortMerge,
+  fetch as gitFetch,
   GitAuthError,
   pull as gitPull,
   push as gitPush,
@@ -242,6 +243,8 @@ export interface AppState {
   /** Populated by the (deferred) structured 3-way merge engine; null until then. */
   conflict: Conflict | null;
   refreshStatus: () => Promise<void>;
+  /** Background `git fetch` + status refresh so the Pull badge shows the real commits-behind count. */
+  fetchRemote: () => Promise<void>;
   doCommit: (selectedKeys: string[], msg: string) => void;
   doPush: () => Promise<void>;
   doPull: () => Promise<void>;
@@ -280,6 +283,9 @@ export const useAppStore = create<AppState>()((set, get) => {
 
   // Path of the installer downloaded by `checkForUpdate`, handed to `relaunchToUpdate`.
   let downloadedInstaller: string | null = null;
+
+  // Guards the background `fetchRemote` poll so overlapping ticks (e.g. a slow fetch) don't pile up.
+  let fetchingRemote = false;
 
   // suite paths in the tree are full repo-relative (workspaces are top-level folders)
   const casePath = (c: Case): string => {
@@ -1691,6 +1697,21 @@ export const useAppStore = create<AppState>()((set, get) => {
         set({ branch: s.branch, ahead: s.ahead, behind: s.behind, changes: groupChanges(s.changes) });
       } catch {
         /* status read failed — keep optimistic values */
+      }
+    },
+
+    fetchRemote: async () => {
+      const { repoPath, gitBusy } = get();
+      // Skip while a push/pull/commit is in flight (avoid git lock contention) or a fetch is running.
+      if (!repoPath || gitBusy || fetchingRemote) return;
+      fetchingRemote = true;
+      try {
+        await gitFetch(repoPath);
+        await get().refreshStatus();
+      } catch {
+        /* background poll — ignore offline / auth / no-remote failures */
+      } finally {
+        fetchingRemote = false;
       }
     },
 
