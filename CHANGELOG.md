@@ -2,6 +2,13 @@
 
 All notable changes to Casewright. Generated automatically from Conventional Commits — do not edit by hand.
 
+## [0.6.1](https://github.com/jimbuck/casewright/compare/v0.6.0...v0.6.1) (2026-06-15)
+
+
+### Bug Fixes
+
+* markdown editing overhaul + background fetch for Pull badge ([#9](https://github.com/jimbuck/casewright/issues/9)) ([ae8a080](https://github.com/jimbuck/casewright/commit/ae8a080a5d8e043c18d2bbc5cda222dce1660911))
+
 # [0.6.0](https://github.com/jimbuck/casewright/compare/v0.5.0...v0.6.0) (2026-06-12)
 
 
