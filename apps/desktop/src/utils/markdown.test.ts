@@ -112,6 +112,21 @@ describe('autolink', () => {
   it('leaves scheme-less domains as plain text', () => {
     expect(html('see random.org/integers for details')).not.toContain('<a ');
   });
+
+  it('renders a safe markdown-link scheme as a link', () => {
+    const out = html('[mail me](mailto:dev@example.com)');
+    expect(out).toContain('href="mailto:dev@example.com"');
+    expect(out).toContain('>mail me<');
+  });
+
+  it('refuses unsafe markdown-link schemes, keeping the label as plain text', () => {
+    for (const url of ['javascript:alert(1)', 'file:///etc/passwd', 'data:text/html,evil']) {
+      const out = html(`[click](${url})`);
+      expect(out).not.toContain('<a ');
+      expect(out).not.toContain('href=');
+      expect(out).toContain('click'); // the link text survives as plain text
+    }
+  });
 });
 
 describe('wrapSelection', () => {

@@ -1,6 +1,6 @@
 import type { RefObject } from 'react';
 import { I } from '@/components/icons';
-import { wrapSelection } from '@/utils/markdown';
+import { MOD_KEY, wrapSelection } from '@/utils/markdown';
 
 export interface FmtBarProps {
   targetRef: RefObject<HTMLTextAreaElement | null>;
@@ -26,20 +26,20 @@ export function FmtBar({ targetRef, onApply, hint = true }: FmtBarProps) {
   const prevent = (e: { preventDefault: () => void }) => e.preventDefault();
   return (
     <div className="mb-2 flex items-center gap-0.5">
-      <button className={fmtBtn} title="Bold (Ctrl+B)" onMouseDown={prevent} onClick={() => apply('**', '**')}>
+      <button className={fmtBtn} title={`Bold (${MOD_KEY}+B)`} onMouseDown={prevent} onClick={() => apply('**', '**')}>
         {I.bold({ size: 15 })}
       </button>
-      <button className={fmtBtn} title="Italic (Ctrl+I)" onMouseDown={prevent} onClick={() => apply('*', '*')}>
+      <button className={fmtBtn} title={`Italic (${MOD_KEY}+I)`} onMouseDown={prevent} onClick={() => apply('*', '*')}>
         {I.italic({ size: 15 })}
       </button>
-      <button className={fmtBtn} title="Strikethrough (Ctrl+Shift+X)" onMouseDown={prevent} onClick={() => apply('~~', '~~')}>
+      <button className={fmtBtn} title={`Strikethrough (${MOD_KEY}+Shift+X)`} onMouseDown={prevent} onClick={() => apply('~~', '~~')}>
         {I.strike({ size: 15 })}
       </button>
       <span className="mx-1 h-4 w-px bg-border" />
-      <button className={fmtBtn} title="Inline code (Ctrl+E)" onMouseDown={prevent} onClick={() => apply('`', '`')}>
+      <button className={fmtBtn} title={`Inline code (${MOD_KEY}+E)`} onMouseDown={prevent} onClick={() => apply('`', '`')}>
         {I.code({ size: 15 })}
       </button>
-      <button className={fmtBtn} title="Link (Ctrl+K)" onMouseDown={prevent} onClick={() => apply('[', '](https://)')}>
+      <button className={fmtBtn} title={`Link (${MOD_KEY}+K)`} onMouseDown={prevent} onClick={() => apply('[', '](https://)')}>
         {I.link({ size: 15 })}
       </button>
       {hint && <span className="ml-auto text-[11px] text-ink-faint">markdown — lists, quotes, code blocks &amp; inline formatting</span>}

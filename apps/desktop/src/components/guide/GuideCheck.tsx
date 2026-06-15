@@ -15,6 +15,7 @@ export interface GuideCheckProps {
 export function GuideCheck({ state, onToggle, children, num, depth }: GuideCheckProps) {
   const style: CSSProperties | undefined = depth ? { marginLeft: depth * 26 } : undefined;
   const done = state !== 'none';
+  const stateLabel = state === 'pass' ? 'passed' : state === 'fail' ? 'failed' : 'not checked';
   // Only the checkbox toggles — the row is a plain div so the user can select/copy text and
   // click links inside it without flipping the check state.
   return (
@@ -22,7 +23,7 @@ export function GuideCheck({ state, onToggle, children, num, depth }: GuideCheck
       <button
         type="button"
         onClick={onToggle}
-        aria-label="Toggle check: empty → passed → failed"
+        aria-label={`Check status: ${stateLabel}. Click to cycle: empty → passed → failed.`}
         title="Click to cycle: empty → passed → failed"
         className={cn(
           'mt-px grid size-5 shrink-0 cursor-pointer place-items-center rounded-[5px] border-[1.5px] text-white transition',

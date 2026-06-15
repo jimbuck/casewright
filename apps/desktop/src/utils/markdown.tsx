@@ -33,17 +33,33 @@ function splitUrlTrailing(url: string): [string, string] {
   return [url.slice(0, end), url.slice(end)];
 }
 
+const SAFE_LINK_PROTOCOLS = new Set(['http:', 'https:', 'mailto:']);
+
+/**
+ * Validate an external link target — only well-formed http(s)/mailto URLs may reach `openExternal`.
+ * Case content is untrusted repo data, so this blocks `javascript:`, `file:` and custom-scheme links.
+ */
+function safeUrl(raw: string): string | null {
+  try {
+    return SAFE_LINK_PROTOCOLS.has(new URL(raw).protocol) ? raw : null;
+  } catch {
+    return null;
+  }
+}
+
 /** An external link that opens in the user's browser (NW.js shell) rather than navigating the app. */
 function extLink(key: string, url: string, label: string): ReactNode {
+  const safe = safeUrl(url);
+  if (!safe) return <span key={key}>{label}</span>; // unsupported/unsafe scheme — render the label as plain text
   return (
     <a
       key={key}
-      href={url}
+      href={safe}
       className="text-accent-ink underline underline-offset-2"
       onClick={(ev) => {
         ev.preventDefault();
         ev.stopPropagation();
-        openExternal(url);
+        openExternal(safe);
       }}
     >
       {label}
@@ -402,9 +418,17 @@ const WRAP_PAIRS: Record<string, string> = {
  */
 function setFieldValue(el: TextField, value: string) {
   const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
-  Object.getOwnPropertyDescriptor(proto, 'value')?.set?.call(el, value);
+  const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
+  if (setter) setter.call(el, value);
+  else el.value = value; // fallback when the native setter descriptor is unavailable, so the edit isn't a silent no-op
   el.dispatchEvent(new Event('input', { bubbles: true }));
 }
+
+/**
+ * The platform's shortcut-modifier label (Cmd on macOS, Ctrl elsewhere) for tooltips/hints.
+ * The handlers accept both (`ctrlKey || metaKey`); this only governs the text we display.
+ */
+export const MOD_KEY = typeof navigator !== 'undefined' && /Mac/i.test(navigator.platform) ? 'Cmd' : 'Ctrl';
 
 /** Ctrl/Cmd formatting shortcuts → the inline markers they wrap the selection in. */
 const SHORTCUTS: Record<string, [string, string]> = {

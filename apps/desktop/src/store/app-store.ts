@@ -287,6 +287,19 @@ export const useAppStore = create<AppState>()((set, get) => {
   // Guards the background `fetchRemote` poll so overlapping ticks (e.g. a slow fetch) don't pile up.
   let fetchingRemote = false;
 
+  // Serialize every git invocation (background fetch + interactive commit/push/pull/abort) onto one
+  // chain so a background fetch and a user-triggered op never run concurrently and contend for the
+  // repo's `.git` locks or remote-tracking refs. Each op runs after the previous settles, pass or fail.
+  let gitChain: Promise<unknown> = Promise.resolve();
+  const runGit = <T>(fn: () => Promise<T>): Promise<T> => {
+    const next = gitChain.then(fn, fn);
+    gitChain = next.then(
+      () => undefined,
+      () => undefined,
+    );
+    return next;
+  };
+
   // suite paths in the tree are full repo-relative (workspaces are top-level folders)
   const casePath = (c: Case): string => {
     const dir = buildSuiteIndex(get().tree).path[c.suite] ?? '';
@@ -514,6 +527,14 @@ export const useAppStore = create<AppState>()((set, get) => {
   const pruneHistory = (id: string) => {
     for (let i = undoStack.length - 1; i >= 0; i--) if (undoStack[i].caseId === id) undoStack.splice(i, 1);
     for (let i = redoStack.length - 1; i >= 0; i--) if (redoStack[i].caseId === id) redoStack.splice(i, 1);
+  };
+
+  /** Wipe all history when leaving a repo, so undo/redo can't replay one repo's edits into another. */
+  const resetHistory = () => {
+    undoStack.length = 0;
+    redoStack.length = 0;
+    coalesceKey = null;
+    coalesceAt = 0;
   };
 
   const deleteCaseOnDisk = async (rel: string, id: string) => {
@@ -873,6 +894,7 @@ export const useAppStore = create<AppState>()((set, get) => {
     openRepo: async (path) => {
       const target = path ?? (await pickDirectory());
       if (!target) return;
+      resetHistory(); // a different repo's cases are about to load — old undo entries no longer apply
       set({ loading: true, error: null, needsInit: false, emptyRepo: false });
       try {
         const opened = await openRepoSvc(target);
@@ -968,6 +990,7 @@ export const useAppStore = create<AppState>()((set, get) => {
     goHome: () => {
       void flushPersist();
       stopWatch();
+      resetHistory(); // leaving the repo — don't let undo replay these edits into the next one opened
       set({ screen: 'launcher' });
     },
 
@@ -1706,7 +1729,7 @@ export const useAppStore = create<AppState>()((set, get) => {
       if (!repoPath || gitBusy || fetchingRemote) return;
       fetchingRemote = true;
       try {
-        await gitFetch(repoPath);
+        await runGit(() => gitFetch(repoPath));
         await get().refreshStatus();
       } catch {
         /* background poll — ignore offline / auth / no-remote failures */
@@ -1722,7 +1745,7 @@ export const useAppStore = create<AppState>()((set, get) => {
       void (async () => {
         try {
           await flushPersist();
-          if (repoPath) await stageAndCommit(repoPath, paths, msg || 'Update test cases');
+          if (repoPath) await runGit(() => stageAndCommit(repoPath, paths, msg || 'Update test cases'));
           set((s) => ({
             cases: s.cases.map((c) => (selectedKeys.includes('case:' + c.id) ? { ...c, modified: false } : c)),
           }));
@@ -1742,7 +1765,7 @@ export const useAppStore = create<AppState>()((set, get) => {
       if (!repoPath || !ahead) return;
       set({ gitBusy: true });
       try {
-        await gitPush(repoPath);
+        await runGit(() => gitPush(repoPath));
         await get().refreshStatus();
         get().toast(`Pushed to origin/${get().branch}`);
       } catch (e) {
@@ -1759,7 +1782,7 @@ export const useAppStore = create<AppState>()((set, get) => {
       set({ gitBusy: true, mergeBanner: null });
       try {
         await flushPersist();
-        const res = await gitPull(repoPath);
+        const res = await runGit(() => gitPull(repoPath));
         if (res.ok) {
           await reloadFromDisk();
           await get().refreshStatus();
@@ -1783,7 +1806,7 @@ export const useAppStore = create<AppState>()((set, get) => {
       if (!repoPath) return;
       set({ gitBusy: true });
       try {
-        await gitAbortMerge(repoPath);
+        await runGit(() => gitAbortMerge(repoPath));
         await reloadFromDisk();
         await get().refreshStatus();
         set({ mergeBanner: null });
