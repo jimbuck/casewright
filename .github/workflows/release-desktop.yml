@@ -58,7 +58,7 @@ jobs:
   build-windows:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           ref: ${{ inputs.ref }}
 
@@ -78,14 +78,14 @@ jobs:
 
       - uses: pnpm/action-setup@v4
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: pnpm
 
       # Cache the downloaded NW.js runtime so reruns don't re-fetch ~100 MB.
       - name: Cache NW.js runtime
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: apps/desktop/.nwcache
           key: nwjs-win-x64-${{ hashFiles('apps/desktop/package.json') }}

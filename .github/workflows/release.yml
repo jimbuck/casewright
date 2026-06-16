@@ -42,11 +42,11 @@ jobs:
       tag: ${{ steps.semantic.outputs.new_release_git_tag }}
       notes: ${{ steps.semantic.outputs.new_release_notes }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0 # semantic-release needs full history + tags to find the last release
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: 22
 
