@@ -2,6 +2,8 @@
 
 All notable changes to Casewright. Generated automatically from Conventional Commits — do not edit by hand.
 
+## [0.6.2](https://github.com/jimbuck/casewright/compare/v0.6.1...v0.6.2) (2026-06-16)
+
 ## [0.6.1](https://github.com/jimbuck/casewright/compare/v0.6.0...v0.6.1) (2026-06-15)
 
 
