@@ -74,6 +74,8 @@ export function TitleBar() {
         { icon: I.edit, label: 'Edit Workspace…', on: () => ctx.editWorkspace() },
         { icon: I.trash, label: 'Remove Workspace…', danger: true, on: () => void ctx.removeWorkspace() },
         { sep: true },
+        { icon: I.list, label: 'Markdown Format…', on: () => ctx.setModal('repoSettings') },
+        { sep: true },
         { icon: I.repo, label: 'Repositories', on: () => ctx.goHome() },
         { icon: I.x, label: 'Exit', on: () => nwWindow()?.close() },
       ],

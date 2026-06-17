@@ -152,7 +152,7 @@ export interface Selection {
 
 export type View = 'editor' | 'runs' | 'run' | 'guide' | 'suite';
 export type Screen = 'launcher' | 'main';
-export type ModalKind = 'commit' | 'createRun' | 'merge' | 'workspace' | 'about' | null;
+export type ModalKind = 'commit' | 'createRun' | 'merge' | 'workspace' | 'repoSettings' | 'about' | null;
 
 export interface Toast {
   id: number;

@@ -16,6 +16,7 @@ import { RunGuide } from './guide/RunGuide';
 import { CreateRunModal } from './runs/CreateRunModal';
 import { CommitModal } from './common/CommitModal';
 import { WorkspaceModal } from './common/WorkspaceModal';
+import { RepoSettingsModal } from './common/RepoSettingsModal';
 import { AboutModal } from './common/AboutModal';
 import { AppDialog } from './common/AppDialog';
 import { EmptyCenter } from './common/EmptyCenter';
@@ -61,6 +62,7 @@ function Workbench() {
           </div>
           {modal === 'commit' && <CommitModal />}
           {modal === 'workspace' && <WorkspaceModal />}
+          {modal === 'repoSettings' && <RepoSettingsModal />}
           {modal === 'createRun' && <CreateRunModal />}
           {modal === 'about' && <AboutModal />}
           {modal === 'merge' && <MergeResolver />}

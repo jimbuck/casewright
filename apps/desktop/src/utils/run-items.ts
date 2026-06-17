@@ -1,3 +1,5 @@
+import type { MarkdownTarget } from '@/schemas';
+import { getProfile } from '@/services/format/markdown-profile';
 import type { Case, Result, Run, RunRow } from '@/types';
 import { numberSteps } from '@/utils/steps';
 import { resolveVariables } from '@/utils/variables';
@@ -81,7 +83,13 @@ export function rowFailures(row: RunRow, kase: Case | undefined): Failure[] {
  * a reference back to the run, and every checklist item marked `fail` with its
  * failure description. Falls back to the snapshot `itemText` when the live case is gone.
  */
-export function buildDefectText(run: Run, row: RunRow, kase: Case | undefined): string {
+export function buildDefectText(
+  run: Run,
+  row: RunRow,
+  kase: Case | undefined,
+  target: MarkdownTarget = 'commonmark',
+): string {
+  const indentUnit = getProfile(target).indentUnit;
   const td = effectiveTestDate(run, row);
   const lines: string[] = [`# ${row.display_id} — ${resolveVariables(row.title, td)}`];
   if (kase?.objective.trim()) lines.push('', `**Objective:** ${resolveVariables(kase.objective.trim(), td)}`);
@@ -91,8 +99,8 @@ export function buildDefectText(run: Run, row: RunRow, kase: Case | undefined): 
   const { setup, steps, accept } = deriveItems(kase);
 
   if (steps.length) {
-    // Steps to reproduce: the case's steps at their real indentation (2 spaces per depth level), up
-    // to and including the last one that failed — the lead-up — with each failure flagged inline.
+    // Steps to reproduce: the case's steps at their real indentation (per the target's list-indent
+    // unit), up to and including the last one that failed — the lead-up — with each failure flagged inline.
     const lastFail = steps.reduce((last, it, i) => (row.checks[it.key] === 'fail' ? i : last), -1);
     if (lastFail >= 0) {
       lines.push('', '## Steps to reproduce');
@@ -100,7 +108,7 @@ export function buildDefectText(run: Run, row: RunRow, kase: Case | undefined): 
         const it = steps[i];
         const note = row.checks[it.key] === 'fail' ? (row.failNotes[it.key] ?? '').trim() : null;
         const mark = note === null ? '' : `  ✗${note ? ` ${note}` : ''}`;
-        lines.push(`${'  '.repeat(it.depth ?? 0)}${it.num ?? '-'}. ${resolveVariables(it.text, td)}${mark}`);
+        lines.push(`${indentUnit.repeat(it.depth ?? 0)}${it.num ?? '-'}. ${resolveVariables(it.text, td)}${mark}`);
       }
     }
     // Failed preconditions / acceptance criteria live outside the ordered step sequence.

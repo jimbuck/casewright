@@ -26,6 +26,12 @@ describe('ConfigYamlSchema', () => {
   it('coerces a malformed workspaces value to [] instead of throwing', () => {
     expect(ConfigYamlSchema.parse({ workspaces: 'nope' }).workspaces).toEqual([]);
   });
+
+  it('defaults markdownTarget to commonmark and coerces an unknown value instead of throwing', () => {
+    expect(ConfigYamlSchema.parse({}).markdownTarget).toBe('commonmark');
+    expect(ConfigYamlSchema.parse({ markdownTarget: 'azure-devops' }).markdownTarget).toBe('azure-devops');
+    expect(ConfigYamlSchema.parse({ markdownTarget: 'notion' }).markdownTarget).toBe('commonmark');
+  });
 });
 
 describe('WorkspaceYamlSchema', () => {

@@ -86,6 +86,7 @@ export function createStoreInternals(set: StoreSet, get: StoreGet) {
         workspaces: opened.workspaces,
         workspace: ws,
         branch: opened.branch,
+        markdownTarget: opened.markdownTarget,
         tree: loaded.tree,
         cases: loaded.cases,
         runs: loaded.runs,
@@ -139,6 +140,7 @@ export function createStoreInternals(set: StoreSet, get: StoreGet) {
         workspaces: opened.workspaces,
         workspace: ws,
         branch: opened.branch,
+        markdownTarget: opened.markdownTarget,
         tree: loaded.tree,
         cases: loaded.cases,
         runs: loaded.runs,
@@ -192,7 +194,7 @@ export function createStoreInternals(set: StoreSet, get: StoreGet) {
     const rel = casePath(c);
     const { suite: _s, modified: _m, ...parsed } = c;
     try {
-      await writeFileAt(repoPath, rel, serializeCase(parsed));
+      await writeFileAt(repoPath, rel, serializeCase(parsed, '', get().markdownTarget));
       const prev = lastCasePath.get(id);
       if (prev && prev !== rel) await deletePath(repoPath, prev);
       lastCasePath.set(id, rel);

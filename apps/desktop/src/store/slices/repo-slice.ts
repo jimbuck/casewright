@@ -7,10 +7,13 @@ import {
   initRepo as initRepoSvc,
   loadRepo,
   openRepo as openRepoSvc,
+  reformatCaseFiles,
   syncFolderNote,
   toRepoRelative,
+  writeMarkdownTarget,
   writeWorkspacesList,
 } from '@/services/repo';
+import type { MarkdownTarget } from '@/schemas';
 import type { Workspace } from '@/types';
 import { slug } from '@/utils/ids';
 import { baseName, buildSuiteIndex, clone, findSuiteNode } from '../tree-helpers';
@@ -34,6 +37,8 @@ type RepoSlice = Pick<
   | 'addWorkspace'
   | 'editWorkspace'
   | 'removeWorkspace'
+  | 'setMarkdownTarget'
+  | 'reformatAllCases'
   | 'openCase'
   | 'openSuite'
   | 'openRunsList'
@@ -71,6 +76,7 @@ export function createRepoSlice(set: StoreSet, get: StoreGet, internals: StoreIn
             needsInit: true,
             emptyRepo: false,
             warnings: opened.warnings,
+            markdownTarget: opened.markdownTarget,
             screen: 'launcher',
             workspaces: [],
             workspace: null,
@@ -99,6 +105,7 @@ export function createRepoSlice(set: StoreSet, get: StoreGet, internals: StoreIn
           workspaces: opened.workspaces,
           workspace: ws,
           branch: opened.branch,
+          markdownTarget: opened.markdownTarget,
           tree: loaded.tree,
           cases: loaded.cases,
           runs: loaded.runs,
@@ -255,6 +262,35 @@ export function createRepoSlice(set: StoreSet, get: StoreGet, internals: StoreIn
       const name = workspace.name;
       await refreshWorkspaces();
       get().toast(`Removed workspace "${name}"`);
+    },
+
+    setMarkdownTarget: async (target) => {
+      const { repoPath, markdownTarget } = get();
+      set({ markdownTarget: target });
+      if (!repoPath || target === markdownTarget) return;
+      try {
+        await writeMarkdownTarget(repoPath, target);
+        void get().refreshStatus();
+      } catch (e) {
+        onWriteError(e);
+      }
+    },
+
+    reformatAllCases: async () => {
+      const { repoPath, cases } = get();
+      if (!repoPath || !cases.length) return;
+      // Normalize every case's list indentation to the active target. Goes straight to disk via
+      // parse→serialize so out-of-schema `extra` is preserved (the in-memory cases drop it). Flush
+      // pending edits first so we re-read the latest content.
+      await flushPersist();
+      const rels = cases.map((c) => get().casePath(c));
+      try {
+        await reformatCaseFiles(repoPath, rels, get().markdownTarget);
+      } catch (e) {
+        onWriteError(e);
+        return;
+      }
+      void get().refreshStatus();
     },
 
     openCase: (id) => {

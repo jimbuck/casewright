@@ -23,6 +23,11 @@ describe('serializeConfigYaml', () => {
       'version: 1\nname: Root\ndisplayIdPrefix: RT\ndescription: the root\nworkspaces:\n  - .\n',
     );
   });
+
+  it('emits a non-default markdownTarget and omits the default', () => {
+    expect(serializeConfigYaml({ version: 1, markdownTarget: 'azure-devops' })).toBe('version: 1\nmarkdownTarget: azure-devops\n');
+    expect(serializeConfigYaml({ version: 1, markdownTarget: 'commonmark' })).toBe('version: 1\n');
+  });
 });
 
 describe('CASEWRIGHT_GITIGNORE', () => {

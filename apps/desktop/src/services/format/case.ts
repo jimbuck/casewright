@@ -1,8 +1,9 @@
 import { node } from '@/lib/node';
-import { CaseFrontMatterSchema, type LintWarning } from '@/schemas';
+import { CaseFrontMatterSchema, type LintWarning, type MarkdownTarget } from '@/schemas';
 import type { Case, SetupItem, Step } from '@/types';
 import { randomId } from '@/utils/ids';
 import { numberSteps } from '@/utils/steps';
+import { getProfile, reindentLists, type MarkdownProfile } from './markdown-profile';
 
 /** A case parsed from disk — everything except the suite-derived/runtime fields. */
 export type ParsedCase = Omit<Case, 'suite' | 'modified'>;
@@ -36,19 +37,22 @@ function needsQuote(s: string): boolean {
 }
 const yamlScalar = (s: string): string => (needsQuote(s) ? JSON.stringify(s) : s);
 
-function serializeSteps(steps: Step[]): string {
+function serializeSteps(steps: Step[], profile: MarkdownProfile): string {
   const nums = numberSteps(steps);
-  return steps.map((s, i) => '  '.repeat(s.depth) + (nums[i].split('.').pop() ?? '1') + '. ' + s.text).join('\n');
+  return steps
+    .map((s, i) => profile.indentUnit.repeat(s.depth) + (nums[i].split('.').pop() ?? '1') + '. ' + s.text)
+    .join('\n');
 }
 
 /** Each setup item becomes a `### name` heading with its (optional) multi-line body. */
-function serializeSetup(items: SetupItem[]): string {
+function serializeSetup(items: SetupItem[], profile: MarkdownProfile): string {
   return items
     .map((it) => {
       const head = it.name ? `### ${it.name}` : '###';
       // Trim only surrounding blank lines — never the first/last line's own
       // indentation, which is significant markdown (code blocks, nested lists).
-      const body = trimBlank(it.body.split('\n')).join('\n');
+      // Nested lists in the free-form body are renormalized to the target's indent unit.
+      const body = reindentLists(trimBlank(it.body.split('\n')).join('\n'), profile);
       return body ? `${head}\n\n${body}` : head;
     })
     .join('\n\n');
@@ -59,10 +63,12 @@ const sectionBlock = (heading: string, content: string): string => (content ? `$
 /**
  * Serialize a Case to its canonical markdown form (PRD §5.2): stable front-matter
  * key order, inline `tags` array, the four reserved `##` sections in fixed order
- * (even when empty), 2-space-per-depth ordered Steps, and a single trailing newline.
+ * (even when empty), ordered Steps indented per the target profile's unit, and a single
+ * trailing newline. Nested lists in free-form sections are renormalized to the target.
  * Any captured out-of-schema `extra` is re-appended.
  */
-export function serializeCase(c: ParsedCase, extra = ''): string {
+export function serializeCase(c: ParsedCase, extra = '', target: MarkdownTarget = 'commonmark'): string {
+  const profile = getProfile(target);
   const front = [
     '---',
     `id: ${yamlScalar(c.id)}`,
@@ -74,10 +80,10 @@ export function serializeCase(c: ParsedCase, extra = ''): string {
   ].join('\n');
 
   const blocks = [
-    sectionBlock('## Objective', c.objective.trim()),
+    sectionBlock('## Objective', reindentLists(c.objective.trim(), profile)),
     sectionBlock('## Systems in Scope', c.systems.map((s) => `- ${s}`).join('\n')),
-    sectionBlock('## Setup', serializeSetup(c.setup)),
-    sectionBlock('## Steps', serializeSteps(c.steps)),
+    sectionBlock('## Setup', serializeSetup(c.setup, profile)),
+    sectionBlock('## Steps', serializeSteps(c.steps, profile)),
     sectionBlock('## Acceptance Criteria', c.expected.map((s) => `- ${s}`).join('\n')),
   ];
 
@@ -163,12 +169,18 @@ function parseSetup(text: string): SetupItem[] {
 }
 
 function parseSteps(text: string): Step[] {
+  // Depth is recovered structurally from relative indentation (an indent stack) rather than a
+  // fixed divisor, so files written at any indent width — legacy 2-space or the current target's
+  // unit — parse to the same depths. Capped at depth 3 to match the editor's nesting limit.
+  const stack: number[] = [];
   return text
     .split('\n')
     .filter((l) => l.trim() !== '')
     .map((line) => {
       const indent = line.match(/^ */)?.[0].length ?? 0;
-      const depth = Math.max(0, Math.min(3, Math.floor(indent / 2)));
+      while (stack.length && stack[stack.length - 1] > indent) stack.pop();
+      if (!(stack.length && stack[stack.length - 1] === indent)) stack.push(indent);
+      const depth = Math.max(0, Math.min(3, stack.length - 1));
       const stripped = line.slice(indent).replace(/^\d+\.\s+/, '');
       return { text: stripped.trim(), depth };
     });

@@ -1,7 +1,7 @@
 import type { Dispatch, SetStateAction } from 'react';
 import { create, type StoreApi } from 'zustand';
 
-import type { LintWarning } from '@/schemas';
+import type { LintWarning, MarkdownTarget } from '@/schemas';
 import type {
   Case,
   Change,
@@ -72,6 +72,12 @@ export interface AppState {
   editWorkspace: () => void;
   /** Confirm, then drop the active workspace from config.yaml (leaving its files untouched). */
   removeWorkspace: () => Promise<void>;
+  /** Repo-wide markdown renderer target — governs nested-list indentation in serialized cases. */
+  markdownTarget: MarkdownTarget;
+  /** Persist a new markdown target to config.yaml (cases reflow lazily on next save / via reformatAllCases). */
+  setMarkdownTarget: (target: MarkdownTarget) => Promise<void>;
+  /** Rewrite every case to the active target — converts the whole repo's list indentation at once. */
+  reformatAllCases: () => Promise<void>;
   /** Workspace pre-selected in the edit modal's dropdown (set by add/edit). */
   wsModalId: string | null;
   openCase: (id: string) => void;
@@ -236,6 +242,7 @@ export const useAppStore = create<AppState>()((set, get) => {
     sel: { kind: 'case', id: undefined, runId: null },
     editorFocus: null,
     wsModalId: null,
+    markdownTarget: 'commonmark',
 
     /* ---- derived helpers ---- */
     casePath,

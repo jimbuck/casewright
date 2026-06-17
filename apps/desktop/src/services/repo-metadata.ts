@@ -1,6 +1,7 @@
 import { node } from '@/lib/node';
-import { ConfigYamlSchema, type ConfigYaml } from '@/schemas';
+import { ConfigYamlSchema, type ConfigYaml, type MarkdownTarget } from '@/schemas';
 import { folderSlug } from '@/utils/ids';
+import { parseCase, serializeCase } from './format/case';
 import { CASEWRIGHT_GITIGNORE, serializeConfigYaml } from './format/config';
 import { serializeFolderNote, type FolderNoteMeta } from './format/folder-note';
 import {
@@ -56,6 +57,44 @@ export async function writeRootMeta(repoPath: string, meta: FolderNoteMeta): Pro
       displayIdPrefix: meta.prefix,
       description: meta.description,
       workspaces: cfg.workspaces,
+      markdownTarget: cfg.markdownTarget,
+    }),
+  );
+}
+
+/**
+ * Re-serialize each given case file to `target` (normalizing nested-list indentation) directly on
+ * disk — reading + parsing each file so its out-of-schema `extra` is preserved (the store's
+ * in-memory cases drop `extra`, so this must not go through the case-write path). Files already in
+ * canonical form are skipped. Returns how many files actually changed.
+ */
+export async function reformatCaseFiles(repoPath: string, relPaths: string[], target: MarkdownTarget): Promise<number> {
+  let changed = 0;
+  for (const rel of relPaths) {
+    const raw = await readMaybe(node.path().join(repoPath, rel));
+    if (raw == null) continue;
+    const parsed = parseCase(raw);
+    const next = serializeCase(parsed.case, parsed.extra, target);
+    if (next === raw.replace(/\r\n/g, '\n')) continue; // already canonical for this target — no write
+    await writeFileAt(repoPath, rel, next);
+    changed++;
+  }
+  return changed;
+}
+
+/** Persist the repo-wide markdown target into `config.yaml`, preserving every other field. */
+export async function writeMarkdownTarget(repoPath: string, target: MarkdownTarget): Promise<void> {
+  const cfg = await readConfig(repoPath);
+  await writeFileAt(
+    repoPath,
+    CONFIG_REL,
+    serializeConfigYaml({
+      version: cfg.version,
+      name: cfg.name,
+      displayIdPrefix: cfg.displayIdPrefix,
+      description: cfg.description,
+      workspaces: cfg.workspaces,
+      markdownTarget: target,
     }),
   );
 }
@@ -106,6 +145,7 @@ export async function writeWorkspacesList(repoPath: string, paths: string[]): Pr
       displayIdPrefix: cfg.displayIdPrefix,
       description: cfg.description,
       workspaces: paths.map((p) => (p === '' ? '.' : p)),
+      markdownTarget: cfg.markdownTarget,
     }),
   );
 }

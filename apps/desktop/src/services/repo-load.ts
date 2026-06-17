@@ -1,5 +1,5 @@
 import { node } from '@/lib/node';
-import { ConfigYamlSchema, WorkspaceYamlSchema, type LintWarning } from '@/schemas';
+import { ConfigYamlSchema, WorkspaceYamlSchema, type LintWarning, type MarkdownTarget } from '@/schemas';
 import type { Case, Run, TreeNode, Workspace } from '@/types';
 import { slug } from '@/utils/ids';
 import { parseCase } from './format/case';
@@ -85,6 +85,14 @@ export interface OpenedRepo {
   warnings: LintWarning[];
   /** True when the worktree is a Git repo but has no `.casewright/` yet (offer to init). */
   needsInit: boolean;
+  /** Repo-wide markdown renderer target (from config.yaml; the portable default when unset). */
+  markdownTarget: MarkdownTarget;
+}
+
+/** Read the repo-wide markdown target from already-parsed config data (defaults when invalid). */
+function readMarkdownTarget(configData: Record<string, unknown>): MarkdownTarget {
+  const parsed = ConfigYamlSchema.safeParse(configData);
+  return parsed.success ? parsed.data.markdownTarget : 'commonmark';
 }
 
 /**
@@ -151,7 +159,7 @@ export async function openRepo(repoPath: string): Promise<OpenedRepo> {
 
   if (!(await isDir(path.join(repoPath, CASEWRIGHT_DIR)))) {
     warnings.push({ code: 'needs-init', message: 'This repository has no .casewright/ folder yet.' });
-    return { repoPath, workspaces: [], branch, warnings, needsInit: true };
+    return { repoPath, workspaces: [], branch, warnings, needsInit: true, markdownTarget: 'commonmark' };
   }
 
   // Auto-migrate a legacy repo (casewright.yaml/_suite.md → config + folder notes) and
@@ -179,7 +187,7 @@ export async function openRepo(repoPath: string): Promise<OpenedRepo> {
     warnings.push({ code: 'empty-repo', message: 'No workspaces found — add one to .casewright/config.yaml.' });
   }
 
-  return { repoPath, workspaces, branch, warnings, needsInit: false };
+  return { repoPath, workspaces, branch, warnings, needsInit: false, markdownTarget: readMarkdownTarget(configData) };
 }
 
 // ---------------------------------------------------------------------------

@@ -14,7 +14,7 @@
 export { relJoin, toRepoRelative, derivePrefix, folderNoteRel, noteNeeded } from './repo-paths';
 export { markWrite, wasSelfWrite } from './repo-self-write';
 export { writeFileAt, deletePath, renamePath, makeDir } from './repo-fs';
-export { initRepo, syncFolderNote, moveFolderNote, writeWorkspacesList, ensureWikiSafeFolder } from './repo-metadata';
+export { initRepo, syncFolderNote, moveFolderNote, writeWorkspacesList, writeMarkdownTarget, reformatCaseFiles, ensureWikiSafeFolder } from './repo-metadata';
 export { migrateRepo } from './repo-migration';
 export { openRepo, loadWorkspace, loadRepo } from './repo-load';
 export type { OpenedRepo, LoadedWorkspace, LoadedRepo } from './repo-load';

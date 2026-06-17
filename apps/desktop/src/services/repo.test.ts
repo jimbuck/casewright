@@ -2,7 +2,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { node } from '@/lib/node';
 import { parseCase, serializeCase, type ParsedCase } from './format/case';
 import { serializeRunCase, serializeRunDetails } from './format/run';
-import { deletePath, initRepo, loadRepo, loadWorkspace, makeDir, markWrite, openRepo, relJoin, renamePath, toRepoRelative, wasSelfWrite, writeFileAt } from './repo';
+import { deletePath, initRepo, loadRepo, loadWorkspace, makeDir, markWrite, openRepo, reformatCaseFiles, relJoin, renamePath, toRepoRelative, wasSelfWrite, writeFileAt } from './repo';
 
 const c1: ParsedCase = {
   id: 'aaa1111aaaa',
@@ -554,5 +554,61 @@ describe('write primitives', () => {
     expect(await exists('.casewright/runs')).toBe(true);
     await deletePath(dir, 'areas/payments/Billing/PAY-0001-first.md');
     expect(await exists('areas/payments/Billing/PAY-0001-first.md')).toBe(false);
+  });
+});
+
+describe('reformatCaseFiles', () => {
+  let dir: string;
+  const rel = 'PAY-0003-repro.md';
+  // A legacy file: 2-space nested step + an out-of-schema `## Notes` section to preserve.
+  const legacy = `---
+id: ccc3333cccc
+displayId: PAY-0003
+title: Repro
+status: active
+tags: []
+---
+
+## Objective
+
+Do a thing.
+
+## Systems in Scope
+
+## Setup
+
+## Steps
+
+1. Outer step.
+  1. Nested step.
+
+## Acceptance Criteria
+
+- It works.
+
+## Notes
+
+Out-of-schema content kept verbatim.
+`;
+
+  beforeAll(async () => {
+    dir = await mkRepo('cw-reformat-');
+    await writeFileAt(dir, rel, legacy);
+  });
+  afterAll(async () => {
+    await node.fsp().rm(dir, { recursive: true, force: true });
+  });
+
+  it('reflows nested-list indentation to the target while preserving out-of-schema content', async () => {
+    const changed = await reformatCaseFiles(dir, [rel], 'commonmark');
+    expect(changed).toBe(1);
+    const text = await node.fsp().readFile(node.path().join(dir, rel), 'utf8');
+    expect(text).toContain('\n    1. Nested step.\n'); // 2-space → 4-space content-aligned
+    expect(text).toContain('## Notes'); // extra preserved…
+    expect(text).toContain('Out-of-schema content kept verbatim.'); // …verbatim
+  });
+
+  it('skips files already canonical for the target (idempotent)', async () => {
+    expect(await reformatCaseFiles(dir, [rel], 'commonmark')).toBe(0);
   });
 });

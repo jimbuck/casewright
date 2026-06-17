@@ -92,7 +92,9 @@ export function RunGuide() {
   // ---- defect helper (shown once a non-passing result is chosen) ----
   const effResult: Result | null = result ?? (row.result !== 'not_run' ? row.result : null);
   const showDefect = effResult === 'fail' || effResult === 'blocked' || effResult === 'skipped';
-  const defectText = showDefect ? buildDefectText(run, { ...row, result: effResult, tester, notes }, kase) : '';
+  const defectText = showDefect
+    ? buildDefectText(run, { ...row, result: effResult, tester, notes }, kase, ctx.markdownTarget)
+    : '';
   const copyDefect = () => {
     const writing = navigator.clipboard?.writeText(defectText);
     if (!writing) {

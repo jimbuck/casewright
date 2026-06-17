@@ -94,7 +94,21 @@ describe('buildDefectText', () => {
     const text = buildDefectText(run, row, nested);
     expect(text).toContain('1. Open login');
     expect(text).toContain('2. Expand advanced');
-    expect(text).toContain('  2.1. Toggle the secret flag  ✗ flag ignored'); // depth-1 → 2-space indent + outline number
+    // depth-1 → content-aligned (4-space) indent + outline number, matching the default CommonMark target
+    expect(text).toContain('    2.1. Toggle the secret flag  ✗ flag ignored');
+  });
+
+  it('honors the markdown target for the reproduction list indentation', () => {
+    const nested: Case = {
+      ...kase,
+      steps: [
+        { text: 'Open login', depth: 0 },
+        { text: 'Toggle the secret flag', depth: 1 },
+      ],
+    };
+    const row: RunRow = { ...baseRow, checks: { 'step:1': 'fail' }, failNotes: { 'step:1': 'flag ignored' }, notes: '' };
+    const text = buildDefectText(run, row, nested, 'azure-devops');
+    expect(text).toContain('    1.1. Toggle the secret flag  ✗ flag ignored');
   });
 
   it('falls back to snapshot text when the live case is gone', () => {

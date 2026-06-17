@@ -70,7 +70,7 @@ Access to the account inbox so the reset email can be opened.
 
 1. Navigate to the login screen.
 2. Click "Forgot password".
-  1. Confirm the recovery form is shown.
+    1. Confirm the recovery form is shown.
 3. Enter the account email and submit.
 
 ## Acceptance Criteria
@@ -98,6 +98,12 @@ describe('serializeCase', () => {
       expect(out).toContain(h);
     }
   });
+
+  it('indents nested steps to the target platform unit (content-aligned for ADO)', () => {
+    expect(serializeCase(PRD_CASE, '', 'azure-devops')).toContain('\n    1. Confirm the recovery form is shown.\n');
+    // every named platform shares the portable 4-space rule today
+    expect(serializeCase(PRD_CASE, '', 'github')).toBe(serializeCase(PRD_CASE, '', 'commonmark'));
+  });
 });
 
 describe('parseCase', () => {
@@ -108,9 +114,17 @@ describe('parseCase', () => {
   });
 
   it('tolerates the markdown-natural (3-space) step indentation', () => {
-    const md = PRD_CANONICAL.replace('  1. Confirm', '   1. Confirm');
+    const md = PRD_CANONICAL.replace('    1. Confirm', '   1. Confirm');
     const { case: c } = parseCase(md);
     expect(c.steps[2]).toEqual({ text: 'Confirm the recovery form is shown.', depth: 1 });
+  });
+
+  it('reads legacy 2-space step indentation and migrates it to the canonical width on serialize', () => {
+    const legacy = PRD_CANONICAL.replace('    1. Confirm', '  1. Confirm');
+    const { case: c } = parseCase(legacy);
+    expect(c.steps[2]).toEqual({ text: 'Confirm the recovery form is shown.', depth: 1 });
+    // re-serializing (default CommonMark target) reflows it to the 4-space canonical form
+    expect(serializeCase(c)).toBe(PRD_CANONICAL);
   });
 
   it('generates an id and warns when front matter has none', () => {

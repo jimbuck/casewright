@@ -1,4 +1,4 @@
-export { ConfigYamlSchema, type ConfigYaml } from './config';
+export { ConfigYamlSchema, type ConfigYaml, MARKDOWN_TARGETS, MarkdownTargetSchema, type MarkdownTarget } from './config';
 export { FolderNoteFrontSchema, type FolderNoteFront } from './folder-note';
 export { CaseFrontMatterSchema, type CaseFrontMatter } from './case';
 // Legacy formats — read only, for migration + a fallback reader (removed after a release or two).
