@@ -1,11 +1,22 @@
+import { node } from '@/lib/node';
 import { isNwjs } from '@/lib/nwjs';
 import { serializeCase } from '@/services/format/case';
 import { caseFileName } from '@/services/format/filename';
+import { serializeOrder } from '@/services/format/order';
 import { flushPersist, schedulePersist } from '@/services/persist';
-import { deletePath, loadRepo, openRepo as openRepoSvc, syncFolderNote, wasSelfWrite, writeFileAt } from '@/services/repo';
+import {
+  deletePath,
+  loadRepo,
+  openRepo as openRepoSvc,
+  orderFileRel,
+  readMaybe,
+  syncFolderNote,
+  wasSelfWrite,
+  writeFileAt,
+} from '@/services/repo';
 import { watchRepo, type RepoWatcher } from '@/services/watch';
 import type { Case, Change, Workspace } from '@/types';
-import { buildSuiteIndex, findSuiteNode } from './tree-helpers';
+import { baseName, buildSuiteIndex, findSuiteNode } from './tree-helpers';
 import { createCaseHistory } from './history';
 import type { AppState, StoreGet, StoreSet } from './app-store';
 
@@ -185,6 +196,39 @@ export function createStoreInternals(set: StoreSet, get: StoreGet) {
     void reloadFromDisk();
   };
 
+  // Persist a folder's child ordering to its `.order` file (Azure DevOps wiki format: one
+  // child key per line — a case's filename stem or a subfolder basename). `force` lets an
+  // explicit reorder *create* the file; otherwise we only keep an *existing* `.order` current
+  // (so ordinary create/delete never litters never-reordered folders). We never delete it —
+  // once a folder is ordered it stays ordered, even if the order matches alphabetical.
+  const syncOrder = async (nodeId: string | null, opts?: { force?: boolean }) => {
+    const rp = get().repoPath;
+    if (!rp || !nodeId) return;
+    const n = findSuiteNode(get().tree, nodeId);
+    if (!n) return;
+    const rel = orderFileRel(n.path);
+    const existing = await readMaybe(node.path().join(rp, rel));
+    if (!opts?.force && existing == null) return; // maintain-only: nothing to keep in sync
+    const byId = new Map(get().cases.map((c) => [c.id, c]));
+    const keys: string[] = [];
+    for (const ch of n.children) {
+      if (ch.type === 'case') {
+        const c = byId.get(ch.id);
+        if (c) keys.push(caseFileName(c).replace(/\.md$/, '')); // skip stale (deleted) case nodes
+      } else {
+        keys.push(baseName(ch.path));
+      }
+    }
+    const content = serializeOrder(keys);
+    if (existing === content) return;
+    try {
+      await writeFileAt(rp, rel, content);
+      scheduleRefresh();
+    } catch (e) {
+      onWriteError(e);
+    }
+  };
+
   const writeCaseNow = async (id: string) => {
     const { repoPath } = get();
     const c = get().cases.find((x) => x.id === id);
@@ -194,7 +238,11 @@ export function createStoreInternals(set: StoreSet, get: StoreGet) {
     try {
       await writeFileAt(repoPath, rel, serializeCase(parsed));
       const prev = lastCasePath.get(id);
-      if (prev && prev !== rel) await deletePath(repoPath, prev);
+      if (prev && prev !== rel) {
+        await deletePath(repoPath, prev);
+        // The filename (its `.order` key) changed — keep any existing `.order` current.
+        void syncOrder(c.suite);
+      }
       lastCasePath.set(id, rel);
       scheduleRefresh();
     } catch (e) {
@@ -270,6 +318,7 @@ export function createStoreInternals(set: StoreSet, get: StoreGet) {
     stopWatch,
     startWatch,
     onWriteError,
+    syncOrder,
     writeCaseNow,
     deleteCaseOnDisk,
     writeWorkspaceNote,

@@ -15,6 +15,7 @@ export const CONFIG_REL = '.casewright/config.yaml';
 export const RUNS_REL = '.casewright/runs';
 export const WORKSPACE_MARKER = 'casewright.yaml'; // legacy workspace marker — read only (migration + fallback)
 export const LEGACY_SUITE_FILE = '_suite.md'; // legacy suite metadata — read only (migration + fallback)
+export const ORDER_FILE = '.order'; // Azure DevOps wiki ordering file (one child key per line)
 
 /**
  * Join repo-relative path segments, treating the repo root (`'.'` or `''`) as empty
@@ -72,6 +73,11 @@ export function parentOf(rel: string): string {
 export function folderNoteRel(folderRel: string): string {
   if (folderRel === '' || folderRel === '.') return CONFIG_REL;
   return relJoin(parentOf(folderRel), `${baseOf(folderRel)}.md`);
+}
+
+/** Repo-relative path of a folder's `.order` file (lives *inside* the folder it orders). */
+export function orderFileRel(folderRel: string): string {
+  return relJoin(folderRel, ORDER_FILE);
 }
 
 /**

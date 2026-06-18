@@ -4,12 +4,14 @@ import type { Case, Run, TreeNode, Workspace } from '@/types';
 import { slug } from '@/utils/ids';
 import { parseCase } from './format/case';
 import { parseFolderNote } from './format/folder-note';
+import { parseOrder } from './format/order';
 import { parseRunCase, parseRunDetails, type RunCaseItem } from './format/run';
 import { parseSuite } from './format/suite';
 import {
   CASEWRIGHT_DIR,
   CONFIG_REL,
   LEGACY_SUITE_FILE,
+  ORDER_FILE,
   RUNS_REL,
   WORKSPACE_MARKER,
   derivePrefix,
@@ -353,26 +355,56 @@ export async function loadWorkspace(repoPath: string, ws: Workspace): Promise<Lo
     // id so a root workspace (`ws.path === ''`) doesn't get an empty suite id.
     const suiteId = fullRel === ws.path ? ws.id : slug(fullRel);
 
-    for (const f of files) {
-      const text = (await readMaybe(path.join(absDir, f.name))) ?? '';
-      const parsed = parseCase(text);
-      cases.push({ ...parsed.case, suite: suiteId, modified: false });
-      nodes.push({ type: 'case', id: parsed.case.id });
-      for (const w of parsed.warnings) warnings.push({ ...w, file: relJoin(fullRel, f.name) });
+    // Merge cases + subfolders into one display sequence. Default order is the historical
+    // "cases (byName) then dirs (byName)". An optional `.order` (Azure DevOps wiki format)
+    // overrides it: keys it lists come first in that order; on-disk children missing from
+    // `.order` are appended in the default order. A `.order` key is the child's filename
+    // stem (case, minus `.md`) or the subfolder basename.
+    type Item = { dir: false; entry: (typeof files)[number] } | { dir: true; entry: (typeof dirs)[number] };
+    const items: Item[] = [
+      ...files.map((entry) => ({ dir: false as const, entry })),
+      ...dirs.map((entry) => ({ dir: true as const, entry })),
+    ];
+    const keyOf = (it: Item) => (it.dir ? it.entry.name : it.entry.name.slice(0, -3));
+    const orderRaw = await readMaybe(path.join(absDir, ORDER_FILE));
+    let ordered = items;
+    if (orderRaw != null) {
+      const byKey = new Map(items.map((it) => [keyOf(it), it]));
+      const used = new Set<string>();
+      const head: Item[] = [];
+      for (const k of parseOrder(orderRaw)) {
+        const it = byKey.get(k);
+        if (it && !used.has(k)) {
+          head.push(it);
+          used.add(k);
+        }
+      }
+      ordered = [...head, ...items.filter((it) => !used.has(keyOf(it)))];
     }
-    for (const d of dirs) {
-      const childFull = relJoin(fullRel, d.name);
-      const meta = await readSuiteMeta(absDir, entries, d.name);
-      const children = await walk(path.join(absDir, d.name), childFull);
-      nodes.push({
-        type: 'suite',
-        id: slug(childFull),
-        name: meta?.name?.trim() || d.name,
-        path: childFull,
-        ...(meta?.prefix?.trim() ? { prefix: meta.prefix.trim() } : {}),
-        ...(meta?.description?.trim() ? { description: meta.description } : {}),
-        children,
-      });
+
+    for (const it of ordered) {
+      if (!it.dir) {
+        const f = it.entry;
+        const text = (await readMaybe(path.join(absDir, f.name))) ?? '';
+        const parsed = parseCase(text);
+        cases.push({ ...parsed.case, suite: suiteId, modified: false });
+        nodes.push({ type: 'case', id: parsed.case.id });
+        for (const w of parsed.warnings) warnings.push({ ...w, file: relJoin(fullRel, f.name) });
+      } else {
+        const d = it.entry;
+        const childFull = relJoin(fullRel, d.name);
+        const meta = await readSuiteMeta(absDir, entries, d.name);
+        const children = await walk(path.join(absDir, d.name), childFull);
+        nodes.push({
+          type: 'suite',
+          id: slug(childFull),
+          name: meta?.name?.trim() || d.name,
+          path: childFull,
+          ...(meta?.prefix?.trim() ? { prefix: meta.prefix.trim() } : {}),
+          ...(meta?.description?.trim() ? { description: meta.description } : {}),
+          children,
+        });
+      }
     }
     return nodes;
   };

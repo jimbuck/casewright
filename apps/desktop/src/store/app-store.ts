@@ -97,6 +97,7 @@ export interface AppState {
   renameSuite: (id: string, name: string) => void;
   deleteSuite: (id: string) => Promise<void>;
   moveNodeToParent: (dragId: string, parentId: string | null, index: number) => void;
+  regenerateDisplayIds: (nodeId: string) => Promise<void>;
 
   /* runs */
   updateRunRow: (runId: string, i: number, patch: Partial<RunRow>) => void;

@@ -556,3 +556,75 @@ describe('write primitives', () => {
     expect(await exists('areas/payments/Billing/PAY-0001-first.md')).toBe(false);
   });
 });
+
+// ---------------------------------------------------------------------------
+// `.order` files — Azure DevOps wiki ordering honored by the loader
+// ---------------------------------------------------------------------------
+describe('.order ordering', () => {
+  let repoPath: string;
+  const mkCase = (id: string, displayId: string, title: string): ParsedCase => ({
+    id,
+    displayId,
+    title,
+    status: 'active',
+    tags: [],
+    objective: '',
+    systems: [],
+    setup: [],
+    steps: [],
+    expected: [],
+  });
+
+  beforeEach(async () => {
+    const fsp = node.fsp();
+    const path = node.path();
+    repoPath = await mkRepo('cw-order-');
+    await fsp.mkdir(path.join(repoPath, '.casewright', 'runs'), { recursive: true });
+    await fsp.writeFile(
+      path.join(repoPath, '.casewright', 'config.yaml'),
+      'version: 1\nname: Root\ndisplayIdPrefix: CW\nworkspaces:\n  - .\n',
+    );
+    // Two root cases + a subfolder. Default (byName) order = cases then dirs: apple, bravo, Zebra.
+    await fsp.writeFile(path.join(repoPath, 'CW-0001-apple.md'), serializeCase(mkCase('id-apple', 'CW-0001', 'Apple')));
+    await fsp.writeFile(path.join(repoPath, 'CW-0002-bravo.md'), serializeCase(mkCase('id-bravo', 'CW-0002', 'Bravo')));
+    await fsp.mkdir(path.join(repoPath, 'Zebra'), { recursive: true });
+    await fsp.writeFile(path.join(repoPath, 'Zebra', 'CW-0003-zed.md'), serializeCase(mkCase('id-zed', 'CW-0003', 'Zed')));
+    await gitInit(repoPath);
+  });
+
+  afterEach(async () => {
+    await node.fsp().rm(repoPath, { recursive: true, force: true });
+  });
+
+  /** Project the top-level tree to a comparable key list (case → displayId, suite → basename). */
+  const topKeys = (tree: Awaited<ReturnType<typeof loadWorkspace>>['tree'], cases: { id: string; displayId: string }[]) =>
+    tree.map((n) => (n.type === 'case' ? cases.find((c) => c.id === n.id)!.displayId : n.path.split('/').pop()));
+
+  it('with no .order, keeps cases (byName) then dirs (byName)', async () => {
+    const { workspaces } = await openRepo(repoPath);
+    const { tree, cases } = await loadWorkspace(repoPath, workspaces[0]);
+    expect(topKeys(tree, cases)).toEqual(['CW-0001', 'CW-0002', 'Zebra']);
+  });
+
+  it('honors .order, interleaving cases and folders', async () => {
+    await node.fsp().writeFile(node.path().join(repoPath, '.order'), 'Zebra\nCW-0002-bravo\nCW-0001-apple\n');
+    const { workspaces } = await openRepo(repoPath);
+    const { tree, cases } = await loadWorkspace(repoPath, workspaces[0]);
+    expect(topKeys(tree, cases)).toEqual(['Zebra', 'CW-0002', 'CW-0001']);
+  });
+
+  it('appends children missing from .order (in default order) and ignores unknown keys', async () => {
+    // Only bravo listed (plus a stale entry); apple + Zebra fall to the default-order tail.
+    await node.fsp().writeFile(node.path().join(repoPath, '.order'), 'CW-0002-bravo\nGHOST-9999-gone\n');
+    const { workspaces } = await openRepo(repoPath);
+    const { tree, cases } = await loadWorkspace(repoPath, workspaces[0]);
+    expect(topKeys(tree, cases)).toEqual(['CW-0002', 'CW-0001', 'Zebra']);
+  });
+
+  it('does not treat .order as a case', async () => {
+    await node.fsp().writeFile(node.path().join(repoPath, '.order'), 'CW-0001-apple\n');
+    const { workspaces } = await openRepo(repoPath);
+    const { cases } = await loadWorkspace(repoPath, workspaces[0]);
+    expect(cases.map((c) => c.displayId).sort()).toEqual(['CW-0001', 'CW-0002', 'CW-0003']);
+  });
+});

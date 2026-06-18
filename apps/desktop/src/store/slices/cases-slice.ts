@@ -2,7 +2,15 @@ import { schedulePersist } from '@/services/persist';
 import { deletePath, folderNoteRel, makeDir, moveFolderNote, renamePath, syncFolderNote } from '@/services/repo';
 import type { Case, TreeNode } from '@/types';
 import { folderSlug, randomId, slug } from '@/utils/ids';
-import { baseName, buildSuiteIndex, clone, findSuiteNode, isDescendant } from '../tree-helpers';
+import {
+  baseName,
+  buildSuiteIndex,
+  clone,
+  findParentSuiteId,
+  findSuiteNode,
+  isDescendant,
+  nextDisplayId,
+} from '../tree-helpers';
 import type { StoreInternals } from '../store-internals';
 import type { AppState, StoreGet, StoreSet } from '../app-store';
 
@@ -24,6 +32,7 @@ type CasesSlice = Pick<
   | 'renameSuite'
   | 'deleteSuite'
   | 'moveNodeToParent'
+  | 'regenerateDisplayIds'
   | 'updateSuite'
 >;
 
@@ -41,6 +50,7 @@ export function createCasesSlice(set: StoreSet, get: StoreGet, internals: StoreI
     reseed,
     lastCasePath,
     writeSuiteNote,
+    syncOrder,
   } = internals;
 
   return {
@@ -70,12 +80,15 @@ export function createCasesSlice(set: StoreSet, get: StoreGet, internals: StoreI
       const src = get().cases.find((c) => c.id === id);
       if (!src) return;
       const newId = randomId();
-      // a duplicate intentionally inherits the source displayId — the editor surfaces the
-      // resulting ID conflict and lets the user decide how to renumber it.
+      // A duplicate gets a fresh display id from its suite's inherited prefix (not a copy of
+      // the source id), so it never lands as a conflicting display id.
+      const idx = buildSuiteIndex(get().tree);
+      const prefix = idx.resolvedPrefix[src.suite] ?? (get().workspace?.prefix || 'CW');
+      const displayId = nextDisplayId(get().cases, prefix);
       const dup: Case = {
         ...src,
         id: newId,
-        displayId: src.displayId,
+        displayId,
         title: 'Copy of ' + src.title,
         modified: true,
         tags: [...src.tags],
@@ -103,7 +116,8 @@ export function createCasesSlice(set: StoreSet, get: StoreGet, internals: StoreI
       });
       upsertChange({ kind: 'case', refId: newId, path: casePath(dup), status: 'A', label: dup.title });
       void writeCaseNow(newId);
-      get().toast('Duplicated — resolve the display ID conflict');
+      void syncOrder(dup.suite); // the dup sits right after the source — keep any `.order` current
+      get().toast('Duplicated · ' + displayId);
     },
 
     deleteCase: async (id) => {
@@ -128,6 +142,7 @@ export function createCasesSlice(set: StoreSet, get: StoreGet, internals: StoreI
       set({ cases: rest, sel: { kind: 'case', id: rest[0]?.id, runId: null }, view: 'editor' });
       upsertChange({ kind: 'case', refId: id, path: casePath(c), status: 'D', label: c.title });
       void deleteCaseOnDisk(rel, id);
+      void syncOrder(c.suite); // drop the deleted case from any existing `.order`
       get().toast('Deleted ' + c.displayId);
     },
 
@@ -142,14 +157,7 @@ export function createCasesSlice(set: StoreSet, get: StoreGet, internals: StoreI
       const newId = randomId();
       // Prefix resolves by inheritance: this suite's own override → nearest ancestor → workspace.
       const prefix = idx.resolvedPrefix[suite] ?? (ws.prefix || 'CW');
-      const num =
-        Math.max(
-          0,
-          ...cases
-            .filter((c) => c.displayId.startsWith(prefix + '-'))
-            .map((c) => parseInt(c.displayId.split('-')[1] ?? '0', 10) || 0),
-        ) + 1;
-      const displayId = `${prefix}-${String(num).padStart(4, '0')}`;
+      const displayId = nextDisplayId(cases, prefix);
       const kase: Case = {
         id: newId,
         displayId,
@@ -178,6 +186,7 @@ export function createCasesSlice(set: StoreSet, get: StoreGet, internals: StoreI
       });
       upsertChange({ kind: 'case', refId: newId, path: casePath(kase), status: 'A', label: kase.title });
       void writeCaseNow(newId);
+      void syncOrder(suite); // append the new case to any existing `.order`
       get().toast('New case · ' + displayId);
     },
 
@@ -199,6 +208,7 @@ export function createCasesSlice(set: StoreSet, get: StoreGet, internals: StoreI
         };
       });
       if (get().repoPath) void makeDir(get().repoPath, suiteRel(id)).then(scheduleRefresh).catch(onWriteError);
+      void syncOrder(targetId); // append the new subfolder to any existing `.order`
       get().toast(`New suite in ${parent.name}`);
     },
 
@@ -207,6 +217,7 @@ export function createCasesSlice(set: StoreSet, get: StoreGet, internals: StoreI
     // hyphenated folder + a note recording the custom display name.
     renameSuite: (id, name) => {
       const oldRel = suiteRel(id);
+      const parentId = findParentSuiteId(get().tree, id); // its basename is this folder's `.order` key
       const folder = folderSlug(name) || baseName(oldRel);
       set((s) => {
         const next = clone(s.tree);
@@ -232,6 +243,7 @@ export function createCasesSlice(set: StoreSet, get: StoreGet, internals: StoreI
           if (oldRel && newRel && oldRel !== newRel) {
             await deletePath(rp, folderNoteRel(oldRel)); // remove the stale sibling note (no-op if absent)
             await renamePath(rp, oldRel, newRel);
+            await syncOrder(parentId); // the folder's `.order` key (its basename) changed
           }
           await syncFolderNote(rp, newRel, { name: renamed.name, prefix: renamed.prefix, description: renamed.description });
           reseed();
@@ -244,6 +256,7 @@ export function createCasesSlice(set: StoreSet, get: StoreGet, internals: StoreI
     deleteSuite: async (id) => {
       const node = findSuiteNode(get().tree, id);
       if (!node) return;
+      const parentId = findParentSuiteId(get().tree, id);
       const collectCases = (n: TreeNode, acc: string[]): string[] => {
         if (n.type === 'suite')
           n.children.forEach((ch) => (ch.type === 'case' ? acc.push(ch.id) : collectCases(ch, acc)));
@@ -278,6 +291,7 @@ export function createCasesSlice(set: StoreSet, get: StoreGet, internals: StoreI
           try {
             await deletePath(rp, rel);
             await deletePath(rp, folderNoteRel(rel)); // remove the sibling note too (no-op if absent)
+            await syncOrder(parentId); // drop the deleted folder from any existing `.order`
             reseed();
           } catch (e) {
             onWriteError(e);
@@ -295,6 +309,7 @@ export function createCasesSlice(set: StoreSet, get: StoreGet, internals: StoreI
       if (isDescendant(get().tree, dragId, parentId)) return;
       const draggedCase = get().cases.find((c) => c.id === dragId);
       const oldRel = draggedCase ? lastCasePath.get(dragId) ?? casePath(draggedCase) : suiteRel(dragId);
+      const oldParentId = draggedCase ? draggedCase.suite : findParentSuiteId(get().tree, dragId);
       set((s) => {
         const next = clone(s.tree);
         let dragged: TreeNode | null = null;
@@ -346,19 +361,88 @@ export function createCasesSlice(set: StoreSet, get: StoreGet, internals: StoreI
       const movedCase = get().cases.find((c) => c.id === dragId);
       const newRel = movedCase ? casePath(movedCase) : suiteRel(dragId);
       const rp = get().repoPath;
-      if (rp && oldRel && newRel && oldRel !== newRel) {
-        void (async () => {
-          try {
+      if (!rp) return;
+      void (async () => {
+        try {
+          if (oldRel && newRel && oldRel !== newRel) {
             await renamePath(rp, oldRel, newRel);
             // A moved suite's folder basename is unchanged — only its parent dir — so its
             // sibling note follows it (no-op when the suite has no note).
             if (!movedCase) await moveFolderNote(rp, oldRel, newRel);
-            reseed();
-          } catch (e) {
-            onWriteError(e);
           }
-        })();
+          // An explicit drag persists the new order — create/update `.order` for both ends
+          // (same id when reordering within one folder).
+          await syncOrder(oldParentId, { force: true });
+          if (parentId !== oldParentId) await syncOrder(parentId, { force: true });
+          reseed();
+        } catch (e) {
+          onWriteError(e);
+        }
+      })();
+    },
+
+    // "Clean up display IDs" — renumber the cases under a folder using each one's *effective*
+    // prefix (folder settings) and the current tree order. Recursive over the subtree; to stay
+    // globally unique, every affected prefix is renumbered workspace-wide (in tree order),
+    // restarting at 0001 per prefix. Confirm-gated and not undoable (it bulk-renames files).
+    regenerateDisplayIds: async (nodeId) => {
+      const { tree, cases } = get();
+      const idx = buildSuiteIndex(tree);
+      const byId = new Map(cases.map((c) => [c.id, c]));
+      const subtree = new Set(idx.inSuite(nodeId));
+      if (!subtree.size) {
+        get().toast('No cases to renumber');
+        return;
       }
+      // Prefixes actually present under the clicked folder (their *effective* prefix).
+      const affected = new Set<string>();
+      cases.forEach((c) => subtree.has(c.id) && affected.add(idx.resolvedPrefix[c.suite] ?? 'CW'));
+      // Confine renumbering to the workspace that owns the clicked folder.
+      const wsPath = workspaceOfPath(idx.path[nodeId] ?? '')?.path ?? '';
+      const inWorkspace = (suiteId: string) => {
+        const p = idx.path[suiteId] ?? '';
+        return wsPath === '' || p === wsPath || p.startsWith(wsPath + '/');
+      };
+      // Walk the tree in display order → case ids; assign sequential numbers per affected prefix.
+      const order: string[] = [];
+      const walk = (nodes: TreeNode[]) =>
+        nodes.forEach((n) => (n.type === 'case' ? order.push(n.id) : walk(n.children)));
+      walk(tree);
+      const counters: Record<string, number> = {};
+      const newId: Record<string, string> = {};
+      for (const cid of order) {
+        const c = byId.get(cid);
+        if (!c) continue;
+        const pfx = idx.resolvedPrefix[c.suite] ?? 'CW';
+        if (!affected.has(pfx) || !inWorkspace(c.suite)) continue;
+        counters[pfx] = (counters[pfx] ?? 0) + 1;
+        newId[cid] = `${pfx}-${String(counters[pfx]).padStart(4, '0')}`;
+      }
+      const changed = order.filter((id) => newId[id] && byId.get(id)!.displayId !== newId[id]);
+      if (!changed.length) {
+        get().toast('Display IDs already clean');
+        return;
+      }
+      if (
+        !(await get().confirm({
+          title: `Renumber ${changed.length} display ID${changed.length > 1 ? 's' : ''}?`,
+          message: 'Rewrites display IDs (and renames files) for the affected prefixes across the workspace. This cannot be undone.',
+          confirmLabel: 'Renumber',
+        }))
+      )
+        return;
+      const changedSet = new Set(changed);
+      set((s) => ({
+        cases: s.cases.map((c) => (changedSet.has(c.id) ? { ...c, displayId: newId[c.id], modified: true } : c)),
+      }));
+      // Persist each renamed case; writeCaseNow renames the file and refreshes its folder's
+      // `.order` (when one exists), so order is preserved while the filenames change.
+      for (const id of changed) {
+        const c = get().cases.find((x) => x.id === id);
+        if (c) upsertChange({ kind: 'case', refId: id, path: casePath(c), status: 'M', label: c.title });
+        await writeCaseNow(id);
+      }
+      get().toast(`Renumbered ${changed.length} display ID${changed.length > 1 ? 's' : ''}`);
     },
 
     updateSuite: (suiteId, patch) => {

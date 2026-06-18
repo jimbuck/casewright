@@ -58,6 +58,7 @@ export function Sidebar() {
     deleteCase,
     duplicateCase,
     moveNodeToParent,
+    regenerateDisplayIds,
     casePath,
     toast,
   } = useApp();
@@ -281,6 +282,8 @@ export function Sidebar() {
           on: () => setCollapsed((s) => ({ ...s, [node.id]: !collapsed[node.id] })),
         },
         { sep: true },
+        { icon: I.sync, label: 'Clean up display IDs', on: () => void regenerateDisplayIds(node.id) },
+        { sep: true },
         { icon: I.link, label: 'Copy workspace path', sub: node.path, on: () => toast('Copied ' + node.path) },
         { icon: I.folderOpen, label: 'Reveal in File Explorer', desktop: true, on: () => toast('nw.Shell.showItemInFolder — ' + node.name) },
       ];
@@ -294,6 +297,8 @@ export function Sidebar() {
         label: collapsed[node.id] ? 'Expand' : 'Collapse',
         on: () => setCollapsed((s) => ({ ...s, [node.id]: !collapsed[node.id] })),
       },
+      { sep: true },
+      { icon: I.sync, label: 'Clean up display IDs', on: () => void regenerateDisplayIds(node.id) },
       { sep: true },
       { icon: I.link, label: 'Copy folder path', sub: node.path, on: () => toast('Copied ' + node.path) },
       { icon: I.folderOpen, label: 'Reveal in File Explorer', desktop: true, on: () => toast('nw.Shell.showItemInFolder — ' + node.name) },

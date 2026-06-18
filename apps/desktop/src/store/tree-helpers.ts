@@ -1,4 +1,4 @@
-import type { SuiteNode, TreeNode } from '@/types';
+import type { Case, SuiteNode, TreeNode } from '@/types';
 
 // ---------------------------------------------------------------------------
 // Pure helpers over the workspace/suite/case tree. No store access — every
@@ -44,6 +44,29 @@ export function buildSuiteIndex(tree: TreeNode[]) {
   };
 
   return { path, resolvedPrefix, inSuite };
+}
+
+/** Id of the suite/workspace node that directly contains `childId`, or `null` (top level). */
+export function findParentSuiteId(nodes: TreeNode[], childId: string): string | null {
+  for (const n of nodes) {
+    if (n.type !== 'suite') continue;
+    if (n.children.some((ch) => ch.id === childId)) return n.id;
+    const r = findParentSuiteId(n.children, childId);
+    if (r) return r;
+  }
+  return null;
+}
+
+/** The next free display id for a prefix: `<prefix>-<max existing number + 1, zero-padded>`. */
+export function nextDisplayId(cases: Case[], prefix: string): string {
+  const num =
+    Math.max(
+      0,
+      ...cases
+        .filter((c) => c.displayId.startsWith(prefix + '-'))
+        .map((c) => parseInt(c.displayId.split('-')[1] ?? '0', 10) || 0),
+    ) + 1;
+  return `${prefix}-${String(num).padStart(4, '0')}`;
 }
 
 /** Find a suite node anywhere in the tree by id (depth-first), or `null`. */
