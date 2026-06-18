@@ -2,6 +2,13 @@
 
 All notable changes to Casewright. Generated automatically from Conventional Commits — do not edit by hand.
 
+# [0.8.0](https://github.com/jimbuck/casewright/compare/v0.7.0...v0.8.0) (2026-06-18)
+
+
+### Features
+
+* **desktop:** persist sidebar order via .order files + display-ID cleanup ([2b7e0c5](https://github.com/jimbuck/casewright/commit/2b7e0c54f51b1aba87d6079855eeac84ed747dcf))
+
 # [0.7.0](https://github.com/jimbuck/casewright/compare/v0.6.2...v0.7.0) (2026-06-18)
 
 
