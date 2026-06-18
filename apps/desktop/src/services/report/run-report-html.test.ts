@@ -86,6 +86,7 @@ function buildModel(overrides: Partial<RunReportModel> = {}): RunReportModel {
     generatedAt: '2026-06-12 09:30',
     summary: buildRunSummary(run, [kase]),
     suites,
+    notes: run.notes,
     testerApproval: run.testerApproval,
     reviewerApproval: run.reviewerApproval,
     ...overrides,
@@ -176,5 +177,44 @@ describe('buildRunReportHtml', () => {
     const html = buildRunReportHtml(buildModel({ runName: 'Reset <b> & "x"' }));
     expect(html).not.toContain('Reset <b>');
     expect(html).toContain('Reset &lt;b&gt; &amp; &quot;x&quot;');
+  });
+
+  it('renders markdown in run notes, failure notes, and row notes (but not in titles/names)', () => {
+    const r: Run = {
+      ...run,
+      notes: 'Run-level **summary** note',
+      rows: [
+        {
+          ...failRow,
+          failNotes: { 'step:0': '`500` from *gateway*', 'accept:0': 'never arrived' },
+          notes: 'see [ticket](https://x.io)',
+        },
+      ],
+    };
+    const html = buildRunReportHtml(
+      buildModel({ notes: r.notes, summary: buildRunSummary(r, [kase]), suites: [] }),
+    );
+    expect(html).toContain('<h2>Notes</h2>');
+    expect(html).toContain('<strong>summary</strong>'); // run-level notes
+    expect(html).toContain('<code>500</code>'); // failure-note inline code
+    expect(html).toContain('<em>gateway</em>'); // failure-note emphasis
+    expect(html).toContain('<a href="https://x.io">ticket</a>'); // row-note link
+  });
+
+  it('keeps case titles escaped even though their detail renders markdown', () => {
+    const html = buildRunReportHtml(
+      buildModel({
+        suites: [
+          {
+            name: 'Auth',
+            total: 1,
+            counts: { pass: 0, fail: 1, blocked: 0, skipped: 0, not_run: 0 },
+            cases: [{ display_id: 'X-1', title: 'Title <b>raw</b>', result: 'fail', detail: 'failed **hard**' }],
+          },
+        ],
+      }),
+    );
+    expect(html).toContain('Title &lt;b&gt;raw&lt;/b&gt;'); // title stays escaped
+    expect(html).toContain('failed <strong>hard</strong>'); // detail renders markdown
   });
 });

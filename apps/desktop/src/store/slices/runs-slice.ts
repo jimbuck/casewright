@@ -388,6 +388,7 @@ export function createRunsSlice(set: StoreSet, get: StoreGet, ctx: StoreCtx): Ru
         generatedAt: nowStamp(),
         summary: buildRunSummary(run, cases),
         suites: groupRunBySuite(run, cases, tree),
+        notes: run.notes,
         testerApproval: run.testerApproval,
         reviewerApproval: run.reviewerApproval,
       };

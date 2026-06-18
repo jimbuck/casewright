@@ -318,6 +318,9 @@ async function loadRuns(repoPath: string, warnings: LintWarning[]): Promise<Run[
       reviewerApproval: det?.details.reviewerApproval ?? null,
     });
   }
+  // Newest-first by created date (id as a stable tie-breaker) — an explicit order every consumer
+  // can rely on, rather than the incidental folder-name ordering above.
+  runs.sort((a, b) => b.created.localeCompare(a.created) || b.id.localeCompare(a.id));
   return runs;
 }
 

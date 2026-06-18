@@ -2,6 +2,7 @@ import { I } from '@/components/icons';
 import { Button, RES, RowContextMenu, Tag } from '@/components/ui';
 import { cn } from '@/lib/utils';
 import { useApp } from '@/store/app-store';
+import { formatRunDate, runDateGroups } from '@/utils/dates';
 import type { Result, RunRow } from '@/types';
 
 type Tally = Record<Result, number>;
@@ -31,48 +32,58 @@ export function RunsList() {
             {I.plus({ size: 15 })} New run
           </Button>
         </div>
-        <div className="flex flex-col gap-2.5">
-          {runs.map((run) => {
-            const t = tally(run.rows);
-            const total = run.rows.length;
-            return (
-              <RowContextMenu
-                key={run.id}
-                items={[
-                  { label: 'Duplicate', icon: I.copy, on: () => ctx.duplicateRun(run.id) },
-                  { label: 'Export PDF…', icon: I.download, on: () => ctx.exportRunToPdf(run.id) },
-                  { sep: true },
-                  { label: 'Delete', icon: I.trash, danger: true, on: () => ctx.deleteRun(run.id) },
-                ]}
-              >
-              <button
-                className="flex items-center gap-4 rounded-lg border border-border bg-panel px-[18px] py-[15px] text-left transition hover:border-accent-line hover:shadow-[0_2px_8px_var(--shadow)]"
-                onClick={() => openRun(run.id)}
-              >
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-[9px] text-[14.5px] font-semibold">
-                    {run.name}
-                    <span className={cn('rounded-full px-2 py-0.5 text-[10.5px] font-bold uppercase tracking-[0.05em]', RUN_STATUS[run.status])}>
-                      {run.status}
-                    </span>
-                  </div>
-                  <div className="mt-[3px] font-mono text-[11.5px] text-ink-faint">{run.file}</div>
-                </div>
-                <div className="w-[260px] shrink-0 text-right">
-                  <div className="flex h-[7px] w-full overflow-hidden rounded-full bg-sunken">
-                    {SEGS.map((s) =>
-                      t[s] ? <i key={s} className="block h-full" style={{ width: (t[s] / total) * 100 + '%', background: RES[s].color }} /> : null,
-                    )}
-                  </div>
-                  <div className="mt-1.5 whitespace-nowrap font-mono text-[11.5px] text-ink-3">
-                    {total} cases · {t.pass} pass · {t.fail} fail{t.blocked ? ' · ' + t.blocked + ' blocked' : ''}
-                  </div>
-                </div>
-                <span className="grid place-items-center text-ink-faint">{I.chevron({ size: 16 })}</span>
-              </button>
-              </RowContextMenu>
-            );
-          })}
+        <div className="flex flex-col gap-6">
+          {runDateGroups(runs).map((group) => (
+            <section key={group.label} className="flex flex-col gap-2.5">
+              <div className="flex items-center gap-2 px-0.5 text-[11px] font-bold uppercase tracking-[0.05em] text-ink-faint">
+                {group.label}
+                <span className="font-mono text-[10.5px]">{group.runs.length}</span>
+              </div>
+              {group.runs.map((run) => {
+                const t = tally(run.rows);
+                const total = run.rows.length;
+                return (
+                  <RowContextMenu
+                    key={run.id}
+                    items={[
+                      { label: 'Duplicate', icon: I.copy, on: () => ctx.duplicateRun(run.id) },
+                      { label: 'Export PDF…', icon: I.download, on: () => ctx.exportRunToPdf(run.id) },
+                      { sep: true },
+                      { label: 'Delete', icon: I.trash, danger: true, on: () => ctx.deleteRun(run.id) },
+                    ]}
+                  >
+                    <button
+                      className="flex w-full items-center gap-4 rounded-lg border border-border bg-panel px-[18px] py-[15px] text-left transition hover:border-accent-line hover:shadow-[0_2px_8px_var(--shadow)]"
+                      onClick={() => openRun(run.id)}
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-[9px] text-[14.5px] font-semibold">
+                          {run.name}
+                          <span className={cn('rounded-full px-2 py-0.5 text-[10.5px] font-bold uppercase tracking-[0.05em]', RUN_STATUS[run.status])}>
+                            {run.status}
+                          </span>
+                        </div>
+                        <div className="mt-[3px] font-mono text-[11.5px] text-ink-faint">
+                          {formatRunDate(run.created)} · {run.file}
+                        </div>
+                      </div>
+                      <div className="w-[260px] shrink-0 text-right">
+                        <div className="flex h-[7px] w-full overflow-hidden rounded-full bg-sunken">
+                          {SEGS.map((s) =>
+                            t[s] ? <i key={s} className="block h-full" style={{ width: (t[s] / total) * 100 + '%', background: RES[s].color }} /> : null,
+                          )}
+                        </div>
+                        <div className="mt-1.5 whitespace-nowrap font-mono text-[11.5px] text-ink-3">
+                          {total} cases · {t.pass} pass · {t.fail} fail{t.blocked ? ' · ' + t.blocked + ' blocked' : ''}
+                        </div>
+                      </div>
+                      <span className="grid place-items-center text-ink-faint">{I.chevron({ size: 16 })}</span>
+                    </button>
+                  </RowContextMenu>
+                );
+              })}
+            </section>
+          ))}
         </div>
       </div>
     </div>

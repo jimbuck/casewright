@@ -1,12 +1,14 @@
 import { useState } from 'react';
 import { I } from '@/components/icons';
-import { Button, Input, RES, RESULTS, Textarea } from '@/components/ui';
+import { Button, Input, RES } from '@/components/ui';
 import { cn } from '@/lib/utils';
 import { useApp } from '@/store/app-store';
 import { firstUnrun, nowStamp } from '@/utils/ids';
+import { renderInline, renderMarkdown } from '@/utils/markdown';
 import { buildRunSummary, type RunSummaryEntry } from '@/utils/run-items';
 import type { Approval, Result, RunRow } from '@/types';
-import { NotesCell } from './NotesCell';
+import { NotesField } from './NotesField';
+import { RunCaseCard } from './RunCaseCard';
 
 /** A tester/reviewer approval control: shows the stamp when set, else a name + approve button. */
 function ApprovalCard({
@@ -66,14 +68,14 @@ function AttentionRow({ entry }: { entry: RunSummaryEntry }) {
             <li key={k} className="flex gap-1.5 text-[12.5px] leading-[1.45] text-ink-2">
               <span className="mt-[5px] size-[6px] shrink-0 rounded-full bg-fail" />
               <span>
-                {f.text}
-                {f.note && <span className="text-ink-3"> — {f.note}</span>}
+                {renderInline(f.text, `af${entry.case_id}-${k}`)}
+                {f.note && <span className="text-ink-3"> — {renderInline(f.note, `an${entry.case_id}-${k}`)}</span>}
               </span>
             </li>
           ))}
         </ul>
       )}
-      {entry.notes && <div className="text-[12px] italic text-ink-3">{entry.notes}</div>}
+      {entry.notes && <div className="text-[12px] text-ink-3">{renderMarkdown(entry.notes, `anote${entry.case_id}`)}</div>}
       {entry.failures.length === 0 && !entry.notes && (
         <div className="text-[12px] text-ink-faint">No failure detail recorded.</div>
       )}
@@ -86,15 +88,12 @@ const RUN_STATUS: Record<string, string> = {
   closed: 'text-ink-3 bg-sunken',
 };
 
-const cellInput =
-  'w-full rounded-sm border border-transparent bg-transparent px-1.5 py-1 text-[12.5px] hover:border-border hover:bg-panel focus:border-accent focus:bg-panel focus:shadow-[0_0_0_2px_var(--accent-soft)] focus:outline-none';
-
 export function RunGrid() {
   const ctx = useApp();
   const run = ctx.runs.find((r) => r.id === ctx.sel.runId);
-  const [menu, setMenu] = useState<number | null>(null);
   if (!run) return null;
   const liveIds = new Set(ctx.cases.map((c) => c.id));
+  const caseById = new Map(ctx.cases.map((c) => [c.id, c] as const));
 
   const update = (i: number, patch: Partial<RunRow>) => ctx.updateRunRow(run.id, i, patch);
   const setResult = (i: number, result: Result) => {
@@ -102,7 +101,10 @@ export function RunGrid() {
     const patch: Partial<RunRow> = { result, executed_at: result === 'not_run' ? '' : nowStamp() };
     if (result !== 'not_run' && !row.tester && ctx.lastTester) patch.tester = ctx.lastTester;
     update(i, patch);
-    setMenu(null);
+  };
+  const setTester = (i: number, value: string) => {
+    update(i, { tester: value });
+    if (value.trim()) ctx.setLastTester(value.trim());
   };
 
   const summary = buildRunSummary(run, ctx.cases);
@@ -168,104 +170,27 @@ export function RunGrid() {
       </div>
 
       <div className="flex min-h-0 flex-1">
-        <div className="min-h-0 flex-1 overflow-auto">
-          <table className="w-full border-separate border-spacing-0 text-[13px]">
-            <caption className="sr-only">Test cases in this run</caption>
-            <thead>
-              <tr className="[&>th]:sticky [&>th]:top-0 [&>th]:z-[2] [&>th]:whitespace-nowrap [&>th]:border-b [&>th]:border-border-2 [&>th]:bg-panel-2 [&>th]:px-3 [&>th]:py-[9px] [&>th]:text-left [&>th]:text-[11px] [&>th]:font-semibold [&>th]:uppercase [&>th]:tracking-[0.05em] [&>th]:text-ink-faint">
-                <th style={{ width: 90 }}>Case</th>
-                <th>Title</th>
-                <th style={{ width: 150 }}>Result</th>
-                <th style={{ width: 110 }}>Tester</th>
-                <th style={{ width: 130 }}>Executed</th>
-                <th style={{ width: 230 }}>Notes</th>
-                <th style={{ width: 40 }}></th>
-              </tr>
-            </thead>
-            <tbody>
-              {run.rows.map((row, i) => {
-                const gone = !liveIds.has(row.case_id);
-                return (
-                  <tr
-                    key={row.case_id + i}
-                    className="hover:bg-[oklch(0.975_0.004_80)] [&>td]:border-b [&>td]:border-border [&>td]:px-3 [&>td]:py-[7px] [&>td]:align-middle"
-                  >
-                    <td className="whitespace-nowrap font-mono text-[12px] text-ink-3">{row.display_id}</td>
-                    <td className="max-w-[420px]">
-                      {gone ? (
-                        <span className="text-ink-faint">{row.title}</span>
-                      ) : (
-                        <button
-                          className="rounded-[3px] border-0 bg-transparent p-0 text-left text-ink hover:text-accent-ink hover:underline hover:underline-offset-2"
-                          title="Walk through this case"
-                          onClick={() => ctx.startGuide(run.id, i)}
-                        >
-                          {row.title}
-                        </button>
-                      )}
-                      {gone && (
-                        <span className="ml-1.5 text-[10px] text-fail" title="Case no longer resolves to a live file">
-                          ⚠ deleted
-                        </span>
-                      )}
-                    </td>
-                    <td className="relative">
-                      <button
-                        className="inline-flex items-center gap-[5px] rounded-[5px] border border-border bg-panel px-[9px] py-[3px] font-mono text-[12px] font-semibold hover:bg-raise"
-                        onClick={() => setMenu(menu === i ? null : i)}
-                      >
-                        <span className="size-[9px] rounded-[3px]" style={{ background: RES[row.result].color }} />
-                        {RES[row.result].label}
-                        {I.chevronDown({ size: 12 })}
-                      </button>
-                      {menu === i && (
-                        <>
-                          <div className="fixed inset-0 z-20" onClick={() => setMenu(null)} />
-                          <div className="absolute z-30 flex min-w-[130px] flex-col gap-0.5 rounded-md border border-border-2 bg-panel p-[5px] shadow-[0_12px_30px_var(--shadow)]">
-                            {RESULTS.map((r) => (
-                              <button
-                                key={r.key}
-                                className="flex items-center gap-2 rounded-sm border-0 bg-transparent px-[9px] py-1.5 text-left text-[12.5px] hover:bg-raise"
-                                onClick={() => setResult(i, r.key)}
-                              >
-                                <span className="size-[9px] shrink-0 rounded-[3px]" style={{ background: r.color }} />
-                                {r.label}
-                                {row.result === r.key && <span className="ml-auto text-accent">{I.check({ size: 13 })}</span>}
-                              </button>
-                            ))}
-                          </div>
-                        </>
-                      )}
-                    </td>
-                    <td>
-                      <input
-                        className={cn(cellInput, 'font-mono')}
-                        value={row.tester}
-                        placeholder={ctx.lastTester || '—'}
-                        onChange={(e) => {
-                          update(i, { tester: e.target.value });
-                          if (e.target.value.trim()) ctx.setLastTester(e.target.value.trim());
-                        }}
-                      />
-                    </td>
-                    <td className="whitespace-nowrap font-mono text-[12px] text-ink-3">
-                      {row.executed_at || <span className="text-ink-3">—</span>}
-                    </td>
-                    <td>
-                      <NotesCell value={row.notes} onChange={(v) => update(i, { notes: v })} />
-                    </td>
-                    <td>
-                      {!gone && (
-                        <Button icon size="sm" variant="ghost" title="Walk through this case" onClick={() => ctx.startGuide(run.id, i)}>
-                          {I.play({ size: 13 })}
-                        </Button>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+        <div className="min-h-0 flex-1 overflow-auto px-[26px] py-[18px]">
+          <div className="flex flex-col gap-2.5">
+            {run.rows.map((row, i) => (
+              <RunCaseCard
+                key={row.case_id + i}
+                row={row}
+                kase={caseById.get(row.case_id)}
+                gone={!liveIds.has(row.case_id)}
+                lastTester={ctx.lastTester}
+                onResult={(result) => setResult(i, result)}
+                onNotes={(v) => update(i, { notes: v })}
+                onTester={(v) => setTester(i, v)}
+                onGuide={() => ctx.startGuide(run.id, i)}
+              />
+            ))}
+            {run.rows.length === 0 && (
+              <div className="rounded-lg border border-dashed border-border-2 px-4 py-8 text-center text-[13px] text-ink-3">
+                No cases in this run.
+              </div>
+            )}
+          </div>
         </div>
 
         <aside className="flex w-[540px] flex-none flex-col gap-4 overflow-auto border-l border-border bg-panel-2 px-5 py-[18px]">
@@ -354,6 +279,23 @@ export function RunGrid() {
                       </ul>
                     </div>
                   )}
+                  {summary.remaining.length > 0 && (
+                    <div className="flex flex-col gap-1">
+                      <div className="text-[11px] font-bold uppercase tracking-[0.05em] text-ink-2">
+                        Not completed ({summary.remaining.length})
+                      </div>
+                      <ul className="flex flex-col gap-0.5">
+                        {summary.remaining.map((e) => (
+                          <li key={e.case_id} className="flex items-center gap-2 text-[12.5px] text-ink-3">
+                            <span className="size-[9px] shrink-0 rounded-[3px]" style={{ background: RES[e.result].color }} />
+                            <span className="font-mono text-[11px] text-ink-faint">{e.display_id}</span>
+                            <span className="truncate text-ink-2">{e.title}</span>
+                            <span className="ml-auto font-mono text-[10.5px] text-ink-faint">{RES[e.result].label}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                 </>
               )}
             </div>
@@ -380,12 +322,13 @@ export function RunGrid() {
           </section>
 
           <section className="flex flex-col gap-2">
-            <div className="text-[11px] font-bold uppercase tracking-[0.06em] text-ink-2">Notes</div>
-            <Textarea
-              className="min-h-[64px] text-[13px] leading-[1.5]"
-              value={run.notes}
+            <NotesField
+              label="Notes"
+              labelClassName="text-[11px] font-bold uppercase tracking-[0.06em] text-ink-2"
+              idPrefix="run-notes"
               placeholder="General notes about this run."
-              onChange={(e) => ctx.setRunNotes(run.id, e.target.value)}
+              value={run.notes}
+              onChange={(v) => ctx.setRunNotes(run.id, v)}
             />
           </section>
         </aside>
