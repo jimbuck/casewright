@@ -2,6 +2,14 @@
 
 All notable changes to Casewright. Generated automatically from Conventional Commits — do not edit by hand.
 
+# [0.9.0](https://github.com/jimbuck/casewright/compare/v0.8.0...v0.9.0) (2026-06-18)
+
+
+### Features
+
+* **desktop:** drag-reorder run test cases, persisted via .order ([b8c5dcd](https://github.com/jimbuck/casewright/commit/b8c5dcdc4074b3e0467ac095e881e0ebe492af6b))
+* **desktop:** report export preview window + slimmer report ([f2aac15](https://github.com/jimbuck/casewright/commit/f2aac15f52f3d8fc54c43399e7164b58b7cdb594))
+
 # [0.8.0](https://github.com/jimbuck/casewright/compare/v0.7.0...v0.8.0) (2026-06-18)
 
 
