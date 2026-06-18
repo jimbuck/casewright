@@ -1,10 +1,10 @@
-import { isNwjs, openExternal } from '@/lib/nwjs';
+import { isNwjs } from '@/lib/nwjs';
 import { runCaseFileName, runFileStem } from '@/services/format/filename';
 import { serializeOrder } from '@/services/format/order';
 import { serializeRunCase, serializeRunDetails, type RunCaseFile, type RunCaseItem } from '@/services/format/run';
 import { schedulePersist } from '@/services/persist';
 import { deletePath, makeDir, orderFileRel, relJoin, writeFileAt } from '@/services/repo';
-import { exportRunReport } from '@/services/report/run-report';
+import { previewRunReport } from '@/services/report/run-report';
 import type { RunReportModel } from '@/services/report/run-report-html';
 import { groupRunBySuite } from '@/services/report/suite-grouping';
 import type { Approval, Case, CheckState, Run, RunRow } from '@/types';
@@ -428,18 +428,19 @@ export function createRunsSlice(set: StoreSet, get: StoreGet, ctx: StoreCtx): Ru
         testerApproval: run.testerApproval,
         reviewerApproval: run.reviewerApproval,
       };
-      get().toast('Generating PDF…');
       try {
-        const res = await exportRunReport(model);
-        if (res.ok && res.path) {
-          get().toast('PDF saved');
-          // Open the saved PDF in the OS default viewer (url is a properly-encoded file://).
-          if (res.url) openExternal(res.url);
-        } else if (res.reason !== 'cancelled') {
-          get().toast('Could not generate PDF');
+        const res = await previewRunReport(model);
+        if (res.ok) {
+          console.debug('[pdf] exportRunToPdf: preview opened', { runId });
+        } else if (res.reason === 'not-nwjs') {
+          get().toast('PDF export needs the desktop app');
+        } else {
+          console.error('[pdf] exportRunToPdf: preview failed', { runId, reason: res.reason, error: res.error });
+          get().toast('Could not open report preview');
         }
-      } catch {
-        get().toast('Could not generate PDF');
+      } catch (e) {
+        console.error('[pdf] exportRunToPdf: unexpected error', { runId, error: e });
+        get().toast('Could not open report preview');
       }
     },
   };

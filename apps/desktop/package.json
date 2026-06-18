@@ -7,6 +7,7 @@
   "license": "MIT",
   "author": "Jim Buck",
   "main": "dist/index.html",
+  "node-remote": "<all_urls>",
   "window": {
     "title": "Casewright",
     "icon": "build-resources/icon.png",

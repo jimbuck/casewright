@@ -64,15 +64,15 @@ const suites: ReportSuiteRow[] = [
     total: 2,
     counts: { pass: 1, fail: 1, blocked: 0, skipped: 0, not_run: 0 },
     cases: [
-      { display_id: 'PAY-0001', title: 'Login', result: 'pass', detail: '' },
-      { display_id: 'PAY-0042', title: 'Reset password', result: 'fail', detail: 'button 500s' },
+      { display_id: 'PAY-0001', title: 'Login', result: 'pass' },
+      { display_id: 'PAY-0042', title: 'Reset password', result: 'fail' },
     ],
   },
   {
     name: 'Unknown / Deleted',
     total: 1,
     counts: { pass: 0, fail: 0, blocked: 0, skipped: 0, not_run: 1 },
-    cases: [{ display_id: 'PAY-0099', title: 'Ghost case', result: 'not_run', detail: '' }],
+    cases: [{ display_id: 'PAY-0099', title: 'Ghost case', result: 'not_run' }],
   },
 ];
 
@@ -150,10 +150,11 @@ describe('buildRunReportHtml', () => {
     expect(html).toContain('2 cases · 1 pass · 1 fail'); // suite tally line
   });
 
-  it('renders failure detail inline in the case breakdown and omits the needs-attention section', () => {
+  it('lists only top-level case info in the breakdown — no failure detail or attention block', () => {
     const html = buildRunReportHtml(buildModel());
-    expect(html).toContain('PAY-0042');
-    expect(html).toContain('button 500s'); // failed-item detail in the breakdown row
+    expect(html).toContain('PAY-0042'); // case id
+    expect(html).toContain('Reset password'); // case title
+    expect(html).not.toContain('button 500s'); // per-step failure detail is no longer rendered
     expect(html).not.toContain('Needs attention'); // standalone attention block removed
   });
 
@@ -182,7 +183,21 @@ describe('buildRunReportHtml', () => {
     expect(html).not.toContain('<h2>Notes</h2>');
   });
 
-  it('keeps case titles escaped even though their detail renders markdown', () => {
+  it('adds a Save-PDF toolbar and self-print script only in preview mode', () => {
+    const plain = buildRunReportHtml(buildModel());
+    expect(plain).not.toContain('cw-toolbar');
+    expect(plain).not.toContain('<script');
+
+    const preview = buildRunReportHtml(buildModel(), { preview: true });
+    expect(preview).toContain('class="cw-preview"'); // body gets the preview chrome class
+    expect(preview).toContain('cw-toolbar');
+    expect(preview).toContain('id="cw-save"');
+    expect(preview).toContain('<script'); // self-save wiring
+    expect(preview).toContain('@media print'); // toolbar hidden when printing
+    expect(preview).toContain('"Sprint 13.pdf"'); // default filename embedded from the run name
+  });
+
+  it('escapes case titles (no raw markup) and renders no per-case detail', () => {
     const html = buildRunReportHtml(
       buildModel({
         suites: [
@@ -190,12 +205,12 @@ describe('buildRunReportHtml', () => {
             name: 'Auth',
             total: 1,
             counts: { pass: 0, fail: 1, blocked: 0, skipped: 0, not_run: 0 },
-            cases: [{ display_id: 'X-1', title: 'Title <b>raw</b>', result: 'fail', detail: 'failed **hard**' }],
+            cases: [{ display_id: 'X-1', title: 'Title <b>raw</b>', result: 'fail' }],
           },
         ],
       }),
     );
     expect(html).toContain('Title &lt;b&gt;raw&lt;/b&gt;'); // title stays escaped
-    expect(html).toContain('failed <strong>hard</strong>'); // detail renders markdown
+    expect(html).not.toContain('case-detail'); // detail row no longer emitted
   });
 });

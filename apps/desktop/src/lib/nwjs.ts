@@ -31,6 +31,11 @@ interface NwWinOpenOptions {
   show?: boolean;
   focus?: boolean;
   new_instance?: boolean;
+  width?: number;
+  height?: number;
+  title?: string;
+  /** Where NW.js places the new window; `'center'` centers it on screen. */
+  position?: 'center' | 'mouse' | null;
 }
 
 interface NwGlobal {
@@ -60,6 +65,22 @@ export function nwWindow(): NwWindow | null {
 /** The per-app data directory (NW.js `nw.App.dataPath`), for app-level state like recents. */
 export function appDataPath(): string | null {
   return window.nw?.App?.dataPath ?? null;
+}
+
+/**
+ * Open a visible NW.js window at `url` (e.g. a local `file://` report preview) and resolve
+ * with its handle, or `null` when not in NW.js or the open fails. The window shares the
+ * app's `nw`/Node context (no `new_instance`), so the page it loads can use the NW.js APIs.
+ */
+export function openWindow(url: string, options: NwWinOpenOptions = {}): Promise<NwWindow | null> {
+  return new Promise((resolve) => {
+    const nw = window.nw;
+    if (!nw) {
+      resolve(null);
+      return;
+    }
+    nw.Window.open(url, { show: true, focus: true, ...options }, (win) => resolve(win ?? null));
+  });
 }
 
 /** Open a URL in the user's default browser (NW.js Shell), with a plain-browser fallback. */
@@ -159,6 +180,7 @@ export function saveFile(defaultName: string): Promise<string | null> {
       window.removeEventListener('focus', onFocus);
       window.removeEventListener('blur', onBlur);
       input.remove();
+      console.debug('[pdf] saveFile: resolved destination', value ?? '(cancelled)');
       resolve(value);
     };
     const onBlur = () => {
@@ -190,16 +212,35 @@ export function printToPdf(url: string, pdfPath: string, opts: Partial<NwPrintOp
       reject(new Error('Not in NW.js'));
       return;
     }
+    console.debug('[pdf] printToPdf: opening hidden window', { url, pdfPath });
+    // Guard the open() callback itself: if NW.js never invokes it (or invokes it with no
+    // window), nothing downstream ever settles and the export hangs silently. This outer
+    // timer is cleared as soon as the per-window `done`/timer takes over.
+    let opened = false;
+    const openTimer = setTimeout(() => {
+      if (opened) return;
+      console.error('[pdf] printToPdf: window.open callback never fired within 15s', { url });
+      reject(new Error('PDF window did not open'));
+    }, 15000);
     nw.Window.open(url, { show: false, focus: false }, (win) => {
+      opened = true;
+      clearTimeout(openTimer);
+      if (!win) {
+        console.error('[pdf] printToPdf: window.open callback gave no window', { url });
+        reject(new Error('PDF window did not open'));
+        return;
+      }
       let settled = false;
       const done = (err?: Error) => {
         if (settled) return;
         settled = true;
         clearTimeout(timer);
+        if (err) console.error('[pdf] printToPdf: failed', err);
+        else console.debug('[pdf] printToPdf: done, PDF written to', pdfPath);
         try {
           win.close(true);
-        } catch {
-          /* window may already be gone */
+        } catch (e) {
+          console.warn('[pdf] printToPdf: window close failed (already gone?)', e);
         }
         if (err) reject(err);
         else resolve();
@@ -208,6 +249,7 @@ export function printToPdf(url: string, pdfPath: string, opts: Partial<NwPrintOp
       const timer = setTimeout(() => done(new Error('PDF render timed out')), 15000);
       // Print only after the document has fully loaded — printing earlier yields a blank page.
       win.on('loaded', () => {
+        console.debug('[pdf] printToPdf: window loaded, printing');
         try {
           win.print({
             pdf_path: pdfPath,

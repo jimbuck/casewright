@@ -7,7 +7,6 @@
  * The CSS defines its OWN `:root` custom properties (the app's `var(--…)` tokens don't
  * exist in the print window), inlining the literal oklch values from `@casewright/brand`.
  */
-import { markdownInlineToHtml } from '@/utils/markdown-html';
 import type { RunSummary, RunSummaryEntry } from '@/utils/run-items';
 import type { Approval, Result } from '@/types';
 
@@ -16,8 +15,6 @@ export interface ReportCaseRow {
   display_id: string;
   title: string;
   result: Result;
-  /** A one-line output detail (failed items + notes) for non-passing rows; '' for pass. */
-  detail: string;
 }
 
 /** One suite in the test breakdown: its result distribution plus the roster of cases. */
@@ -189,9 +186,7 @@ function renderCaseRow(c: ReportCaseRow): string {
   return `
         <tr class="case-row">
           <td class="case-id mono">${esc(c.display_id)}</td>
-          <td class="case-title">${esc(c.title)}${
-            c.detail ? `<div class="case-detail md">${markdownInlineToHtml(c.detail)}</div>` : ''
-          }</td>
+          <td class="case-title">${esc(c.title)}</td>
           <td class="case-result"><span class="dot" style="background:${meta.color}"></span><span style="color:${
             meta.color
           }">${esc(meta.label)}</span></td>
@@ -263,8 +258,10 @@ function renderSignoff(m: RunReportModel): string {
 
 const STYLE = `
 :root{
-  --bg:oklch(0.972 0.004 80);--panel:oklch(0.995 0.002 85);--panel-2:oklch(0.980 0.004 80);
-  --sunken:oklch(0.958 0.006 75);--border:oklch(0.905 0.005 75);--border-2:oklch(0.855 0.006 72);
+  /* White document: page + panel fills are pure white (traditional look, less ink). Only
+     --sunken keeps a faint neutral tint so inline code / chips stay distinguishable. */
+  --bg:oklch(1 0 0);--panel:oklch(1 0 0);--panel-2:oklch(1 0 0);
+  --sunken:oklch(0.965 0 0);--border:oklch(0.905 0.005 75);--border-2:oklch(0.855 0.006 72);
   --ink:oklch(0.28 0.012 60);--ink-2:oklch(0.46 0.010 60);--ink-3:oklch(0.60 0.008 62);--ink-faint:oklch(0.72 0.006 64);
   --accent:oklch(0.55 0.13 283);--accent-soft:oklch(0.952 0.028 283);--accent-ink:oklch(0.46 0.12 283);
   --pass:oklch(0.58 0.12 152);--fail:oklch(0.56 0.19 27);--blocked:oklch(0.62 0.16 52);
@@ -334,28 +331,8 @@ section{margin-top:22px;}
 .case-row:last-child td{border-bottom:0;}
 .case-id{width:88px;white-space:nowrap;color:var(--ink-3);font-size:11px;}
 .case-title{font-weight:500;padding-right:12px;}
-.case-detail{margin-top:3px;font-size:11.5px;font-weight:400;color:var(--ink-3);line-height:1.45;}
 .case-result{width:92px;white-space:nowrap;text-align:right;font-family:var(--font-mono);font-size:11px;font-weight:700;}
 .case-result .dot{margin-right:4px;vertical-align:middle;}
-
-/* rendered markdown — case-detail output. Styles the whitelist of tags
-   markdownInlineToHtml emits, scoped so it never disturbs the rest of the report chrome. */
-.md{line-height:1.5;}
-.md p{margin:0 0 8px;}
-.md p:last-child{margin-bottom:0;}
-.md strong{font-weight:700;color:inherit;}
-.md em{font-style:italic;}
-.md s{color:var(--ink-3);}
-.md code{font-family:var(--font-mono);font-size:0.92em;background:var(--sunken);padding:1px 4px;border-radius:3px;}
-.md a{color:var(--accent-ink);text-decoration:underline;}
-.md ul,.md ol{margin:6px 0;padding-left:20px;}
-.md li{margin:2px 0;}
-.md blockquote{margin:6px 0;padding-left:10px;border-left:2px solid var(--border-2);color:var(--ink-3);}
-.md pre{background:var(--sunken);border-radius:6px;padding:8px 10px;overflow:auto;margin:6px 0;}
-.md pre code{background:none;padding:0;}
-.md h1,.md h2,.md h3,.md h4,.md h5,.md h6{font-size:13px;font-weight:700;margin:8px 0 4px;padding:0;border:0;
-  text-transform:none;letter-spacing:0;color:var(--ink);}
-.md hr{border:0;border-top:1px solid var(--border);margin:8px 0;}
 
 /* passed list */
 .passed{list-style:none;margin:0;padding:0;columns:2;column-gap:24px;}
@@ -378,8 +355,217 @@ section{margin-top:22px;}
 .empty{margin-top:20px;border:1px dashed var(--border-2);border-radius:9px;padding:24px;text-align:center;color:var(--ink-3);}
 `;
 
+/* Preview-only chrome: a sticky toolbar with a "Save PDF" button. The toolbar is hidden
+   when printing so the saved PDF is identical to the non-preview report. */
+const PREVIEW_STYLE = `
+.cw-preview{padding-top:56px;background:var(--bg);}
+.cw-toolbar{position:fixed;top:0;left:0;right:0;height:56px;display:flex;align-items:center;
+  justify-content:space-between;gap:12px;padding:0 18px;background:var(--panel);
+  border-bottom:1px solid var(--border);box-shadow:0 1px 4px oklch(0 0 0 / 0.06);z-index:10;}
+.cw-toolbar-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:var(--ink-3);}
+.cw-toolbar-actions{display:flex;align-items:center;gap:14px;min-width:0;}
+.cw-status{font-size:11.5px;color:var(--ink-3);max-width:420px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.cw-status.err{color:var(--fail);font-weight:600;}
+.cw-save{font-family:var(--font-ui);font-size:13px;font-weight:600;color:oklch(1 0 0 / 0.96);
+  background:var(--accent);border:0;border-radius:7px;padding:8px 16px;cursor:pointer;flex:0 0 auto;}
+.cw-save:hover:not(:disabled){filter:brightness(1.06);}
+.cw-save:disabled{opacity:0.6;cursor:default;}
+@media print{.cw-toolbar{display:none!important;}.cw-preview{padding-top:0!important;background:#fff!important;}}
+`;
+
+/** Options for {@link buildRunReportHtml}. */
+export interface BuildReportOptions {
+  /**
+   * Wrap the report in preview chrome: a sticky toolbar whose "Save PDF" button prints the
+   * window to a user-picked PDF (the toolbar hides itself when printing). Adds an inline
+   * script — only emitted in this mode, so the plain report stays script-free.
+   */
+  preview?: boolean;
+}
+
+/** A filesystem-safe default filename (with `.pdf`) from a run name. */
+function defaultPdfName(name: string): string {
+  const base = (name || 'run')
+    .replace(/[/\\:*?"<>|]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return `${base || 'run'}.pdf`;
+}
+
+function renderToolbar(): string {
+  return `
+  <div class="cw-toolbar">
+    <span class="cw-toolbar-title">Report preview</span>
+    <div class="cw-toolbar-actions">
+      <span class="cw-status" id="cw-status"></span>
+      <button type="button" id="cw-save" class="cw-save">Save PDF…</button>
+    </div>
+  </div>`;
+}
+
+/**
+ * Inline script (preview window only) that wires the "Save PDF" button: prompt for a
+ * destination via NW.js's `<input nwsaveas>`, then print this very window to that PDF.
+ * Runs in the preview window's own context so the save dialog's focus/blur cancel
+ * detection tracks the window the user is actually looking at.
+ *
+ * It logs every step to the preview window's console (open it with F12) AND mirrors the
+ * outcome into a visible status line in the toolbar, so a failure is never silent. With
+ * `node-remote` granting this window Node access, it also stat()s the written file to
+ * confirm the PDF actually landed rather than trusting `print()` to have succeeded.
+ */
+function renderPreviewScript(model: RunReportModel): string {
+  const defaultName = JSON.stringify(defaultPdfName(model.runName));
+  return `
+  <script>
+  (function () {
+    var TAG = '[pdf:preview]';
+    var DEFAULT_NAME = ${defaultName};
+    var btn = document.getElementById('cw-save');
+    var statusEl = document.getElementById('cw-status');
+    var nw = window.nw;
+
+    function log() {
+      try { console.log.apply(console, [TAG].concat([].slice.call(arguments))); } catch (e) {}
+    }
+    function setStatus(msg, isErr) {
+      if (!statusEl) return;
+      statusEl.textContent = msg || '';
+      statusEl.className = 'cw-status' + (isErr ? ' err' : '');
+    }
+    function getRequire() {
+      if (typeof require === 'function') return require;
+      if (nw && typeof nw.require === 'function') return nw.require;
+      return null;
+    }
+
+    log('script loaded — nw =', !!nw, '· require =', typeof getRequire());
+    if (!btn) { log('no #cw-save button in DOM'); return; }
+    if (!nw) {
+      btn.disabled = true;
+      btn.textContent = 'Save unavailable';
+      setStatus('NW.js API not available in this window (node-remote?)', true);
+      log('window.nw missing — cannot save');
+      return;
+    }
+
+    // For an nwsaveas dialog the target file does not exist yet, so input.files is usually
+    // empty — the chosen path lives in input.value. Read both; '' / null means cancelled.
+    function pathOf(input) {
+      var f = input.files && input.files[0];
+      return (f && f.path) || input.value || null;
+    }
+
+    function pickSave(name) {
+      return new Promise(function (resolve) {
+        var input = document.createElement('input');
+        input.type = 'file';
+        input.setAttribute('nwsaveas', name);
+        input.style.display = 'none';
+        var settled = false, armed = false;
+        function finish(v) {
+          if (settled) return;
+          settled = true;
+          window.removeEventListener('focus', onFocus);
+          window.removeEventListener('blur', onBlur);
+          input.remove();
+          log('pickSave resolved:', v ? v : '(cancelled)');
+          resolve(v || null);
+        }
+        function onBlur() { armed = true; log('save dialog opened (window blurred)'); }
+        // After the dialog closes the window refocuses, but the change event carrying the
+        // chosen path can arrive HUNDREDS of ms later. So don't judge on a single read —
+        // poll input.value for a short window and finish the moment a path shows up. Only a
+        // value that stays empty the whole time is a genuine cancel.
+        function onFocus() {
+          if (!armed) return;
+          var waited = 0;
+          (function check() {
+            if (settled) return;
+            var p = pathOf(input);
+            if (p) { finish(p); return; }
+            waited += 150;
+            if (waited >= 2500) { finish(null); return; }
+            setTimeout(check, 150);
+          })();
+        }
+        input.onchange = function () { log('save input changed — value:', input.value); finish(pathOf(input)); };
+        window.addEventListener('blur', onBlur);
+        window.addEventListener('focus', onFocus);
+        document.body.appendChild(input);
+        log('opening save dialog (default name:', name + ')');
+        input.click();
+      });
+    }
+
+    // print() writes the PDF asynchronously and never rejects — poll the path to confirm.
+    function verifyWritten(dest) {
+      var req = getRequire();
+      if (!req) {
+        log('cannot verify (no require) — assuming success');
+        setStatus('Saved (unverified): ' + dest);
+        btn.textContent = 'Saved ✓';
+        return;
+      }
+      var fs = req('fs');
+      var tries = 0;
+      (function poll() {
+        tries++;
+        var size = -1;
+        try { var st = fs.statSync(dest); if (st.isFile()) size = st.size; } catch (e) {}
+        log('verify try', tries, '— size:', size);
+        if (size > 0) {
+          setStatus('Saved: ' + dest);
+          btn.textContent = 'Saved ✓';
+          return;
+        }
+        if (tries < 16) { setTimeout(poll, 250); return; }
+        setStatus('print() ran but no PDF appeared at ' + dest, true);
+        btn.textContent = 'Save failed';
+        log('gave up verifying — no file at', dest);
+      })();
+    }
+
+    btn.addEventListener('click', function () {
+      log('Save clicked');
+      btn.disabled = true;
+      btn.textContent = 'Saving…';
+      setStatus('Choose a destination…');
+      pickSave(DEFAULT_NAME).then(function (dest) {
+        if (!dest) {
+          btn.disabled = false;
+          btn.textContent = 'Save PDF…';
+          setStatus('Save cancelled');
+          return;
+        }
+        var opts = { pdf_path: dest, headerFooterEnabled: false, marginsType: 0, shouldPrintBackgrounds: true };
+        setStatus('Writing PDF…');
+        try {
+          var win = nw.Window.get();
+          log('printing — window:', !!win, '· print is', win && typeof win.print, '· opts:', JSON.stringify(opts));
+          win.print(opts);
+          log('print() returned without throwing');
+          verifyWritten(dest);
+        } catch (e) {
+          log('print() threw:', e);
+          setStatus('Save failed: ' + ((e && e.message) || e), true);
+          btn.textContent = 'Save failed';
+        }
+        setTimeout(function () { btn.disabled = false; }, 2000);
+      }).catch(function (e) {
+        log('pickSave threw:', e);
+        setStatus('Save failed: ' + ((e && e.message) || e), true);
+        btn.disabled = false;
+        btn.textContent = 'Save PDF…';
+      });
+    });
+  })();
+  </script>`;
+}
+
 /** Build the complete, self-contained report HTML document for one run. */
-export function buildRunReportHtml(model: RunReportModel): string {
+export function buildRunReportHtml(model: RunReportModel, opts: BuildReportOptions = {}): string {
+  const preview = opts.preview ?? false;
   const empty = model.summary.total === 0;
   const body = empty
     ? `<div class="empty">No cases in this run.</div>`
@@ -396,15 +582,17 @@ export function buildRunReportHtml(model: RunReportModel): string {
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>${esc(model.runName)} — Test run report</title>
-<style>${STYLE}</style>
+<style>${preview ? STYLE + PREVIEW_STYLE : STYLE}</style>
 </head>
-<body>
+<body${preview ? ' class="cw-preview"' : ''}>
+${preview ? renderToolbar() : ''}
 <div class="report">
 ${renderHead(model)}
 ${body}
 ${renderSignoff(model)}
 <div class="footer">Generated by Casewright · ${esc(fmtStamp(model.generatedAt))}</div>
 </div>
+${preview ? renderPreviewScript(model) : ''}
 </body>
 </html>`;
 }

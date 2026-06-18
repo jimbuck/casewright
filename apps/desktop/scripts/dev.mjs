@@ -37,7 +37,10 @@ writeFileSync(
     {
       name: 'casewright-dev',
       main: url,
-      'node-remote': url.replace(/\/$/, ''),
+      // `<all_urls>` so Node/`nw` is granted to BOTH the dev server URL (the main window) and
+      // local file:// pages — the latter is the report preview window, opened from a temp
+      // .html file (see run-report.ts), whose Save button needs `nw` to drive print-to-PDF.
+      'node-remote': '<all_urls>',
       window: win,
     },
     null,

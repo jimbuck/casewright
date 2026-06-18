@@ -58,6 +58,9 @@ const manifest = {
   productName: 'Casewright',
   version,
   main: 'dist/index.html',
+  // Carry node-remote through so the report preview window (a local file:// page) gets the
+  // `nw`/Node context its Save button needs — see package.json + run-report.ts.
+  'node-remote': pkg['node-remote'],
   window: pkg.window,
   dependencies: Object.fromEntries(RUNTIME_DEPS.map((d) => [d, installedVersion(d)])),
 };
