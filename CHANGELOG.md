@@ -2,6 +2,13 @@
 
 All notable changes to Casewright. Generated automatically from Conventional Commits — do not edit by hand.
 
+# [0.7.0](https://github.com/jimbuck/casewright/compare/v0.6.2...v0.7.0) (2026-06-18)
+
+
+### Features
+
+* **desktop:** redesign run list + run detail views with markdown notes ([0b9f5c1](https://github.com/jimbuck/casewright/commit/0b9f5c1c556d07e5f213fc9a396d1a5665d7bf59))
+
 ## [0.6.2](https://github.com/jimbuck/casewright/compare/v0.6.1...v0.6.2) (2026-06-16)
 
 ## [0.6.1](https://github.com/jimbuck/casewright/compare/v0.6.0...v0.6.1) (2026-06-15)
