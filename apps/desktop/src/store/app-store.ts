@@ -116,6 +116,12 @@ export interface AppState {
   setRunNotes: (runId: string, notes: string) => void;
   /** Save (name + now) or clear (empty name → null) a tester/reviewer approval. */
   setRunApproval: (runId: string, who: 'tester' | 'reviewer', name: string) => void;
+  /**
+   * Move a run row from index `from` to `to` (splice semantics: `to` is the target index
+   * *after* `from` is removed). Reorders the in-memory rows and persists the run folder's
+   * `.order` file so the new order is honored on reload, in the runner, and in reports.
+   */
+  reorderRunRows: (runId: string, from: number, to: number) => void;
   /** Duplicate a run: copy its cases into a fresh run with results/checks/approvals reset. */
   duplicateRun: (runId: string) => void;
   /** Delete a run — removes its whole folder from disk, after confirming. */

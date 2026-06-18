@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type DragEvent } from 'react';
 import { I } from '@/components/icons';
 import { Button, Input, RES } from '@/components/ui';
 import { cn } from '@/lib/utils';
@@ -88,6 +88,12 @@ const RUN_STATUS: Record<string, string> = {
   closed: 'text-ink-3 bg-sunken',
 };
 
+// Absolute overlay so showing the indicator never reflows the rows (a reflow would shift the
+// drag hit-targets mid-drag and make the drop index oscillate — worst at the very top). Sits
+// centred in the `gap-2.5` between cards; placed on each row's top edge / the last row's bottom.
+const dropLine =
+  "pointer-events-none absolute inset-x-0 z-10 h-0.5 rounded-[2px] bg-accent before:absolute before:-left-0.5 before:top-1/2 before:size-[7px] before:-translate-y-1/2 before:rounded-full before:bg-accent before:shadow-[0_0_0_2px_var(--panel)] before:content-['']";
+
 export function RunGrid() {
   const ctx = useApp();
   const run = ctx.runs.find((r) => r.id === ctx.sel.runId);
@@ -109,6 +115,30 @@ export function RunGrid() {
 
   const summary = buildRunSummary(run, ctx.cases);
   const { counts: t, executed, passRate } = summary;
+
+  // ---- drag-reorder of the case rows (left-edge handle; overlay drop line) ----
+  const [drag, setDrag] = useState<number | null>(null);
+  const [dropIdx, setDropIdx] = useState<number | null>(null);
+  const rowOver = (i: number) => (e: DragEvent) => {
+    if (drag === null) return;
+    e.preventDefault();
+    const r = e.currentTarget.getBoundingClientRect();
+    const before = e.clientY - r.top < r.height / 2;
+    setDropIdx(before ? i : i + 1);
+  };
+  const endDrag = () => {
+    setDrag(null);
+    setDropIdx(null);
+  };
+  const doDrop = (e?: DragEvent) => {
+    if (e) e.preventDefault();
+    if (drag !== null && dropIdx !== null) {
+      // Convert the gap index to a post-removal target index (splice semantics).
+      const at = drag < dropIdx ? dropIdx - 1 : dropIdx;
+      if (at !== drag) ctx.reorderRunRows(run.id, drag, at);
+    }
+    endDrag();
+  };
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -170,20 +200,48 @@ export function RunGrid() {
       </div>
 
       <div className="flex min-h-0 flex-1">
-        <div className="min-h-0 flex-1 overflow-auto px-[26px] py-[18px]">
+        {/* Drop is handled once, on this whole scroll area (incl. its padding + the empty
+            space below the last card) so a drop that lands low or off to the side is still
+            accepted. Rows only set the drop index via onDragOver — their preventDefault keeps
+            drops over them valid, and the event bubbles up to this single onDrop. */}
+        <div
+          className="min-h-0 flex-1 overflow-auto px-[26px] py-[18px]"
+          onDragOver={(e) => drag !== null && e.preventDefault()}
+          onDrop={doDrop}
+        >
           <div className="flex flex-col gap-2.5">
             {run.rows.map((row, i) => (
-              <RunCaseCard
+              <div
                 key={row.case_id + i}
-                row={row}
-                kase={caseById.get(row.case_id)}
-                gone={!liveIds.has(row.case_id)}
-                lastTester={ctx.lastTester}
-                onResult={(result) => setResult(i, result)}
-                onNotes={(v) => update(i, { notes: v })}
-                onTester={(v) => setTester(i, v)}
-                onGuide={() => ctx.startGuide(run.id, i)}
-              />
+                className={cn('group/row relative flex items-stretch gap-1', drag === i && 'opacity-40')}
+                onDragOver={rowOver(i)}
+              >
+                {drag !== null && dropIdx === i && <div className={cn(dropLine, '-top-[5px]')} />}
+                {drag !== null && i === run.rows.length - 1 && dropIdx === run.rows.length && (
+                  <div className={cn(dropLine, '-bottom-[5px]')} />
+                )}
+                <span
+                  className="flex w-5 shrink-0 cursor-grab items-start justify-center pt-[11px] text-ink-faint opacity-0 transition-opacity group-hover/row:opacity-100"
+                  title="Drag to reorder"
+                  draggable
+                  onDragStart={() => setDrag(i)}
+                  onDragEnd={endDrag}
+                >
+                  {I.drag({ size: 14 })}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <RunCaseCard
+                    row={row}
+                    kase={caseById.get(row.case_id)}
+                    gone={!liveIds.has(row.case_id)}
+                    lastTester={ctx.lastTester}
+                    onResult={(result) => setResult(i, result)}
+                    onNotes={(v) => update(i, { notes: v })}
+                    onTester={(v) => setTester(i, v)}
+                    onGuide={() => ctx.startGuide(run.id, i)}
+                  />
+                </div>
+              </div>
             ))}
             {run.rows.length === 0 && (
               <div className="rounded-lg border border-dashed border-border-2 px-4 py-8 text-center text-[13px] text-ink-3">

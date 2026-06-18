@@ -274,8 +274,28 @@ async function loadRuns(repoPath: string, warnings: LintWarning[]): Promise<Run[
       .filter((e) => e.isFile() && e.name.endsWith('.md') && e.name !== '_run.md')
       .sort(byName);
 
+    // The seed-order filename prefix (`NNN-`) is the default; an optional `.order` (same Azure
+    // DevOps wiki format the sidebar uses) overrides it. Keys are the sidecar filename stem
+    // (minus `.md`); files missing from `.order` are appended in the default `byName` order.
+    const stemOf = (name: string) => name.slice(0, -3);
+    let orderedFiles = caseFiles;
+    const orderRaw = await readMaybe(path.join(dirAbs, ORDER_FILE));
+    if (orderRaw != null) {
+      const byKey = new Map(caseFiles.map((f) => [stemOf(f.name), f] as const));
+      const used = new Set<string>();
+      const head: typeof caseFiles = [];
+      for (const k of parseOrder(orderRaw)) {
+        const f = byKey.get(k);
+        if (f && !used.has(k)) {
+          head.push(f);
+          used.add(k);
+        }
+      }
+      orderedFiles = [...head, ...caseFiles.filter((f) => !used.has(stemOf(f.name)))];
+    }
+
     const rows: Run['rows'] = [];
-    for (const cf of caseFiles) {
+    for (const cf of orderedFiles) {
       const text = (await readMaybe(path.join(dirAbs, cf.name))) ?? '';
       const { runCase, warnings: w } = parseRunCase(text);
       const file = relJoin(dirRel, cf.name);

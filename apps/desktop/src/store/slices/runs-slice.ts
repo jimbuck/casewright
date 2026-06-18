@@ -1,8 +1,9 @@
 import { isNwjs, openExternal } from '@/lib/nwjs';
 import { runCaseFileName, runFileStem } from '@/services/format/filename';
+import { serializeOrder } from '@/services/format/order';
 import { serializeRunCase, serializeRunDetails, type RunCaseFile, type RunCaseItem } from '@/services/format/run';
 import { schedulePersist } from '@/services/persist';
-import { deletePath, makeDir, relJoin, writeFileAt } from '@/services/repo';
+import { deletePath, makeDir, orderFileRel, relJoin, writeFileAt } from '@/services/repo';
 import { exportRunReport } from '@/services/report/run-report';
 import type { RunReportModel } from '@/services/report/run-report-html';
 import { groupRunBySuite } from '@/services/report/suite-grouping';
@@ -34,6 +35,7 @@ type RunsSlice = Pick<
   | 'setRunName'
   | 'setRunNotes'
   | 'setRunApproval'
+  | 'reorderRunRows'
   | 'duplicateRun'
   | 'deleteRun'
   | 'exportRunToPdf'
@@ -132,6 +134,23 @@ export function createRunsSlice(set: StoreSet, get: StoreGet, ctx: StoreCtx): Ru
     const kase = get().cases.find((c) => c.id === row.case_id);
     try {
       await writeFileAt(repoPath, row.file, serializeRunCase(buildRunCaseFile(row, kase)));
+      scheduleRefresh();
+    } catch (e) {
+      onWriteError(e);
+    }
+  };
+
+  /**
+   * Persist the run folder's `.order` — the sidecar filename stems in current row order.
+   * Reused by the explicit reorder action; the loader honors it over the seed-order prefix.
+   */
+  const writeRunOrderNow = async (runId: string) => {
+    const { repoPath } = get();
+    const run = get().runs.find((r) => r.id === runId);
+    if (!repoPath || !run) return;
+    const keys = run.rows.map((row) => baseName(row.file).replace(/\.md$/, ''));
+    try {
+      await writeFileAt(repoPath, orderFileRel(run.file), serializeOrder(keys));
       scheduleRefresh();
     } catch (e) {
       onWriteError(e);
@@ -299,6 +318,24 @@ export function createRunsSlice(set: StoreSet, get: StoreGet, ctx: StoreCtx): Ru
       if (!wasClosed && get().runs.find((r) => r.id === runId)?.status === 'closed') {
         get().toast('Run closed · tester and reviewer approved');
       }
+    },
+
+    reorderRunRows: (runId, from, to) => {
+      const run = get().runs.find((r) => r.id === runId);
+      if (!run) return;
+      const n = run.rows.length;
+      if (from === to || from < 0 || to < 0 || from >= n || to >= n) return;
+      set((s) => ({
+        runs: s.runs.map((r) => {
+          if (r.id !== runId) return r;
+          const rows = r.rows.slice();
+          const [moved] = rows.splice(from, 1);
+          rows.splice(to, 0, moved);
+          return { ...r, rows };
+        }),
+      }));
+      upsertChange({ kind: 'run', refId: runId, path: run.file, status: 'M', label: run.name });
+      schedulePersist(`runorder:${runId}`, () => writeRunOrderNow(runId));
     },
 
     duplicateRun: (runId) => {

@@ -628,3 +628,61 @@ describe('.order ordering', () => {
     expect(cases.map((c) => c.displayId).sort()).toEqual(['CW-0001', 'CW-0002', 'CW-0003']);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Run case ordering: the seed-order `NNN-` filename prefix is the default; an
+// optional `.order` inside the run folder overrides it (mirrors the sidebar).
+// ---------------------------------------------------------------------------
+describe('loadRuns ordering (.order)', () => {
+  let repoPath: string;
+  const runDirAbs = () => node.path().join(repoPath, '.casewright', 'runs', '2026-06-01-ordered');
+
+  const writeRunCase = async (file: string, displayId: string, title: string) => {
+    await node.fsp().writeFile(
+      node.path().join(runDirAbs(), file),
+      serializeRunCase({
+        caseId: displayId.toLowerCase().replace(/[^a-z0-9]/g, ''),
+        displayId,
+        title,
+        result: 'not_run',
+        tester: '',
+        executedAt: '',
+        notes: '',
+        setup: [],
+        steps: [{ key: 'step:0', text: 'Do the thing.', state: 'none', failNote: '' }],
+        accept: [],
+      }),
+    );
+  };
+
+  beforeEach(async () => {
+    repoPath = await mkRepo('cw-runorder-');
+    await node.fsp().mkdir(runDirAbs(), { recursive: true });
+    await node.fsp().writeFile(
+      node.path().join(runDirAbs(), '_run.md'),
+      serializeRunDetails({ name: 'Ordered', status: 'open', created: '2026-06-01', scope: '', testerApproval: null, reviewerApproval: null, summary: '', notes: '' }),
+    );
+    await writeRunCase('001-PAY-0001-alpha.md', 'PAY-0001', 'Alpha');
+    await writeRunCase('002-PAY-0002-bravo.md', 'PAY-0002', 'Bravo');
+    await writeRunCase('003-PAY-0003-charlie.md', 'PAY-0003', 'Charlie');
+  });
+
+  afterEach(async () => {
+    await node.fsp().rm(repoPath, { recursive: true, force: true });
+  });
+
+  it('defaults to the NNN- filename order when no .order exists', async () => {
+    const { runs } = await loadRepo(repoPath, []);
+    expect(runs[0].rows.map((r) => r.display_id)).toEqual(['PAY-0001', 'PAY-0002', 'PAY-0003']);
+  });
+
+  it('honors .order, appending sidecars missing from it in filename order', async () => {
+    // List charlie + alpha (reversed); bravo is unlisted and falls to the tail. A stale key is ignored.
+    await node.fsp().writeFile(
+      node.path().join(runDirAbs(), '.order'),
+      '003-PAY-0003-charlie\n001-PAY-0001-alpha\nGHOST-9999-gone\n',
+    );
+    const { runs } = await loadRepo(repoPath, []);
+    expect(runs[0].rows.map((r) => r.display_id)).toEqual(['PAY-0003', 'PAY-0001', 'PAY-0002']);
+  });
+});
