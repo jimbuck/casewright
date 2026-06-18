@@ -86,7 +86,6 @@ function buildModel(overrides: Partial<RunReportModel> = {}): RunReportModel {
     generatedAt: '2026-06-12 09:30',
     summary: buildRunSummary(run, [kase]),
     suites,
-    notes: run.notes,
     testerApproval: run.testerApproval,
     reviewerApproval: run.reviewerApproval,
     ...overrides,
@@ -151,12 +150,11 @@ describe('buildRunReportHtml', () => {
     expect(html).toContain('2 cases · 1 pass · 1 fail'); // suite tally line
   });
 
-  it('lists failed/blocked cases with their failed items and notes', () => {
+  it('renders failure detail inline in the case breakdown and omits the needs-attention section', () => {
     const html = buildRunReportHtml(buildModel());
     expect(html).toContain('PAY-0042');
-    expect(html).toContain('button 500s');
-    expect(html).toContain('never arrived');
-    expect(html).toContain('flaky on retry'); // row notes
+    expect(html).toContain('button 500s'); // failed-item detail in the breakdown row
+    expect(html).not.toContain('Needs attention'); // standalone attention block removed
   });
 
   it('renders the tester sign-off and an awaiting placeholder for the missing reviewer', () => {
@@ -179,26 +177,9 @@ describe('buildRunReportHtml', () => {
     expect(html).toContain('Reset &lt;b&gt; &amp; &quot;x&quot;');
   });
 
-  it('renders markdown in run notes, failure notes, and row notes (but not in titles/names)', () => {
-    const r: Run = {
-      ...run,
-      notes: 'Run-level **summary** note',
-      rows: [
-        {
-          ...failRow,
-          failNotes: { 'step:0': '`500` from *gateway*', 'accept:0': 'never arrived' },
-          notes: 'see [ticket](https://x.io)',
-        },
-      ],
-    };
-    const html = buildRunReportHtml(
-      buildModel({ notes: r.notes, summary: buildRunSummary(r, [kase]), suites: [] }),
-    );
-    expect(html).toContain('<h2>Notes</h2>');
-    expect(html).toContain('<strong>summary</strong>'); // run-level notes
-    expect(html).toContain('<code>500</code>'); // failure-note inline code
-    expect(html).toContain('<em>gateway</em>'); // failure-note emphasis
-    expect(html).toContain('<a href="https://x.io">ticket</a>'); // row-note link
+  it('does not render a run-level Notes section', () => {
+    const html = buildRunReportHtml(buildModel());
+    expect(html).not.toContain('<h2>Notes</h2>');
   });
 
   it('keeps case titles escaped even though their detail renders markdown', () => {

@@ -7,7 +7,7 @@
  * The CSS defines its OWN `:root` custom properties (the app's `var(--…)` tokens don't
  * exist in the print window), inlining the literal oklch values from `@casewright/brand`.
  */
-import { markdownInlineToHtml, markdownToHtml } from '@/utils/markdown-html';
+import { markdownInlineToHtml } from '@/utils/markdown-html';
 import type { RunSummary, RunSummaryEntry } from '@/utils/run-items';
 import type { Approval, Result } from '@/types';
 
@@ -41,8 +41,6 @@ export interface RunReportModel {
   generatedAt: string;
   summary: RunSummary;
   suites: ReportSuiteRow[];
-  /** Run-level notes (markdown), rendered into its own section. */
-  notes: string;
   testerApproval: Approval | null;
   reviewerApproval: Approval | null;
 }
@@ -228,40 +226,6 @@ function renderSuiteBreakdown(suites: ReportSuiteRow[]): string {
   </section>`;
 }
 
-function renderAttention(entries: RunSummaryEntry[]): string {
-  if (!entries.length) {
-    return `<section><h2>Needs attention</h2><div class="ok-note">No failed or blocked cases.</div></section>`;
-  }
-  const items = entries
-    .map((e) => {
-      const failures = e.failures.length
-        ? `<ul class="fails">${e.failures
-            .map(
-              (f) =>
-                `<li class="md">${markdownInlineToHtml(f.text)}${
-                  f.note ? ` <span class="muted">— ${markdownInlineToHtml(f.note)}</span>` : ''
-                }</li>`,
-            )
-            .join('')}</ul>`
-        : '';
-      const notes = e.notes ? `<div class="attn-notes md">${markdownToHtml(e.notes)}</div>` : '';
-      // Show both the failed items and any free-text note (matches RunGrid's AttentionRow).
-      const detail = failures + notes || `<div class="muted">No failure detail recorded.</div>`;
-      return `
-      <div class="attn">
-        <div class="attn-head">
-          <span class="dot" style="background:${RESULT_META[e.result].color}"></span>
-          <span class="mono attn-id">${esc(e.display_id)}</span>
-          <span class="attn-title">${esc(e.title)}</span>
-          <span class="attn-result" style="color:${RESULT_META[e.result].color}">${esc(RESULT_META[e.result].label)}</span>
-        </div>
-        ${detail}
-      </div>`;
-    })
-    .join('');
-  return `<section><h2>Needs attention (${entries.length})</h2>${items}</section>`;
-}
-
 function renderPassed(entries: RunSummaryEntry[]): string {
   if (!entries.length) return '';
   const items = entries
@@ -284,15 +248,6 @@ function renderApprovalCard(label: string, a: Approval | null): string {
       <div class="signoff-label">${esc(label)}</div>
       ${body}
     </div>`;
-}
-
-function renderNotes(m: RunReportModel): string {
-  if (!m.notes.trim()) return '';
-  return `
-  <section>
-    <h2>Notes</h2>
-    <div class="md run-notes">${markdownToHtml(m.notes)}</div>
-  </section>`;
 }
 
 function renderSignoff(m: RunReportModel): string {
@@ -383,19 +338,8 @@ section{margin-top:22px;}
 .case-result{width:92px;white-space:nowrap;text-align:right;font-family:var(--font-mono);font-size:11px;font-weight:700;}
 .case-result .dot{margin-right:4px;vertical-align:middle;}
 
-/* needs attention */
-.ok-note{color:var(--pass);font-size:12.5px;}
-.attn{border:1px solid var(--border);background:var(--panel-2);border-radius:8px;padding:10px 12px;margin-bottom:8px;break-inside:avoid;}
-.attn-head{display:flex;align-items:center;gap:8px;}
-.attn-id{font-size:11px;color:var(--ink-3);}
-.attn-title{font-size:13px;font-weight:600;}
-.attn-result{margin-left:auto;font-family:var(--font-mono);font-size:11px;font-weight:700;}
-.fails{margin:8px 0 0;padding-left:18px;}
-.fails li{font-size:12.5px;line-height:1.45;color:var(--ink-2);margin-bottom:2px;}
-.attn-notes{margin-top:6px;font-size:12px;color:var(--ink-3);}
-
-/* rendered markdown — notes, failure text + run notes. Styles the whitelist of tags
-   markdownToHtml emits, scoped so it never disturbs the rest of the report chrome. */
+/* rendered markdown — case-detail output. Styles the whitelist of tags
+   markdownInlineToHtml emits, scoped so it never disturbs the rest of the report chrome. */
 .md{line-height:1.5;}
 .md p{margin:0 0 8px;}
 .md p:last-child{margin-bottom:0;}
@@ -412,7 +356,6 @@ section{margin-top:22px;}
 .md h1,.md h2,.md h3,.md h4,.md h5,.md h6{font-size:13px;font-weight:700;margin:8px 0 4px;padding:0;border:0;
   text-transform:none;letter-spacing:0;color:var(--ink);}
 .md hr{border:0;border-top:1px solid var(--border);margin:8px 0;}
-.run-notes{font-size:13px;color:var(--ink-2);}
 
 /* passed list */
 .passed{list-style:none;margin:0;padding:0;columns:2;column-gap:24px;}
@@ -444,7 +387,6 @@ export function buildRunReportHtml(model: RunReportModel): string {
         renderTiles(model),
         renderBar(model),
         renderSuiteBreakdown(model.suites),
-        renderAttention(model.summary.attention),
         renderPassed(model.summary.passed),
       ].join('\n');
 
@@ -460,7 +402,6 @@ export function buildRunReportHtml(model: RunReportModel): string {
 <div class="report">
 ${renderHead(model)}
 ${body}
-${renderNotes(model)}
 ${renderSignoff(model)}
 <div class="footer">Generated by Casewright · ${esc(fmtStamp(model.generatedAt))}</div>
 </div>
