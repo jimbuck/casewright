@@ -2,6 +2,15 @@
 
 All notable changes to Casewright. Generated automatically from Conventional Commits — do not edit by hand.
 
+# [0.10.0](https://github.com/jimbuck/casewright/compare/v0.9.0...v0.10.0) (2026-06-22)
+
+
+### Features
+
+* **desktop:** implement window state persistence and restoration ([6ca80de](https://github.com/jimbuck/casewright/commit/6ca80deeac6893a5e3297f8521a945c72c3cdaf4))
+* **filename:** simplify case filename generation by removing displayId ([cf4a70f](https://github.com/jimbuck/casewright/commit/cf4a70f96154dbd9da96e8995c588077d911e56c))
+* **styles:** update selection background color to improve visibility ([ecd3d00](https://github.com/jimbuck/casewright/commit/ecd3d008f1dccfb5eaacb0b9377af99bb29e0a60))
+
 # [0.9.0](https://github.com/jimbuck/casewright/compare/v0.8.0...v0.9.0) (2026-06-18)
 
 
