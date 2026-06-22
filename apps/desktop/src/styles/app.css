@@ -97,7 +97,7 @@
     cursor: pointer;
   }
   ::selection {
-    background: var(--accent-soft);
+    background: var(--select);
   }
 
   /* thin, quiet scrollbars */

@@ -64,7 +64,7 @@ svg {
 }
 
 ::selection {
-  background: var(--accent-soft);
+  background: var(--select);
 }
 
 /* ---- layout helpers ---- */
