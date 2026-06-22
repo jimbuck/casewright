@@ -2,14 +2,13 @@ import type { Case, RunRow } from '@/types';
 import { slug } from '@/utils/ids';
 
 /**
- * Canonical case filename: `<displayId>-<slug(title)>.md` (PRD §5.2),
- * e.g. `PAY-0042-user-can-reset-password.md`. Freely renamable since `id` is the key.
+ * Canonical case filename: `<slug(title)>.md`, e.g. `user-can-reset-password.md`.
+ * The mutable `displayId` is deliberately *not* part of the name — baking it in renamed
+ * the file (and churned Git) every time the id changed. Freely renamable since `id`
+ * (in frontmatter) is the source of truth.
  */
-export function caseFileName(c: Pick<Case, 'displayId' | 'title'>): string {
-  const did = c.displayId.trim();
-  const body = slug(c.title);
-  const stem = [did, body].filter(Boolean).join('-') || 'untitled';
-  return `${stem}.md`;
+export function caseFileName(c: Pick<Case, 'title'>): string {
+  return `${slug(c.title) || 'untitled'}.md`;
 }
 
 /** Canonical run folder stem: `<YYYY-MM-DD>-<slug(name)>` (one folder per run). */
