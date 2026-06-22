@@ -112,6 +112,12 @@ The window is **frameless** (`window.frame: false`) with a custom VS Code–styl
 actions, reusing the `ContextMenu`) and Windows-style minimize / maximize / close controls backed
 by `lib/nwjs.ts`. Outside NW.js (dev preview / tests) the controls no-op gracefully.
 
+The window **remembers where it was last open** — size, position, monitor, and maximized
+state are persisted to `window-state.json` in the OS data dir (next to recents) by
+`services/window-state.ts`. The manifest creates the window hidden (`window.show: false`) so
+the saved geometry is restored *before* it appears (no jump from the default placement); a
+window saved on a since-unplugged monitor reopens centered on the primary one.
+
 ## Testing & the fixture repo
 
 ```bash

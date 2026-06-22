@@ -17,7 +17,7 @@
     "min_height": 640,
     "frame": false,
     "resizable": true,
-    "show": true
+    "show": false
   },
   "scripts": {
     "dev": "node scripts/dev.mjs",

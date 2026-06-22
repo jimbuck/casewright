@@ -15,16 +15,49 @@ export interface NwPrintOptions {
 }
 
 export interface NwWindow {
+  /** Window geometry in screen coordinates (read/write properties in NW.js). */
+  x: number;
+  y: number;
+  width: number;
+  height: number;
   minimize(): void;
   maximize(): void;
   unmaximize(): void;
   restore(): void;
+  /** Reveal a window created with `show:false` (and bring it forward). */
+  show(show?: boolean): void;
+  focus(): void;
+  moveTo(x: number, y: number): void;
+  resizeTo(width: number, height: number): void;
   close(force?: boolean): void;
   reload(): void;
   showDevTools?(): void;
   print(options: NwPrintOptions): void;
   on(event: string, listener: () => void): void;
+  /** Remove a single listener (so independent subscribers can coexist on one event). */
+  removeListener(event: string, listener: () => void): void;
   removeAllListeners(event: string): void;
+}
+
+/** A rectangle in NW.js Screen coordinates (monitor `bounds` / `work_area`). */
+export interface ScreenRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+interface NwScreenInfo {
+  /** Full monitor rectangle. */
+  bounds: ScreenRect;
+  /** Usable area excluding the OS taskbar / dock. */
+  work_area: ScreenRect;
+}
+
+interface NwScreen {
+  /** Must be called once before reading `screens`. */
+  Init(): void;
+  screens: NwScreenInfo[];
 }
 
 interface NwWinOpenOptions {
@@ -45,6 +78,7 @@ interface NwGlobal {
   };
   App?: { dataPath: string; argv: string[]; quit?(): void };
   Shell?: { openExternal(uri: string): void };
+  Screen?: NwScreen;
   require?: NodeRequire;
 }
 
@@ -65,6 +99,28 @@ export function nwWindow(): NwWindow | null {
 /** The per-app data directory (NW.js `nw.App.dataPath`), for app-level state like recents. */
 export function appDataPath(): string | null {
   return window.nw?.App?.dataPath ?? null;
+}
+
+let screenInited = false;
+
+/**
+ * Usable work areas (taskbar/dock excluded) of every connected monitor, in NW.js
+ * Screen coordinates. Empty outside NW.js. Used to validate a restored window's
+ * bounds against the displays currently attached.
+ */
+export function screenWorkAreas(): ScreenRect[] {
+  const screen = window.nw?.Screen;
+  if (!screen) return [];
+  if (!screenInited) {
+    // `Init` must run once before `screens`; it throws if called twice, so guard it.
+    try {
+      screen.Init();
+    } catch {
+      /* already initialized */
+    }
+    screenInited = true;
+  }
+  return (screen.screens ?? []).map((s) => s.work_area ?? s.bounds).filter(Boolean);
 }
 
 /**

@@ -15,6 +15,7 @@ import type matterFn from 'gray-matter';
 import type * as papa from 'papaparse';
 
 type Fsp = typeof import('node:fs/promises');
+type FsMod = typeof import('node:fs');
 type PathMod = typeof import('node:path');
 type OsMod = typeof import('node:os');
 type UrlMod = typeof import('node:url');
@@ -57,6 +58,8 @@ function load<T>(name: string): T {
 
 export const node = {
   fsp: () => load<Fsp>('node:fs/promises'),
+  /** Synchronous fs — only for code that must complete before the page unloads (window-state save). */
+  fs: () => load<FsMod>('node:fs'),
   path: () => load<PathMod>('node:path'),
   os: () => load<OsMod>('node:os'),
   url: () => load<UrlMod>('node:url'),

@@ -4,6 +4,7 @@ import { Logo } from '@/components/Logo';
 import { Menu, type MenuItem } from '@/components/ui';
 import { DOCS_URL } from '@/components/common/AboutModal';
 import { nwWindow, openExternal } from '@/lib/nwjs';
+import { isWindowMaximized } from '@/services/window-state';
 import { useApp } from '@/store/app-store';
 
 /* window-control glyphs (VS Code / Windows style) */
@@ -36,9 +37,12 @@ const winBtn =
 export function TitleBar() {
   const ctx = useApp();
   const { screen } = ctx;
-  const [maximized, setMaximized] = useState(false);
+  // Seed from the live window so a window restored maximized shows the correct glyph.
+  const [maximized, setMaximized] = useState(isWindowMaximized);
 
-  // keep the maximize/restore glyph in sync with the real window state
+  // keep the maximize/restore glyph in sync with the real window state. Use
+  // removeListener (not removeAllListeners) so the window-state tracker's listeners
+  // on the same events survive this component unmounting.
   useEffect(() => {
     const win = nwWindow();
     if (!win) return;
@@ -48,9 +52,9 @@ export function TitleBar() {
     win.on('unmaximize', onRestore);
     win.on('restore', onRestore);
     return () => {
-      win.removeAllListeners('maximize');
-      win.removeAllListeners('unmaximize');
-      win.removeAllListeners('restore');
+      win.removeListener('maximize', onMax);
+      win.removeListener('unmaximize', onRestore);
+      win.removeListener('restore', onRestore);
     };
   }, []);
 
