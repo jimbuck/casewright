@@ -57,9 +57,15 @@ export function createStoreInternals(set: StoreSet, get: StoreGet) {
 
   // the path each case was last written to — drives rename-on-write cleanup
   const lastCasePath = new Map<string, string>();
-  const seedPaths = () => {
+  // Seed from the case's *actual* on-disk path when known (`paths`, straight from a load).
+  // The on-disk name can differ from the canonical `caseFileName(c)` — after a title change
+  // or a filename-scheme change (e.g. dropping displayId) — and seeding from the canonical
+  // name would make the next write skip the delete and orphan the old file (two files, one id).
+  // After our own writes, `reseed()` calls this with no map: the just-written canonical name
+  // is then authoritative, so falling back to `casePath(c)` is correct.
+  const seedPaths = (paths?: Record<string, string>) => {
     lastCasePath.clear();
-    get().cases.forEach((c) => lastCasePath.set(c.id, casePath(c)));
+    get().cases.forEach((c) => lastCasePath.set(c.id, paths?.[c.id] ?? casePath(c)));
   };
 
   // recompute git-derived dirty state shortly after writes settle
@@ -75,7 +81,7 @@ export function createStoreInternals(set: StoreSet, get: StoreGet) {
     try {
       const loaded = await loadRepo(repoPath, workspaces);
       set({ tree: loaded.tree, cases: loaded.cases, runs: loaded.runs, warnings: loaded.warnings });
-      seedPaths();
+      seedPaths(loaded.paths);
     } catch {
       /* keep optimistic state if even the reload fails */
     }
@@ -106,7 +112,7 @@ export function createStoreInternals(set: StoreSet, get: StoreGet) {
         sel: keepSel ? s.sel : { ...s.sel, id: loaded.cases[0]?.id },
       };
     });
-    seedPaths();
+    seedPaths(loaded.paths);
     void get().refreshStatus();
   };
 
@@ -158,7 +164,7 @@ export function createStoreInternals(set: StoreSet, get: StoreGet) {
         sel: keepSel ? s.sel : { ...s.sel, id: loaded.cases[0]?.id },
       };
     });
-    seedPaths();
+    seedPaths(loaded.paths);
     void get().refreshStatus();
     get().toast('Reloaded — external changes detected');
   };

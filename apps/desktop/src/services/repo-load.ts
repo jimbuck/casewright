@@ -191,12 +191,19 @@ export async function openRepo(repoPath: string): Promise<OpenedRepo> {
 export interface LoadedWorkspace {
   tree: TreeNode[];
   cases: Case[];
+  /** Repo-relative path each case was actually read from, keyed by case id. Drives
+   *  rename-on-write cleanup: the on-disk name can differ from the canonical
+   *  `caseFileName(c)` (e.g. after a title change or a filename-scheme change), and only
+   *  the real source path lets the next write delete the old file instead of orphaning it. */
+  paths: Record<string, string>;
   warnings: LintWarning[];
 }
 
 export interface LoadedRepo {
   tree: TreeNode[];
   cases: Case[];
+  /** See {@link LoadedWorkspace.paths}. */
+  paths: Record<string, string>;
   runs: Run[];
   warnings: LintWarning[];
 }
@@ -357,6 +364,7 @@ export async function loadWorkspace(repoPath: string, ws: Workspace): Promise<Lo
   const wsAbs = path.join(repoPath, ws.path);
   const warnings: LintWarning[] = [];
   const cases: Case[] = [];
+  const paths: Record<string, string> = {};
 
   // fullRel = the dir's full repo-relative path; cases at the workspace root belong
   // to the workspace node (id = ws.id). Dot-folders (incl. `.casewright`) are skipped.
@@ -408,6 +416,7 @@ export async function loadWorkspace(repoPath: string, ws: Workspace): Promise<Lo
         const text = (await readMaybe(path.join(absDir, f.name))) ?? '';
         const parsed = parseCase(text);
         cases.push({ ...parsed.case, suite: suiteId, modified: false });
+        paths[parsed.case.id] = relJoin(fullRel, f.name);
         nodes.push({ type: 'case', id: parsed.case.id });
         for (const w of parsed.warnings) warnings.push({ ...w, file: relJoin(fullRel, f.name) });
       } else {
@@ -430,7 +439,7 @@ export async function loadWorkspace(repoPath: string, ws: Workspace): Promise<Lo
   };
 
   const tree = await walk(wsAbs, ws.path);
-  return { tree, cases, warnings };
+  return { tree, cases, paths, warnings };
 }
 
 /**
@@ -441,9 +450,11 @@ export async function loadWorkspace(repoPath: string, ws: Workspace): Promise<Lo
 export async function loadRepo(repoPath: string, workspaces: Workspace[]): Promise<LoadedRepo> {
   const tree: TreeNode[] = [];
   const cases: Case[] = [];
+  const paths: Record<string, string> = {};
   const warnings: LintWarning[] = [];
   for (const ws of workspaces) {
     const loaded = await loadWorkspace(repoPath, ws);
+    Object.assign(paths, loaded.paths);
     // The workspace root carries its own prefix/description so display-ID prefixes
     // inherit uniformly down the combined tree (workspace → suite → case).
     tree.push({
@@ -475,5 +486,5 @@ export async function loadRepo(repoPath: string, workspaces: Workspace[]): Promi
   checkDup(tree);
 
   const runs = await loadRuns(repoPath, warnings);
-  return { tree, cases, runs, warnings };
+  return { tree, cases, paths, runs, warnings };
 }

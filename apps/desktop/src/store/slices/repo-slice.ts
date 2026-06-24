@@ -115,7 +115,7 @@ export function createRepoSlice(set: StoreSet, get: StoreGet, internals: StoreIn
           loading: false,
           error: null,
         });
-        seedPaths();
+        seedPaths(loaded.paths);
         void get().refreshStatus();
         startWatch(opened.repoPath); // live-reload on external file changes
         const recents = await addRecent({

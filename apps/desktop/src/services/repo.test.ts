@@ -137,6 +137,13 @@ describe('openRepo / loadWorkspace / loadRepo', () => {
     expect(first.steps).toEqual(c1.steps);
     expect(first.modified).toBe(false);
 
+    // `paths` records each case's *actual* on-disk path — here the legacy displayId-prefixed
+    // name, which differs from the canonical `caseFileName(c)` (now `first-case.md`). Seeding
+    // rename-cleanup from this (not the recomputed canonical name) is what stops the next write
+    // from orphaning the old file — the duplicate-case bug.
+    expect(loaded.paths[c1.id]).toBe('areas/payments/Auth/PAY-0001-first-case.md');
+    expect(loaded.paths[c2.id]).toBe('areas/payments/Auth/Sessions/PAY-0002-nested-case.md');
+
     expect(loaded.tree).toHaveLength(1);
     const auth = loaded.tree[0];
     expect(auth.type).toBe('suite');
