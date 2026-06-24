@@ -2,6 +2,13 @@
 
 All notable changes to Casewright. Generated automatically from Conventional Commits — do not edit by hand.
 
+# [0.11.0](https://github.com/jimbuck/casewright/compare/v0.10.0...v0.11.0) (2026-06-24)
+
+
+### Features
+
+* **repo:** add paths to track actual on-disk case locations for rename-on-write cleanup ([ebb6523](https://github.com/jimbuck/casewright/commit/ebb652301dcac07735450734e792e8627eaec929))
+
 # [0.10.0](https://github.com/jimbuck/casewright/compare/v0.9.0...v0.10.0) (2026-06-22)
 
 

@@ -1,6 +1,6 @@
 {
   "name": "@casewright/desktop",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "private": true,
   "type": "module",
   "description": "Casewright desktop app — a bespoke editor for manual test cases (NW.js + React + TypeScript).",

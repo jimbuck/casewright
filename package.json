@@ -1,6 +1,6 @@
 {
   "name": "casewright",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "private": true,
   "description": "A git-backed desktop application for writing and running test cases.",
   "license": "MIT",
