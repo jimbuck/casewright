@@ -1,14 +1,24 @@
 import type { Case, RunRow } from '@/types';
 import { slug } from '@/utils/ids';
 
+/** Largest explicit filename stem we allow (without the `.md`). Generous vs. the 48-char
+ *  auto-slug cap so similar titles can be given distinct, non-truncated names. */
+export const CASE_STEM_MAX = 120;
+
+/** Normalize an explicit filename-stem override to a safe slug (no `.md`). */
+export function caseStem(override: string): string {
+  return slug(override, CASE_STEM_MAX);
+}
+
 /**
- * Canonical case filename: `<slug(title)>.md`, e.g. `user-can-reset-password.md`.
- * The mutable `displayId` is deliberately *not* part of the name — baking it in renamed
- * the file (and churned Git) every time the id changed. Freely renamable since `id`
- * (in frontmatter) is the source of truth.
+ * Canonical case filename: `<slug>.md`, e.g. `user-can-reset-password.md`. Uses the
+ * explicit `slug` override when set, else derives from `title`. The mutable `displayId`
+ * is deliberately *not* part of the name — baking it in renamed the file (and churned Git)
+ * every time the id changed. Freely renamable since `id` (in frontmatter) is the source of truth.
  */
-export function caseFileName(c: Pick<Case, 'title'>): string {
-  return `${slug(c.title) || 'untitled'}.md`;
+export function caseFileName(c: Pick<Case, 'title' | 'slug'>): string {
+  const override = c.slug ? caseStem(c.slug) : '';
+  return `${override || slug(c.title) || 'untitled'}.md`;
 }
 
 /** Canonical run folder stem: `<YYYY-MM-DD>-<slug(name)>` (one folder per run). */

@@ -9,13 +9,17 @@ export function randomId(len = 11): string {
   return len === 11 ? gen11() : customAlphabet(ALPHABET, len)();
 }
 
-/** Filename-safe slug from a title (lowercase, truncated) — used for stable tree ids. */
-export function slug(s: string): string {
+/**
+ * Filename-safe slug from a title (lowercase, hyphenated) — used for stable tree ids.
+ * Truncates to `max` chars (default 48). Pass a larger `max` for an explicit, user-chosen
+ * filename override where the auto-truncation would otherwise force a collision.
+ */
+export function slug(s: string, max = 48): string {
   return (s || '')
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/(^-|-$)/g, '')
-    .slice(0, 48);
+    .slice(0, max);
 }
 
 /**

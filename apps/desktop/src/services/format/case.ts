@@ -1,7 +1,8 @@
 import { node } from '@/lib/node';
 import { CaseFrontMatterSchema, type LintWarning } from '@/schemas';
 import type { Case, SetupItem, Step } from '@/types';
-import { randomId } from '@/utils/ids';
+import { caseStem } from '@/services/format/filename';
+import { randomId, slug } from '@/utils/ids';
 import { numberSteps } from '@/utils/steps';
 
 /** A case parsed from disk — everything except the suite-derived/runtime fields. */
@@ -63,11 +64,15 @@ const sectionBlock = (heading: string, content: string): string => (content ? `$
  * Any captured out-of-schema `extra` is re-appended.
  */
 export function serializeCase(c: ParsedCase, extra = ''): string {
+  // Persist `slug` only when it actually overrides the title-derived stem — keeps default
+  // files free of a redundant key, and drops a stale override once it matches the title again.
+  const stem = c.slug ? caseStem(c.slug) : '';
   const front = [
     '---',
     `id: ${yamlScalar(c.id)}`,
     `displayId: ${yamlScalar(c.displayId)}`,
     `title: ${yamlScalar(c.title)}`,
+    ...(stem && stem !== slug(c.title) ? [`slug: ${yamlScalar(stem)}`] : []),
     `status: ${c.status}`,
     `tags: [${c.tags.map(yamlScalar).join(', ')}]`,
     '---',
@@ -203,6 +208,7 @@ export function parseCase(input: string): ParseCaseResult {
       id,
       displayId: front.displayId,
       title: front.title,
+      slug: front.slug?.trim() ? front.slug.trim() : undefined,
       status: front.status,
       tags: front.tags,
       objective: (sections['Objective'] ?? '').trim(),

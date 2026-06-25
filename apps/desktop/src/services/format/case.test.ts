@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { cases } from '@/data/sample';
 import type { Case } from '@/types';
 import { parseCase, serializeCase, type ParsedCase } from './case';
+import { caseFileName } from './filename';
 
 const strip = (c: Case): ParsedCase => {
   const { suite: _s, modified: _m, ...rest } = c;
@@ -172,6 +173,44 @@ describe('parseCase', () => {
     // round-trips: the extra is re-appended on serialize
     const round = parseCase(serializeCase(parseCase(md).case, extra));
     expect(round.extra).toContain('Some extra content.');
+  });
+});
+
+describe('slug (filename) override', () => {
+  // A long title that two cases could share — its auto-slug truncates at 48 chars, so distinct
+  // suffixes beyond that point would otherwise collide on the same filename.
+  const longTitle = 'GetReservableItems API matches mainframe survey report for Carlie Cs';
+
+  it('caseFileName derives from the title when no override is set', () => {
+    expect(caseFileName({ title: 'User can reset password', slug: undefined })).toBe('user-can-reset-password.md');
+  });
+
+  it('caseFileName uses the override and is not truncated at 48 chars', () => {
+    const stem = 'getreservableitems-api-matches-mainframe-carlie-cs';
+    expect(stem.length).toBeGreaterThan(48);
+    expect(caseFileName({ title: longTitle, slug: stem })).toBe(`${stem}.md`);
+    // two cases with the same long title but different overrides no longer collide
+    const a = caseFileName({ title: longTitle, slug: 'mainframe-carlie-cs' });
+    const b = caseFileName({ title: longTitle, slug: 'mainframe-lowes' });
+    expect(a).not.toBe(b);
+  });
+
+  it('caseFileName normalizes a messy override to a safe slug', () => {
+    expect(caseFileName({ title: 't', slug: 'My Custom_Name!!' })).toBe('my-custom-name.md');
+  });
+
+  it('serialize emits `slug` only when it overrides the title-derived stem', () => {
+    const stem = 'getreservableitems-api-matches-mainframe-carlie-cs';
+    const out = serializeCase({ ...PRD_CASE, title: longTitle, slug: stem });
+    expect(out).toContain(`\nslug: ${stem}\n`);
+    // …and round-trips back to the same override
+    expect(parseCase(out).case.slug).toBe(stem);
+  });
+
+  it('serialize omits `slug` when it matches the title (no redundant key, no churn)', () => {
+    const out = serializeCase({ ...PRD_CASE, slug: 'user-can-reset-password-from-the-login-screen' });
+    expect(out).not.toContain('\nslug:');
+    expect(parseCase(out).case.slug).toBeUndefined();
   });
 });
 

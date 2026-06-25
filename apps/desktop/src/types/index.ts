@@ -22,6 +22,9 @@ export interface Case {
   id: string; // stable hash, the internal key
   displayId: string; // human-facing ID, e.g. PAY-0042
   title: string;
+  /** Explicit filename-stem override (frontmatter `slug`). Absent = derive from `title`.
+   *  Lets long/similar titles avoid colliding on the same truncated auto-slug. */
+  slug?: string;
   status: Status;
   tags: string[];
   suite: string; // owning suite id

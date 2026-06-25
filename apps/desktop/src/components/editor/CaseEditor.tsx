@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { I } from '@/components/icons';
 import { Button } from '@/components/ui';
 import { cn } from '@/lib/utils';
+import { caseFileName, caseStem } from '@/services/format/filename';
+import { slug } from '@/utils/ids';
 import { editorKeyDown, renderInlineResolved, renderMarkdownResolved } from '@/utils/markdown';
 import { numberSteps } from '@/utils/steps';
 import { findVariableLint } from '@/utils/variables';
@@ -23,6 +25,10 @@ export function CaseEditor() {
   const ctx = useApp();
   const [previewVars, setPreviewVars] = useState(false);
   const [previewDate, setPreviewDate] = useState(() => new Date().toISOString().slice(0, 10));
+  // Filename editing is an explicit Edit→Done toggle (not live), so a rename only happens
+  // once on commit rather than on every keystroke.
+  const [editingName, setEditingName] = useState(false);
+  const [nameDraft, setNameDraft] = useState('');
   const rootRef = useRef<HTMLDivElement>(null);
 
   // Ctrl+Z / Ctrl+Y (or Ctrl+Shift+Z) → document-level undo/redo of case edits. A window listener
@@ -65,6 +71,30 @@ export function CaseEditor() {
   if (!c) return null;
   const patch = (p: Partial<Case>) => ctx.updateCase(c.id, p);
   const path = ctx.casePath(c);
+  const dir = path.includes('/') ? path.slice(0, path.lastIndexOf('/') + 1) : '';
+
+  // --- filename (slug) override editing ---
+  const draftStem = caseStem(nameDraft) || slug(c.title) || 'untitled';
+  // Resolve each sibling case's on-disk stem the same way the writer does, to catch a
+  // collision *before* it silently overwrites another file (the bug this feature fixes).
+  const siblingStems = new Set(
+    ctx.cases
+      .filter((x) => x.id !== c.id && x.suite === c.suite)
+      .map((x) => caseFileName(x).replace(/\.md$/, '')),
+  );
+  const nameClash = siblingStems.has(draftStem);
+
+  const startEditName = () => {
+    setNameDraft(caseFileName(c).replace(/\.md$/, ''));
+    setEditingName(true);
+  };
+  const commitName = () => {
+    if (nameClash) return; // block the overwrite; leave the editor open so the user can fix it
+    // Store the override only when it diverges from the title's auto-slug; otherwise clear it
+    // so the filename tracks the title again.
+    patch({ slug: draftStem && draftStem !== slug(c.title) ? draftStem : undefined });
+    setEditingName(false);
+  };
 
   // a displayId is read-only unless it collides with another case in the workspace
   const clashes = ctx.cases.filter(
@@ -316,8 +346,46 @@ export function CaseEditor() {
 
       <div className="flex flex-none items-center gap-2.5 border-t border-border bg-panel-2 px-[26px] py-[7px] font-mono text-[11.5px] text-ink-faint">
         <span className="grid place-items-center text-ink-3">{I.file({ size: 13 })}</span>
-        <span>{path}</span>
-        <span className={cn('ml-auto inline-flex items-center gap-[5px]', c.modified ? 'text-blocked' : 'text-pass')}>
+        {editingName ? (
+          <>
+            {dir && <span className="shrink-0 text-ink-3">{dir}</span>}
+            <input
+              autoFocus
+              className={cn(
+                'min-w-0 max-w-[420px] flex-1 rounded border bg-panel px-1.5 py-0.5 font-mono text-[11.5px] text-ink focus:outline-none',
+                nameClash ? 'border-fail focus:border-fail' : 'border-border focus:border-accent',
+              )}
+              value={nameDraft}
+              onChange={(e) => setNameDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') commitName();
+                else if (e.key === 'Escape') setEditingName(false);
+              }}
+              spellCheck={false}
+              title="Filename stem — saved on Done. Spaces and other characters become hyphens."
+            />
+            <span className="shrink-0 text-ink-3">.md</span>
+            {nameClash && <span className="shrink-0 text-fail">name already in use</span>}
+            <button
+              className="shrink-0 text-accent-ink hover:underline disabled:cursor-not-allowed disabled:text-ink-faint disabled:no-underline"
+              onClick={commitName}
+              disabled={nameClash}
+            >
+              Done
+            </button>
+            <button className="shrink-0 text-ink-3 hover:underline" onClick={() => setEditingName(false)}>
+              Cancel
+            </button>
+          </>
+        ) : (
+          <>
+            <span className="truncate">{path}</span>
+            <button className="shrink-0 text-accent-ink hover:underline" onClick={startEditName} title="Rename the file">
+              Edit
+            </button>
+          </>
+        )}
+        <span className={cn('ml-auto inline-flex shrink-0 items-center gap-[5px]', c.modified ? 'text-blocked' : 'text-pass')}>
           {c.modified ? (
             <>
               {I.dot({ size: 9 })} uncommitted changes
