@@ -2,6 +2,13 @@
 
 All notable changes to Casewright. Generated automatically from Conventional Commits — do not edit by hand.
 
+# [0.12.0](https://github.com/jimbuck/casewright/compare/v0.11.0...v0.12.0) (2026-06-25)
+
+
+### Features
+
+* **filename:** add explicit per-case filename override ([301f226](https://github.com/jimbuck/casewright/commit/301f2264471310b11fdcd51bd04c1d52297b188d))
+
 # [0.11.0](https://github.com/jimbuck/casewright/compare/v0.10.0...v0.11.0) (2026-06-24)
 
 
