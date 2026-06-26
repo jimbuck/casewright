@@ -1,4 +1,4 @@
-import { useState, type DragEvent, type PointerEvent as ReactPointerEvent } from 'react';
+import { useRef, useState, type DragEvent, type PointerEvent as ReactPointerEvent } from 'react';
 import { I } from '@/components/icons';
 import { Button, Input, RES } from '@/components/ui';
 import { cn } from '@/lib/utils';
@@ -55,6 +55,9 @@ const PANEL_MIN = 360;
 const PANEL_MAX = 760;
 const PANEL_DEFAULT = 540;
 const PANEL_KEY = 'cw:runPanelWidth';
+/* Smallest sliver of center content to keep visible — the drag can't grow the panel past this,
+   so the panel never pushes off-screen no matter how narrow the window is. */
+const MIN_CENTER = 120;
 
 /** A failed/blocked case in the generated Summary, shown with its failed steps + notes. */
 function AttentionRow({ entry }: { entry: RunSummaryEntry }) {
@@ -94,11 +97,11 @@ const RUN_STATUS: Record<string, string> = {
   closed: 'text-ink-3 bg-sunken',
 };
 
-// Absolute overlay so showing the indicator never reflows the rows (a reflow would shift the
-// drag hit-targets mid-drag and make the drop index oscillate — worst at the very top). Sits
-// centred in the `gap-2.5` between cards; placed on each row's top edge / the last row's bottom.
+// Vertical insertion indicator for the card grid — absolute so showing it never reflows the grid
+// (a reflow would shift the drag hit-targets mid-drag and make the drop index oscillate). Sits in
+// the gap to the left of the target card, or to the right of the last card.
 const dropLine =
-  "pointer-events-none absolute inset-x-0 z-10 h-0.5 rounded-[2px] bg-accent before:absolute before:-left-0.5 before:top-1/2 before:size-[7px] before:-translate-y-1/2 before:rounded-full before:bg-accent before:shadow-[0_0_0_2px_var(--panel)] before:content-['']";
+  "pointer-events-none absolute inset-y-1 z-10 w-0.5 rounded-[2px] bg-accent before:absolute before:left-1/2 before:-top-0.5 before:size-[7px] before:-translate-x-1/2 before:rounded-full before:bg-accent before:shadow-[0_0_0_2px_var(--panel)] before:content-['']";
 
 export function RunGrid() {
   const ctx = useApp();
@@ -123,19 +126,25 @@ export function RunGrid() {
   const { counts: t, executed, passRate } = summary;
 
   // ---- resizable detail panel (left-edge handle; width persists) ----
+  const bodyRef = useRef<HTMLDivElement>(null); // the center+panel flex row, for live width bounds
   const [panelWidth, setPanelWidth] = useState(() => {
     const v = Number(localStorage.getItem(PANEL_KEY));
     return v >= PANEL_MIN && v <= PANEL_MAX ? v : PANEL_DEFAULT;
   });
   // Drag the left edge to resize; dragging left widens the panel (delta is inverted vs. the
-  // sidebar since this panel is docked to the right). Width is clamped and persisted on release.
+  // sidebar since this panel is docked to the right). The upper bound is the live container width
+  // minus a sliver of center (so the panel can never be dragged off-screen, even on a tiny
+  // window); width is clamped and persisted on release.
   const startResize = (e: ReactPointerEvent) => {
     e.preventDefault();
     const startX = e.clientX;
     const startW = panelWidth;
     let last = startW;
     const onMove = (ev: PointerEvent) => {
-      last = Math.min(PANEL_MAX, Math.max(PANEL_MIN, startW + startX - ev.clientX));
+      const avail = bodyRef.current ? bodyRef.current.clientWidth - MIN_CENTER : PANEL_MAX;
+      // Floor the upper bound so a tiny window (no window min-width anymore) can't drive it negative.
+      const upper = Math.max(MIN_CENTER, Math.min(PANEL_MAX, avail));
+      last = Math.min(upper, Math.max(PANEL_MIN, startW + startX - ev.clientX));
       setPanelWidth(last);
     };
     const onUp = () => {
@@ -155,14 +164,15 @@ export function RunGrid() {
     localStorage.setItem(PANEL_KEY, String(PANEL_DEFAULT));
   };
 
-  // ---- drag-reorder of the case rows (left-edge handle; overlay drop line) ----
+  // ---- drag-reorder of the case cards (in-card handle; vertical drop line) ----
   const [drag, setDrag] = useState<number | null>(null);
   const [dropIdx, setDropIdx] = useState<number | null>(null);
-  const rowOver = (i: number) => (e: DragEvent) => {
+  const cardOver = (i: number) => (e: DragEvent) => {
     if (drag === null) return;
     e.preventDefault();
+    // Grid cells flow left→right, so insert before/after based on the horizontal midpoint.
     const r = e.currentTarget.getBoundingClientRect();
-    const before = e.clientY - r.top < r.height / 2;
+    const before = e.clientX - r.left < r.width / 2;
     setDropIdx(before ? i : i + 1);
   };
   const endDrag = () => {
@@ -241,62 +251,46 @@ export function RunGrid() {
         </div>
       </div>
 
-      <div className="flex min-h-0 flex-1">
-        {/* Drop is handled once, on this whole scroll area (incl. its padding + the empty
-            space below the last card) so a drop that lands low or off to the side is still
-            accepted. Rows only set the drop index via onDragOver — their preventDefault keeps
-            drops over them valid, and the event bubbles up to this single onDrop. */}
+      <div className="flex min-h-0 min-w-0 flex-1" ref={bodyRef}>
+        {/* Drop is handled once, on this whole scroll area (incl. its padding + the empty space
+            around the cards) so a drop that lands in a gap is still accepted. Cards only set the
+            drop index via onDragOver; the event bubbles up to this single onDrop. */}
         <div
           className="min-h-0 min-w-0 flex-1 overflow-auto px-[26px] py-[18px]"
           onDragOver={(e) => drag !== null && e.preventDefault()}
           onDrop={doDrop}
         >
-          <div className="flex flex-col gap-2.5">
+          {/* Responsive card grid capped at two columns: each column floors at half the area
+              (`calc(50% - 6px)`, accounting for the 12px gap) so a third never fits, but at least
+              300px; `min(100%, …)` collapses to a single column on a narrow area without overflow. */}
+          <div className="grid items-stretch gap-3 [grid-template-columns:repeat(auto-fill,minmax(min(100%,max(300px,calc(50%_-_6px))),1fr))]">
             {run.rows.map((row, i) => (
               <div
                 key={row.case_id + i}
-                className={cn('group/row relative flex items-stretch gap-1', drag === i && 'opacity-40')}
-                onDragOver={rowOver(i)}
+                className={cn('group/card relative', drag === i && 'opacity-40')}
+                onDragOver={cardOver(i)}
               >
-                {drag !== null && dropIdx === i && <div className={cn(dropLine, '-top-[5px]')} />}
+                {drag !== null && dropIdx === i && <div className={cn(dropLine, '-left-[7px]')} />}
                 {drag !== null && i === run.rows.length - 1 && dropIdx === run.rows.length && (
-                  <div className={cn(dropLine, '-bottom-[5px]')} />
+                  <div className={cn(dropLine, '-right-[7px]')} />
                 )}
-                <span className="flex w-5 shrink-0 flex-col items-center gap-1 pt-[11px] opacity-0 transition-opacity group-hover/row:opacity-100">
-                  <span
-                    className="cursor-grab text-ink-faint"
-                    title="Drag to reorder"
-                    draggable
-                    onDragStart={() => setDrag(i)}
-                    onDragEnd={endDrag}
-                  >
-                    {I.drag({ size: 14 })}
-                  </span>
-                  <button
-                    className="mt-1 text-ink-faint transition-colors hover:text-fail"
-                    title="Remove from run"
-                    aria-label="Remove from run"
-                    onClick={() => void ctx.removeRunRow(run.id, i)}
-                  >
-                    {I.x({ size: 13 })}
-                  </button>
-                </span>
-                <div className="min-w-0 flex-1">
-                  <RunCaseCard
-                    row={row}
-                    kase={caseById.get(row.case_id)}
-                    gone={!liveIds.has(row.case_id)}
-                    lastTester={ctx.lastTester}
-                    onResult={(result) => setResult(i, result)}
-                    onNotes={(v) => update(i, { notes: v })}
-                    onTester={(v) => setTester(i, v)}
-                    onGuide={() => ctx.startGuide(run.id, i)}
-                  />
-                </div>
+                <RunCaseCard
+                  row={row}
+                  kase={caseById.get(row.case_id)}
+                  gone={!liveIds.has(row.case_id)}
+                  lastTester={ctx.lastTester}
+                  onResult={(result) => setResult(i, result)}
+                  onNotes={(v) => update(i, { notes: v })}
+                  onTester={(v) => setTester(i, v)}
+                  onGuide={() => ctx.startGuide(run.id, i)}
+                  onRemove={() => void ctx.removeRunRow(run.id, i)}
+                  onDragStart={() => setDrag(i)}
+                  onDragEnd={endDrag}
+                />
               </div>
             ))}
             {run.rows.length === 0 && (
-              <div className="rounded-lg border border-dashed border-border-2 px-4 py-8 text-center text-[13px] text-ink-3">
+              <div className="col-span-full rounded-lg border border-dashed border-border-2 px-4 py-8 text-center text-[13px] text-ink-3">
                 No cases in this run.
               </div>
             )}
@@ -304,7 +298,10 @@ export function RunGrid() {
         </div>
 
         <aside
-          className="relative flex min-h-0 flex-none flex-col border-l border-border bg-panel-2"
+          // `width` is the preferred size, but the panel stays shrinkable (shrink + min-w-0) so a
+          // narrow window collapses the center first and then trims the panel — it can never force
+          // horizontal overflow that would push the panel off-screen or stretch the header.
+          className="relative flex min-h-0 min-w-0 shrink grow-0 flex-col border-l border-border bg-panel-2"
           style={{ width: panelWidth }}
         >
           {/* left-edge resize handle (double-click resets) */}

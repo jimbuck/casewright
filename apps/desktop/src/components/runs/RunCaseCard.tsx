@@ -54,55 +54,88 @@ export interface RunCaseCardProps {
   onNotes: (value: string) => void;
   onTester: (value: string) => void;
   onGuide: () => void;
+  /** Remove this case from the run. */
+  onRemove: () => void;
+  /** Native drag handlers for the in-card reorder handle. */
+  onDragStart: () => void;
+  onDragEnd: () => void;
 }
 
 /**
- * One test case in a run, as a stacked card: an always-visible header (id, title, result, tester,
- * executed time) over a section that always shows the failed checklist items + their notes, then
- * this case's notes (rendered markdown with an Edit toggle).
+ * One test case in a run, as a self-contained card (grid cell): id + title on top, then the result
+ * picker + tester, then the failed checklist items and this case's notes. Built to stack vertically
+ * and fill its grid cell (`h-full`) so cards reflow into as many columns as the area allows. The
+ * drag handle + remove control live in the header and reveal on hover (`group/card` on the cell).
  */
-export function RunCaseCard({ row, kase, gone, lastTester, onResult, onNotes, onTester, onGuide }: RunCaseCardProps) {
+export function RunCaseCard({
+  row,
+  kase,
+  gone,
+  lastTester,
+  onResult,
+  onNotes,
+  onTester,
+  onGuide,
+  onRemove,
+  onDragStart,
+  onDragEnd,
+}: RunCaseCardProps) {
   const failures = rowFailures(row, kase);
 
   return (
-    <div className="rounded-lg border border-border bg-panel">
-      <div className="flex items-center gap-3 px-3.5 py-2.5">
-        <span className="shrink-0 font-mono text-[12px] text-ink-3">{row.display_id}</span>
+    <div className="flex h-full flex-col rounded-lg border border-border bg-panel">
+      <div className="flex flex-col gap-2 border-b border-border px-3 py-2.5">
+        <div className="flex items-center gap-2">
+          <span className="shrink-0 font-mono text-[11.5px] text-ink-3">{row.display_id}</span>
+          {row.executed_at && <span className="truncate font-mono text-[10.5px] text-ink-faint">{row.executed_at}</span>}
+          <span className="ml-auto flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover/card:opacity-100">
+            <span className="cursor-grab text-ink-faint" title="Drag to reorder" draggable onDragStart={onDragStart} onDragEnd={onDragEnd}>
+              {I.drag({ size: 14 })}
+            </span>
+            <button
+              className="text-ink-faint transition-colors hover:text-fail"
+              title="Remove from run"
+              aria-label="Remove from run"
+              onClick={onRemove}
+            >
+              {I.x({ size: 13 })}
+            </button>
+          </span>
+        </div>
 
-        <div className="min-w-0 flex-1">
+        {/* Flex row so the title (a flex child with min-w-0) can shrink and truncate — a plain
+            inline-block button sizes to its full text and would impose that as a hard min width. */}
+        <div className="flex min-w-0 items-baseline gap-1.5">
           {gone ? (
-            <span className="text-ink-faint">{row.title}</span>
+            <span className="min-w-0 truncate text-[13.5px] text-ink-faint">{row.title}</span>
           ) : (
             <button
-              className="truncate rounded-[3px] border-0 bg-transparent p-0 text-left text-[13.5px] text-ink hover:text-accent-ink hover:underline hover:underline-offset-2"
-              title="Walk through this case"
+              className="min-w-0 truncate rounded-[3px] border-0 bg-transparent p-0 text-left text-[13.5px] font-medium text-ink hover:text-accent-ink hover:underline hover:underline-offset-2"
+              title={row.title}
               onClick={onGuide}
             >
               {row.title}
             </button>
           )}
           {gone && (
-            <span className="ml-1.5 text-[10px] text-fail" title="Case no longer resolves to a live file">
+            <span className="shrink-0 text-[10px] text-fail" title="Case no longer resolves to a live file">
               ⚠ deleted
             </span>
           )}
         </div>
 
-        <ResultPicker value={row.result} onChange={onResult} />
-
-        <Input
-          className="w-[120px] shrink-0 font-mono text-[12.5px]"
-          value={row.tester}
-          placeholder={lastTester || 'Tester'}
-          onChange={(e) => onTester(e.target.value)}
-        />
-
-        <span className="hidden w-[120px] shrink-0 whitespace-nowrap text-right font-mono text-[11.5px] text-ink-faint sm:block">
-          {row.executed_at || '—'}
-        </span>
+        <div className="flex items-center gap-2">
+          <ResultPicker value={row.result} onChange={onResult} />
+          <Input
+            className="min-w-0 flex-1 font-mono text-[12.5px]"
+            value={row.tester}
+            placeholder={lastTester || 'Tester'}
+            onChange={(e) => onTester(e.target.value)}
+          />
+        </div>
       </div>
 
-      <div className="flex flex-col gap-3 border-t border-border px-3.5 py-3">
+      <div className="flex flex-1 flex-col gap-3 px-3 py-2.5">
         {failures.length > 0 && (
           <div>
             <div className="mb-1 text-[11px] font-bold uppercase tracking-[0.05em] text-ink-faint">Failed checks</div>
