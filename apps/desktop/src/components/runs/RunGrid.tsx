@@ -256,14 +256,14 @@ export function RunGrid() {
             around the cards) so a drop that lands in a gap is still accepted. Cards only set the
             drop index via onDragOver; the event bubbles up to this single onDrop. */}
         <div
-          className="min-h-0 min-w-0 flex-1 overflow-auto px-[26px] py-[18px]"
+          className="@container min-h-0 min-w-0 flex-1 overflow-auto px-[26px] py-[18px]"
           onDragOver={(e) => drag !== null && e.preventDefault()}
           onDrop={doDrop}
         >
-          {/* Responsive card grid capped at two columns: each column floors at half the area
-              (`calc(50% - 6px)`, accounting for the 12px gap) so a third never fits, but at least
-              300px; `min(100%, …)` collapses to a single column on a narrow area without overflow. */}
-          <div className="grid items-stretch gap-3 [grid-template-columns:repeat(auto-fill,minmax(min(100%,max(300px,calc(50%_-_6px))),1fr))]">
+          {/* Card grid with three container-query breakpoints (responds to the center area's own
+              width, which changes as the detail panel is resized — not the window): 1 column when
+              small (< 800px), 2 at medium (≥ 800px), 3 at large (≥ 1200px). */}
+          <div className="grid grid-cols-1 items-stretch gap-3 @min-[800px]:grid-cols-2 @min-[1200px]:grid-cols-3">
             {run.rows.map((row, i) => (
               <div
                 key={row.case_id + i}
