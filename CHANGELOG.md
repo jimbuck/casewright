@@ -2,6 +2,15 @@
 
 All notable changes to Casewright. Generated automatically from Conventional Commits — do not edit by hand.
 
+# [0.13.0](https://github.com/jimbuck/casewright/compare/v0.12.0...v0.13.0) (2026-06-26)
+
+
+### Features
+
+* **runs:** render run cases as a reflowing card grid (max 2 cols) ([5da586e](https://github.com/jimbuck/casewright/commit/5da586e2c533fc9b909f41e6c7bcb8cf2261128b))
+* **runs:** resizable run panel, add/remove cases, deferred summary; auto-reopen last repo ([deaaafa](https://github.com/jimbuck/casewright/commit/deaaafa0d28d182935daa721187783defa1d2dc6))
+* **runs:** size the case-card grid by container-query breakpoints ([b83338a](https://github.com/jimbuck/casewright/commit/b83338a4d249b23c2329203c1091c95e5c89c4bb))
+
 # [0.12.0](https://github.com/jimbuck/casewright/compare/v0.11.0...v0.12.0) (2026-06-25)
 
 
