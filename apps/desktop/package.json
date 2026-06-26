@@ -13,7 +13,6 @@
     "icon": "build-resources/icon.png",
     "width": 1480,
     "height": 940,
-    "min_width": 1024,
     "min_height": 640,
     "frame": false,
     "resizable": true,

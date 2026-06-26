@@ -60,12 +60,22 @@ describe('clampToScreens', () => {
     expect(clampToScreens(b, MONITORS)).toEqual(b);
   });
 
-  it('enforces the minimum window size', () => {
-    expect(clampToScreens({ x: 0, y: 0, width: 500, height: 300 }, MONITORS)).toEqual({
+  it('enforces the sanity floor on an absurdly small size', () => {
+    // Width has no usability minimum anymore (only a small sanity floor); height still floors at 640.
+    expect(clampToScreens({ x: 0, y: 0, width: 100, height: 300 }, MONITORS)).toEqual({
       x: 0,
       y: 0,
-      width: 1024,
+      width: 240,
       height: 640,
+    });
+  });
+
+  it('leaves a sub-1024 width untouched (no width minimum)', () => {
+    expect(clampToScreens({ x: 0, y: 0, width: 500, height: 700 }, MONITORS)).toEqual({
+      x: 0,
+      y: 0,
+      width: 500,
+      height: 700,
     });
   });
 
@@ -83,11 +93,11 @@ describe('clampToScreens', () => {
     expect(fitted.y).toBe(0);
   });
 
-  it('only enforces min size when there is no monitor info', () => {
-    expect(clampToScreens({ x: -100, y: -100, width: 500, height: 300 }, [])).toEqual({
+  it('only enforces the sanity floor when there is no monitor info', () => {
+    expect(clampToScreens({ x: -100, y: -100, width: 100, height: 300 }, [])).toEqual({
       x: -100,
       y: -100,
-      width: 1024,
+      width: 240,
       height: 640,
     });
   });

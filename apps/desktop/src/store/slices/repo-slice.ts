@@ -1,4 +1,4 @@
-import { pickDirectory } from '@/lib/nwjs';
+import { isNwjs, pickDirectory } from '@/lib/nwjs';
 import { flushPersist, schedulePersist } from '@/services/persist';
 import { addRecent, listRecents } from '@/services/recents';
 import {
@@ -26,6 +26,7 @@ import type { AppState, StoreGet, StoreSet } from '../app-store';
 type RepoSlice = Pick<
   AppState,
   | 'loadRecents'
+  | 'autoReopen'
   | 'openRepo'
   | 'initRepo'
   | 'goHome'
@@ -51,6 +52,17 @@ export function createRepoSlice(set: StoreSet, get: StoreGet, internals: StoreIn
   return {
     loadRecents: async () => {
       set({ recents: await listRecents() });
+    },
+
+    autoReopen: async () => {
+      const recents = await listRecents();
+      set({ recents });
+      // Only the desktop app can actually read a repo from disk; in the browser/dev preview
+      // just surface the recents on the launcher. Skip if a repo is already open (e.g. a
+      // fast re-entry) so we never clobber an active session.
+      if (!isNwjs() || get().repoPath || get().screen !== 'launcher') return;
+      const last = recents[0];
+      if (last) await get().openRepo(last.path); // openRepo handles missing/invalid paths gracefully
     },
 
     openRepo: async (path) => {

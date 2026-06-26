@@ -48,6 +48,12 @@ export interface AppState {
   warnings: LintWarning[];
   recents: Recent[];
   loadRecents: () => Promise<void>;
+  /**
+   * Startup hook: load the recents list and, in the desktop app, auto-reopen the most
+   * recently used repository so the user lands back where they left off instead of on the
+   * launcher. No-ops (just loads recents) outside NW.js or when there is no recent repo.
+   */
+  autoReopen: () => Promise<void>;
   /** Opened a Git repo that has no `.casewright/` yet — offer to scaffold it. */
   needsInit: boolean;
   /** Opened a `.casewright/` repo with zero workspaces — invite creating the first. */
@@ -122,6 +128,10 @@ export interface AppState {
    * `.order` file so the new order is honored on reload, in the runner, and in reports.
    */
   reorderRunRows: (runId: string, from: number, to: number) => void;
+  /** Append cases to an existing run (skipping any already present); seeds fresh, not-run rows. */
+  addRunCases: (runId: string, caseIds: string[]) => void;
+  /** Remove a single case row from a run, deleting its sidecar; confirms if results were recorded. */
+  removeRunRow: (runId: string, i: number) => Promise<void>;
   /** Duplicate a run: copy its cases into a fresh run with results/checks/approvals reset. */
   duplicateRun: (runId: string) => void;
   /** Delete a run — removes its whole folder from disk, after confirming. */

@@ -36,6 +36,8 @@ type RunsSlice = Pick<
   | 'setRunNotes'
   | 'setRunApproval'
   | 'reorderRunRows'
+  | 'addRunCases'
+  | 'removeRunRow'
   | 'duplicateRun'
   | 'deleteRun'
   | 'exportRunToPdf'
@@ -108,9 +110,11 @@ export function createRunsSlice(set: StoreSet, get: StoreGet, ctx: StoreCtx): Ru
     scope: run.scope,
     testerApproval: run.testerApproval,
     reviewerApproval: run.reviewerApproval,
-    // The Summary is generated from results, not user-authored — regenerated on every write so
-    // the committed `_run.md` always reflects the run's actual pass/fail state.
-    summary: serializeRunSummary(buildRunSummary(run, get().cases)),
+    // The Summary (pass rate + Needs-attention, generated from results) is only filled out once the
+    // run is "done" — i.e. closed (both approvals in). While the run is open we leave it empty so
+    // `_run.md` carries just the notes and isn't churned with a regenerated summary on every edit;
+    // closing the run writes the complete file. A reopened run drops back to notes-only.
+    summary: run.status === 'closed' ? serializeRunSummary(buildRunSummary(run, get().cases)) : '',
     notes: run.notes,
   });
 
@@ -336,6 +340,79 @@ export function createRunsSlice(set: StoreSet, get: StoreGet, ctx: StoreCtx): Ru
       }));
       upsertChange({ kind: 'run', refId: runId, path: run.file, status: 'M', label: run.name });
       schedulePersist(`runorder:${runId}`, () => writeRunOrderNow(runId));
+    },
+
+    addRunCases: (runId, caseIds) => {
+      const run = get().runs.find((r) => r.id === runId);
+      if (!run) return;
+      const present = new Set(run.rows.map((r) => r.case_id));
+      const toAdd = caseIds.filter((id) => !present.has(id));
+      if (toAdd.length === 0) {
+        get().toast('Those cases are already in this run');
+        return;
+      }
+      const { cases } = get();
+      const startIdx = run.rows.length;
+      const newRows: RunRow[] = toAdd.map((id, k) => {
+        const c = cases.find((x) => x.id === id);
+        const display_id = c?.displayId ?? id;
+        const title = c?.title ?? '';
+        return {
+          case_id: id,
+          display_id,
+          title,
+          result: 'not_run',
+          tester: '',
+          executed_at: '',
+          notes: '',
+          checks: {},
+          failNotes: {},
+          itemText: snapshotItemText(id),
+          // Continue the sidecar index sequence so new files sort after the existing rows.
+          file: relJoin(run.file, runCaseFileName(startIdx + k, { display_id, title })),
+        };
+      });
+      set((s) => ({ runs: s.runs.map((r) => (r.id === runId ? { ...r, rows: [...r.rows, ...newRows] } : r)) }));
+      upsertChange({ kind: 'run', refId: runId, path: run.file, status: 'M', label: run.name });
+      const rp = get().repoPath;
+      if (rp)
+        void Promise.all(
+          newRows.map((row) =>
+            writeFileAt(rp, row.file, serializeRunCase(buildRunCaseFile(row, get().cases.find((c) => c.id === row.case_id)))),
+          ),
+        )
+          .then(scheduleRefresh)
+          .catch(onWriteError);
+      // Persist the new row order + regenerated summary alongside the fresh sidecars.
+      schedulePersist(`runorder:${runId}`, () => writeRunOrderNow(runId));
+      schedulePersist(`rundetails:${runId}`, () => writeRunDetailsNow(runId));
+      get().toast(`Added ${newRows.length} ${newRows.length === 1 ? 'case' : 'cases'} to run`);
+    },
+
+    removeRunRow: async (runId, i) => {
+      const run = get().runs.find((r) => r.id === runId);
+      const row = run?.rows[i];
+      if (!run || !row) return;
+      const hasResult = row.result !== 'not_run' || Object.keys(row.checks).length > 0;
+      if (
+        hasResult &&
+        !(await get().confirm({
+          title: `Remove "${row.title || row.display_id}" from this run?`,
+          message: 'Its recorded result and checks for this run will be deleted.',
+          confirmLabel: 'Remove',
+          danger: true,
+        }))
+      )
+        return;
+      set((s) => ({
+        runs: s.runs.map((r) => (r.id !== runId ? r : { ...r, rows: r.rows.filter((_, j) => j !== i) })),
+      }));
+      upsertChange({ kind: 'run', refId: runId, path: run.file, status: 'M', label: run.name });
+      const rp = get().repoPath;
+      if (rp) void deletePath(rp, row.file).then(scheduleRefresh).catch(onWriteError);
+      // Rewrite `.order` (the removed stem is gone) and the summary, which dropped this row.
+      schedulePersist(`runorder:${runId}`, () => writeRunOrderNow(runId));
+      schedulePersist(`rundetails:${runId}`, () => writeRunDetailsNow(runId));
     },
 
     duplicateRun: (runId) => {

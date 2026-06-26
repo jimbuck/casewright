@@ -13,9 +13,11 @@ import { schedulePersist } from '@/services/persist';
 const FILE = 'window-state.json';
 const PERSIST_KEY = 'window-state';
 
-// Mirror the NW.js manifest's `min_width` / `min_height` so a corrupt or absurdly
-// small saved size can never restore the window smaller than it can be created.
-const MIN_WIDTH = 1024;
+// Sanity floor for a corrupt / absurdly small saved size on restore — NOT a usability
+// minimum. The manifest no longer constrains `min_width` (the window can be dragged
+// arbitrarily narrow while running), so this only guards against restoring a degenerate
+// window. `min_height` still mirrors the manifest.
+const MIN_WIDTH = 240;
 const MIN_HEIGHT = 640;
 // A saved window is only restored in place if at least this much of it lands on some
 // monitor — otherwise a window left on a since-unplugged display would open off-screen.

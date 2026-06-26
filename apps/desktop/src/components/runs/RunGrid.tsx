@@ -1,4 +1,4 @@
-import { useState, type DragEvent } from 'react';
+import { useState, type DragEvent, type PointerEvent as ReactPointerEvent } from 'react';
 import { I } from '@/components/icons';
 import { Button, Input, RES } from '@/components/ui';
 import { cn } from '@/lib/utils';
@@ -49,6 +49,12 @@ function ApprovalCard({
 }
 
 const SEGS: Result[] = ['pass', 'fail', 'blocked', 'skipped', 'not_run'];
+
+/* resizable run-detail panel bounds (px); width persists in localStorage */
+const PANEL_MIN = 360;
+const PANEL_MAX = 760;
+const PANEL_DEFAULT = 540;
+const PANEL_KEY = 'cw:runPanelWidth';
 
 /** A failed/blocked case in the generated Summary, shown with its failed steps + notes. */
 function AttentionRow({ entry }: { entry: RunSummaryEntry }) {
@@ -116,6 +122,39 @@ export function RunGrid() {
   const summary = buildRunSummary(run, ctx.cases);
   const { counts: t, executed, passRate } = summary;
 
+  // ---- resizable detail panel (left-edge handle; width persists) ----
+  const [panelWidth, setPanelWidth] = useState(() => {
+    const v = Number(localStorage.getItem(PANEL_KEY));
+    return v >= PANEL_MIN && v <= PANEL_MAX ? v : PANEL_DEFAULT;
+  });
+  // Drag the left edge to resize; dragging left widens the panel (delta is inverted vs. the
+  // sidebar since this panel is docked to the right). Width is clamped and persisted on release.
+  const startResize = (e: ReactPointerEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = panelWidth;
+    let last = startW;
+    const onMove = (ev: PointerEvent) => {
+      last = Math.min(PANEL_MAX, Math.max(PANEL_MIN, startW + startX - ev.clientX));
+      setPanelWidth(last);
+    };
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      localStorage.setItem(PANEL_KEY, String(last));
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  };
+  const resetWidth = () => {
+    setPanelWidth(PANEL_DEFAULT);
+    localStorage.setItem(PANEL_KEY, String(PANEL_DEFAULT));
+  };
+
   // ---- drag-reorder of the case rows (left-edge handle; overlay drop line) ----
   const [drag, setDrag] = useState<number | null>(null);
   const [dropIdx, setDropIdx] = useState<number | null>(null);
@@ -141,8 +180,8 @@ export function RunGrid() {
   };
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex flex-none items-center gap-[14px] border-b border-border bg-panel-2 px-[26px] py-[14px]">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <div className="flex flex-none items-center gap-[14px] overflow-hidden border-b border-border bg-panel-2 px-[26px] py-[14px]">
         <Button icon variant="ghost" onClick={ctx.openRunsList} title="Back to runs">
           {I.back({ size: 16 })}
         </Button>
@@ -187,6 +226,9 @@ export function RunGrid() {
           <Button variant="ghost" onClick={() => ctx.exportRunToPdf(run.id)} title="Export this run as a PDF report">
             {I.download({ size: 13 })} Export PDF
           </Button>
+          <Button variant="ghost" onClick={() => ctx.setModal('addCases')} title="Add more test cases to this run">
+            {I.plus({ size: 13 })} Add cases
+          </Button>
           <Button variant="ghost" onClick={() => ctx.duplicateRun(run.id)} title="Copy this run into a fresh one with results reset">
             {I.copy({ size: 13 })} Duplicate
           </Button>
@@ -205,7 +247,7 @@ export function RunGrid() {
             accepted. Rows only set the drop index via onDragOver — their preventDefault keeps
             drops over them valid, and the event bubbles up to this single onDrop. */}
         <div
-          className="min-h-0 flex-1 overflow-auto px-[26px] py-[18px]"
+          className="min-h-0 min-w-0 flex-1 overflow-auto px-[26px] py-[18px]"
           onDragOver={(e) => drag !== null && e.preventDefault()}
           onDrop={doDrop}
         >
@@ -220,14 +262,24 @@ export function RunGrid() {
                 {drag !== null && i === run.rows.length - 1 && dropIdx === run.rows.length && (
                   <div className={cn(dropLine, '-bottom-[5px]')} />
                 )}
-                <span
-                  className="flex w-5 shrink-0 cursor-grab items-start justify-center pt-[11px] text-ink-faint opacity-0 transition-opacity group-hover/row:opacity-100"
-                  title="Drag to reorder"
-                  draggable
-                  onDragStart={() => setDrag(i)}
-                  onDragEnd={endDrag}
-                >
-                  {I.drag({ size: 14 })}
+                <span className="flex w-5 shrink-0 flex-col items-center gap-1 pt-[11px] opacity-0 transition-opacity group-hover/row:opacity-100">
+                  <span
+                    className="cursor-grab text-ink-faint"
+                    title="Drag to reorder"
+                    draggable
+                    onDragStart={() => setDrag(i)}
+                    onDragEnd={endDrag}
+                  >
+                    {I.drag({ size: 14 })}
+                  </span>
+                  <button
+                    className="mt-1 text-ink-faint transition-colors hover:text-fail"
+                    title="Remove from run"
+                    aria-label="Remove from run"
+                    onClick={() => void ctx.removeRunRow(run.id, i)}
+                  >
+                    {I.x({ size: 13 })}
+                  </button>
                 </span>
                 <div className="min-w-0 flex-1">
                   <RunCaseCard
@@ -251,7 +303,20 @@ export function RunGrid() {
           </div>
         </div>
 
-        <aside className="flex w-[540px] flex-none flex-col gap-4 overflow-auto border-l border-border bg-panel-2 px-5 py-[18px]">
+        <aside
+          className="relative flex min-h-0 flex-none flex-col border-l border-border bg-panel-2"
+          style={{ width: panelWidth }}
+        >
+          {/* left-edge resize handle (double-click resets) */}
+          <div
+            role="separator"
+            aria-orientation="vertical"
+            title="Drag to resize · double-click to reset"
+            onPointerDown={startResize}
+            onDoubleClick={resetWidth}
+            className="absolute -left-0.5 top-0 z-20 h-full w-1.5 cursor-col-resize transition-colors hover:bg-accent/30 active:bg-accent/50"
+          />
+          <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-auto px-5 py-[18px]">
           <section className="flex flex-col gap-1.5">
             <label className="text-[11px] font-bold uppercase tracking-[0.06em] text-ink-2">Run name</label>
             <Input
@@ -389,6 +454,7 @@ export function RunGrid() {
               onChange={(v) => ctx.setRunNotes(run.id, v)}
             />
           </section>
+          </div>
         </aside>
       </div>
     </div>

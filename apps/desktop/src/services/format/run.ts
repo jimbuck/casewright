@@ -253,7 +253,12 @@ export function serializeRunDetails(d: RunDetails, extra = ''): string {
     '---',
   ].join('\n');
 
-  const blocks = [sectionBlock('## Summary', d.summary.trim()), sectionBlock('## Notes', d.notes.trim())];
+  // The generated Summary (pass rate, needs-attention, etc.) is only materialized once a run is
+  // closed; while it's open the section is omitted entirely so `_run.md` carries just the notes.
+  const blocks = [
+    ...(d.summary.trim() ? [sectionBlock('## Summary', d.summary.trim())] : []),
+    sectionBlock('## Notes', d.notes.trim()),
+  ];
 
   let body = blocks.join('\n\n');
   const tail = extra.trim();
