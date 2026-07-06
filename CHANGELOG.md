@@ -2,6 +2,13 @@
 
 All notable changes to Casewright. Generated automatically from Conventional Commits — do not edit by hand.
 
+# [0.14.0](https://github.com/jimbuck/casewright/compare/v0.13.0...v0.14.0) (2026-07-06)
+
+
+### Features
+
+* runs dashboard + weekly report, commit-window diffs, smart pull ([a6a2ac1](https://github.com/jimbuck/casewright/commit/a6a2ac139d8dc29c0581eb7283f7fdbfa877b469))
+
 # [0.13.0](https://github.com/jimbuck/casewright/compare/v0.12.0...v0.13.0) (2026-06-26)
 
 
