@@ -1,14 +1,19 @@
 import {
   abortMerge as gitAbortMerge,
+  diffPath,
+  discardPaths,
   fetch as gitFetch,
   GitAuthError,
+  keepStashedVersion,
   pull as gitPull,
   push as gitPush,
   stageAndCommit,
+  stashPop,
+  stashPush,
   status as gitStatus,
 } from '@/services/git';
 import { flushPersist } from '@/services/persist';
-import type { Case, Change, Resolutions, Step } from '@/types';
+import type { Case, Change, Resolutions, Run, Step } from '@/types';
 import { changeKey } from '../store-internals';
 import type { AppState, StoreCtx, StoreGet, StoreSet } from '../app-store';
 
@@ -29,6 +34,8 @@ type GitSlice = Pick<
   | 'conflict'
   | 'refreshStatus'
   | 'fetchRemote'
+  | 'changeDiff'
+  | 'revertChange'
   | 'doCommit'
   | 'doPush'
   | 'doPull'
@@ -36,11 +43,25 @@ type GitSlice = Pick<
   | 'completeMerge'
 >;
 
+/** The user-authored parts of a run-details sidecar, snapshotted around a pull so local
+ *  edits to the (conflict-prone, regenerable) `_run.md` survive its pre-pull discard. */
+type RunDetailsSnapshot = Pick<
+  Run,
+  'name' | 'scope' | 'testDate' | 'status' | 'notes' | 'testerApproval' | 'reviewerApproval'
+>;
+
+/** A generated run-details sidecar: `<anything>/runs/<run folder>/_run.md`. */
+const isRunDetailsPath = (p: string): boolean => /(^|\/)runs\/[^/]+\/_run\.md$/.test(p);
+
 export function createGitSlice(set: StoreSet, get: StoreGet, ctx: StoreCtx): GitSlice {
   const { casePath, lastCasePath, reloadFromDisk } = ctx;
 
   // Guards the background `fetchRemote` poll so overlapping ticks (e.g. a slow fetch) don't pile up.
   let fetchingRemote = false;
+
+  // When a pull hits merge conflicts after doPull auto-stashed, the stash (and the run-details
+  // snapshots) wait here; abortMerge restores them along with the pre-pull tree.
+  let pendingPull: { stashed: boolean; details: Array<[string, RunDetailsSnapshot]> } | null = null;
 
   // Serialize every git invocation (background fetch + interactive commit/push/pull/abort) onto one
   // chain so a background fetch and a user-triggered op never run concurrently and contend for the
@@ -92,6 +113,16 @@ export function createGitSlice(set: StoreSet, get: StoreGet, ctx: StoreCtx): Git
       }
     }
     return out;
+  };
+
+  /** Reapply snapshotted run-details fields to the (reloaded) runs and re-serialize their
+   *  `_run.md` — the "regen" half of the pull flow's drop-then-regenerate handling. */
+  const restoreRunDetails = async (details: Array<[string, RunDetailsSnapshot]>) => {
+    for (const [runId, snap] of details) {
+      if (!get().runs.some((r) => r.id === runId)) continue; // run deleted upstream — nothing to restore
+      set((s) => ({ runs: s.runs.map((r) => (r.id === runId ? { ...r, ...snap } : r)) }));
+      await get().rewriteRunDetails(runId);
+    }
   };
 
   const applyMerge = (resolutions: Resolutions) => {
@@ -230,17 +261,82 @@ export function createGitSlice(set: StoreSet, get: StoreGet, ctx: StoreCtx): Git
       set({ gitBusy: true, mergeBanner: null });
       try {
         await flushPersist();
+
+        // 1. Snapshot + drop local edits to generated run-details sidecars (`_run.md`). They
+        //    churn with every recorded result, so letting them into the merge invites pointless
+        //    conflicts; the user-authored fields (name / notes / approvals / dates) are captured
+        //    from the store and reapplied — then re-serialized — once the pull lands.
+        const pre = await runGit(() => gitStatus(repoPath));
+        const detailPaths = pre.changes.filter((c) => c.status === 'M' && isRunDetailsPath(c.path)).map((c) => c.path);
+        const details: Array<[string, RunDetailsSnapshot]> = [];
+        for (const p of detailPaths) {
+          const folder = p.slice(0, -'/_run.md'.length);
+          const run = get().runs.find((r) => r.file === folder);
+          if (run)
+            details.push([
+              run.id,
+              {
+                name: run.name,
+                scope: run.scope,
+                testDate: run.testDate,
+                status: run.status,
+                notes: run.notes,
+                testerApproval: run.testerApproval,
+                reviewerApproval: run.reviewerApproval,
+              },
+            ]);
+        }
+        if (detailPaths.length) await runGit(() => discardPaths(repoPath, detailPaths));
+
+        // 2. Stash everything else (case edits, run sidecars, new files — untracked included)
+        //    so the merge itself always runs on a clean tree.
+        const stashed = await runGit(() => stashPush(repoPath, 'casewright: auto-stash before pull'));
+
+        // 3. Pull. A failure here means divergent *committed* history — banner as before; the
+        //    stash and snapshots are parked and restored when the user aborts the merge.
         const res = await runGit(() => gitPull(repoPath));
-        if (res.ok) {
-          await reloadFromDisk();
-          await get().refreshStatus();
-          get().toast('Pulled — up to date');
-        } else {
+        if (!res.ok) {
+          pendingPull = { stashed, details };
           set({
-            mergeBanner: `Pull produced conflicts in ${res.conflicted.length} file(s) — the structured resolver is coming soon; resolve via Git or abort the merge.`,
+            mergeBanner: `Pull produced conflicts in ${res.conflicted.length} file(s) — resolve via Git, or abort the merge${
+              stashed ? ' (your uncommitted edits are stashed and come back on abort)' : ''
+            }.`,
           });
           await get().refreshStatus();
+          return;
         }
+
+        // 4. Pop the stash onto the pulled tree. Files both sides touched conflict here; keep
+        //    the local (stashed) version — the tree stays the user's, and the kept files remain
+        //    ordinary uncommitted changes they can diff or revert in the commit window.
+        let kept: string[] = [];
+        let unresolved: string[] = [];
+        if (stashed) {
+          const pop = await runGit(() => stashPop(repoPath));
+          if (!pop.ok) {
+            unresolved = await runGit(() => keepStashedVersion(repoPath, pop.conflicted));
+            kept = pop.conflicted.filter((x) => !unresolved.includes(x));
+          }
+        }
+
+        // 5. Reload the merged tree, then regenerate the dropped `_run.md` files: snapshotted
+        //    details + a summary recomputed from the merged rows.
+        await reloadFromDisk();
+        await restoreRunDetails(details);
+        await get().refreshStatus();
+
+        if (unresolved.length) {
+          set({
+            mergeBanner: `Pulled, but ${unresolved.length} file(s) could not be merged automatically — resolve them in Git, or discard them from the commit window.`,
+          });
+        }
+        get().toast(
+          kept.length
+            ? `Pulled — kept your local edits to ${kept.length} conflicting file(s)`
+            : stashed || detailPaths.length
+              ? 'Pulled — local edits reapplied'
+              : 'Pulled — up to date',
+        );
       } catch (e) {
         set({ error: e instanceof Error ? e.message : String(e) });
         get().toast(e instanceof GitAuthError ? 'Pull failed — check Git credentials' : 'Pull failed');
@@ -255,12 +351,53 @@ export function createGitSlice(set: StoreSet, get: StoreGet, ctx: StoreCtx): Git
       set({ gitBusy: true });
       try {
         await runGit(() => gitAbortMerge(repoPath));
+        // Bring back what doPull set aside before the failed merge: the stash applies cleanly
+        // (the tree is back at the exact HEAD it was made from) and the run-details snapshots
+        // rewrite the `_run.md` files that were discarded pre-pull.
+        const pending = pendingPull;
+        pendingPull = null;
+        if (pending?.stashed) await runGit(() => stashPop(repoPath));
         await reloadFromDisk();
+        if (pending) await restoreRunDetails(pending.details);
         await get().refreshStatus();
         set({ mergeBanner: null });
         get().toast('Merge aborted');
       } catch {
         get().toast('Could not abort merge');
+      } finally {
+        set({ gitBusy: false });
+      }
+    },
+
+    changeDiff: (change) => {
+      const { repoPath } = get();
+      if (!repoPath) return Promise.resolve('');
+      return runGit(() => diffPath(repoPath, change.path));
+    },
+
+    revertChange: async (change) => {
+      const { repoPath } = get();
+      if (!repoPath) return;
+      const noun = change.kind === 'run' ? 'test run' : 'test case';
+      const ok = await get().confirm({
+        title: `Discard changes to ${noun} "${change.label}"?`,
+        message:
+          change.status === 'A'
+            ? 'It has never been committed — discarding removes it from disk entirely.'
+            : 'Its files go back to the last committed version.',
+        confirmLabel: 'Discard',
+        danger: true,
+      });
+      if (!ok) return;
+      set({ gitBusy: true });
+      try {
+        await runGit(() => discardPaths(repoPath, [change.path]));
+        await reloadFromDisk();
+        await get().refreshStatus();
+        get().toast(`Discarded changes to "${change.label}"`);
+      } catch (e) {
+        set({ error: e instanceof Error ? e.message : String(e) });
+        get().toast('Discard failed');
       } finally {
         set({ gitBusy: false });
       }

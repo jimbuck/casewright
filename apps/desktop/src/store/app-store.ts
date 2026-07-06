@@ -138,6 +138,10 @@ export interface AppState {
   deleteRun: (runId: string) => Promise<void>;
   /** Render a single run to a PDF report the user picks a destination for (NW.js only). */
   exportRunToPdf: (runId: string) => Promise<void>;
+  /** Render this week's runs + test-progression matrix to a PDF report (NW.js only). */
+  exportWeeklyReport: () => Promise<void>;
+  /** Immediately rewrite a run's `_run.md` details sidecar from the current store state. */
+  rewriteRunDetails: (runId: string) => Promise<void>;
   lastTester: string;
   setLastTester: (v: string) => void;
 
@@ -177,6 +181,10 @@ export interface AppState {
   refreshStatus: () => Promise<void>;
   /** Background `git fetch` + status refresh so the Pull badge shows the real commits-behind count. */
   fetchRemote: () => Promise<void>;
+  /** Unified diff (vs HEAD, untracked included) for one change row — a case file or a run folder. */
+  changeDiff: (change: Change) => Promise<string>;
+  /** Discard a change row's working-tree edits (restore from HEAD / delete new files), after confirming. */
+  revertChange: (change: Change) => Promise<void>;
   doCommit: (selectedKeys: string[], msg: string) => void;
   doPush: () => Promise<void>;
   doPull: () => Promise<void>;

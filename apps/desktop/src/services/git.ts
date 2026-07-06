@@ -139,6 +139,132 @@ export async function conflictedFiles(repoPath: string): Promise<string[]> {
   return (await git(repoPath).status()).conflicted;
 }
 
+/** Repo-relative untracked files under `path` (or the whole repo when omitted). */
+async function untrackedUnder(repoPath: string, path?: string): Promise<string[]> {
+  const args = ['ls-files', '--others', '--exclude-standard'];
+  if (path) args.push('--', path);
+  const out = await git(repoPath).raw(args);
+  return out.split('\n').filter(Boolean);
+}
+
+/**
+ * Unified diff of a path (file or folder) against HEAD — the working tree's full
+ * pending change, staged or not. Untracked files don't appear in `git diff HEAD`,
+ * so each one under `path` is appended as a synthesized new-file patch.
+ */
+export async function diffPath(repoPath: string, path: string): Promise<string> {
+  const g = git(repoPath);
+  let tracked = '';
+  try {
+    tracked = await g.raw(['diff', 'HEAD', '--', path]);
+  } catch {
+    /* unborn HEAD (no commits yet) — everything is untracked below */
+  }
+  const parts = [tracked];
+  for (const rel of await untrackedUnder(repoPath, path)) {
+    try {
+      const content = await node.fsp().readFile(node.path().join(repoPath, rel), 'utf8');
+      const lines = content.split('\n');
+      if (lines[lines.length - 1] === '') lines.pop(); // final newline is not a line
+      parts.push(
+        [
+          `diff --git a/${rel} b/${rel}`,
+          'new file mode 100644',
+          '--- /dev/null',
+          `+++ b/${rel}`,
+          `@@ -0,0 +1,${lines.length} @@`,
+          ...lines.map((l) => `+${l}`),
+          '',
+        ].join('\n'),
+      );
+    } catch {
+      /* unreadable (binary / mid-write) — skip rather than fail the whole diff */
+    }
+  }
+  return parts.filter(Boolean).join('');
+}
+
+/**
+ * Discard every working-tree change under the given paths: tracked files are restored
+ * from HEAD (this also resolves unmerged entries to the committed version) and untracked
+ * files/folders are deleted. The unit of revert is a whole change row (a case file or a
+ * run folder), so partial restores aren't a concern here.
+ */
+export async function discardPaths(repoPath: string, paths: string[]): Promise<void> {
+  if (!paths.length) return;
+  const g = git(repoPath);
+  for (const p of paths) {
+    try {
+      await g.raw(['checkout', 'HEAD', '--', p]);
+    } catch {
+      /* nothing under `p` exists in HEAD (brand-new path) — clean below removes it */
+    }
+  }
+  await g.raw(['clean', '-fd', '--', ...paths]);
+}
+
+/**
+ * Stash all local changes, including untracked files. Returns false when the tree was
+ * already clean (git prints "No local changes to save" and stashes nothing).
+ */
+export async function stashPush(repoPath: string, message: string): Promise<boolean> {
+  const out = await git(repoPath).raw(['stash', 'push', '--include-untracked', '-m', message]);
+  return !/no local changes to save/i.test(out);
+}
+
+export interface StashPopResult {
+  ok: boolean;
+  /** Paths left unmerged by the pop. Git keeps the stash entry when this is non-empty. */
+  conflicted: string[];
+}
+
+/**
+ * Re-apply the newest stash. Returns conflicts (rather than throwing) like {@link pull}.
+ * A conflicted pop doesn't reliably reject through simple-git (git exits 1 but the
+ * conflict report goes to stdout), so the unmerged state is read from status either way.
+ */
+export async function stashPop(repoPath: string): Promise<StashPopResult> {
+  const g = git(repoPath);
+  try {
+    await g.raw(['stash', 'pop']);
+  } catch (e) {
+    const conflicted = (await g.status()).conflicted;
+    if (conflicted.length) return { ok: false, conflicted };
+    throw e instanceof Error ? e : new Error(String(e));
+  }
+  const conflicted = (await g.status()).conflicted;
+  return conflicted.length ? { ok: false, conflicted } : { ok: true, conflicted: [] };
+}
+
+/**
+ * Resolve stash-pop conflicts by keeping the stashed (local) version of each path —
+ * in a stash pop, merge stage 3 ("theirs") is the stash, i.e. the user's own edits.
+ * Resolved paths become ordinary unstaged modifications on top of the pulled tree, and
+ * the stash entry (which a conflicted pop keeps) is dropped once everything resolved.
+ *
+ * Returns the paths it could NOT resolve (e.g. deleted-by-us conflicts with no stash
+ * side) — those stay unmerged for the caller to surface.
+ */
+export async function keepStashedVersion(repoPath: string, paths: string[]): Promise<string[]> {
+  const g = git(repoPath);
+  const resolved: string[] = [];
+  const unresolved: string[] = [];
+  for (const p of paths) {
+    try {
+      await g.raw(['checkout', '--theirs', '--', p]);
+      resolved.push(p);
+    } catch {
+      unresolved.push(p);
+    }
+  }
+  if (resolved.length) {
+    await g.add(resolved); // clears the unmerged index entries
+    await g.raw(['reset', '--', ...resolved]); // back to plain unstaged modifications
+  }
+  if (unresolved.length === 0) await g.raw(['stash', 'drop']);
+  return unresolved;
+}
+
 /** Read a merge stage (1=base, 2=ours, 3=theirs) of a path — for the deferred merge engine. */
 export async function readStage(repoPath: string, stage: 1 | 2 | 3, path: string): Promise<string> {
   return git(repoPath).show([`:${stage}:${path}`]);

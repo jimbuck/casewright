@@ -1,6 +1,18 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { node } from '@/lib/node';
-import { abortMerge, fetch, pull, push, stageAndCommit, status } from './git';
+import {
+  abortMerge,
+  diffPath,
+  discardPaths,
+  fetch,
+  keepStashedVersion,
+  pull,
+  push,
+  stageAndCommit,
+  stashPop,
+  stashPush,
+  status,
+} from './git';
 
 let tmp: string;
 let repo: string;
@@ -146,4 +158,85 @@ describe('git service', () => {
     expect((await status(a)).behind).toBe(1);
     expect(await read(a, 'x.md')).toBe('1\n');
   }, 20_000); // spins up its own origin + two clones — slower than the shared-repo cases
+});
+
+describe('working-tree ops (diff / discard / stash)', () => {
+  let wt: string; // its own repo — the shared one above is order-dependent
+
+  beforeAll(async () => {
+    const fsp = node.fsp();
+    const path = node.path();
+    wt = path.join(tmp, 'worktree-ops');
+    await fsp.mkdir(path.join(wt, 'suite'), { recursive: true });
+    const g = node.simpleGit()(wt);
+    await g.init();
+    await configure(wt, 'dev@cw.dev', 'Dev');
+    await node.fsp().writeFile(path.join(wt, 'suite', 'case.md'), 'line one\nline two\n');
+    await g.add('.');
+    await g.commit('init');
+  });
+
+  it('diffPath reports a tracked modification as a unified patch', async () => {
+    await node.fsp().writeFile(node.path().join(wt, 'suite', 'case.md'), 'line one\nline CHANGED\n');
+    const patch = await diffPath(wt, 'suite/case.md');
+    expect(patch).toContain('diff --git a/suite/case.md b/suite/case.md');
+    expect(patch).toContain('-line two');
+    expect(patch).toContain('+line CHANGED');
+  });
+
+  it('diffPath synthesizes a new-file patch for untracked files under a folder', async () => {
+    await write(wt, 'fresh.md', 'brand\nnew\n');
+    const patch = await diffPath(wt, '.');
+    expect(patch).toContain('diff --git a/fresh.md b/fresh.md');
+    expect(patch).toContain('new file mode 100644');
+    expect(patch).toContain('+brand');
+    expect(patch).toContain('+new');
+  });
+
+  it('discardPaths restores tracked files from HEAD and deletes untracked ones', async () => {
+    await discardPaths(wt, ['suite/case.md', 'fresh.md']);
+    expect(await read(wt, 'suite/case.md')).toBe('line one\nline two\n');
+    await expect(node.fsp().stat(node.path().join(wt, 'fresh.md'))).rejects.toThrow();
+    expect((await status(wt)).changes).toHaveLength(0);
+  });
+
+  it('stash push/pop round-trips local edits (including untracked) across a clean tree', async () => {
+    await node.fsp().writeFile(node.path().join(wt, 'suite', 'case.md'), 'edited\n');
+    await write(wt, 'extra.md', 'untracked\n');
+
+    expect(await stashPush(wt, 'test stash')).toBe(true);
+    expect((await status(wt)).changes).toHaveLength(0); // tree clean while stashed
+
+    const pop = await stashPop(wt);
+    expect(pop.ok).toBe(true);
+    expect(await read(wt, 'suite/case.md')).toBe('edited\n');
+    expect(await read(wt, 'extra.md')).toBe('untracked\n');
+
+    await discardPaths(wt, ['suite/case.md', 'extra.md']); // reset for the next test
+  });
+
+  it('stashPush reports false on a clean tree', async () => {
+    expect(await stashPush(wt, 'noop')).toBe(false);
+  });
+
+  it('keepStashedVersion resolves a conflicted pop by keeping the local edits', async () => {
+    // Local edit → stashed; then the branch moves on (as a pull would) touching the same lines.
+    await node.fsp().writeFile(node.path().join(wt, 'suite', 'case.md'), 'line one\nlocal edit\n');
+    expect(await stashPush(wt, 'local edits')).toBe(true);
+    await node.fsp().writeFile(node.path().join(wt, 'suite', 'case.md'), 'line one\nupstream edit\n');
+    await stageAndCommit(wt, ['suite/case.md'], 'upstream change');
+
+    const pop = await stashPop(wt);
+    expect(pop.ok).toBe(false);
+    expect(pop.conflicted).toContain('suite/case.md');
+
+    const unresolved = await keepStashedVersion(wt, pop.conflicted);
+    expect(unresolved).toHaveLength(0);
+    expect(await read(wt, 'suite/case.md')).toBe('line one\nlocal edit\n');
+
+    const s = await status(wt);
+    expect(s.conflicted).toHaveLength(0);
+    expect(s.changes.map((c) => c.status)).toEqual(['M']); // a plain modification again
+    expect((await node.simpleGit()(wt).raw(['stash', 'list'])).trim()).toBe(''); // stash dropped
+  });
 });

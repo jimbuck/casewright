@@ -84,6 +84,13 @@ export const I = {
     </Icon>
   ),
   plus: (p?: IconProps) => <Icon {...p} d="M12 5v14M5 12h14" />,
+  minus: (p?: IconProps) => <Icon {...p} d="M5 12h14" />,
+  undo: (p?: IconProps) => (
+    <Icon {...p}>
+      <path d="M8 5L4 9l4 4" />
+      <path d="M4 9h9.5a5.5 5.5 0 010 11H9" />
+    </Icon>
+  ),
   dots: (p?: IconProps) => (
     <Icon {...p}>
       <circle cx="5" cy="12" r="1.4" />

@@ -86,6 +86,7 @@ function buildModel(overrides: Partial<RunReportModel> = {}): RunReportModel {
     generatedAt: '2026-06-12 09:30',
     summary: buildRunSummary(run, [kase]),
     suites,
+    notes: 'Environment was staging; payments gateway flaked twice.',
     testerApproval: run.testerApproval,
     reviewerApproval: run.reviewerApproval,
     ...overrides,
@@ -195,6 +196,33 @@ describe('buildRunReportHtml', () => {
     expect(preview).toContain('<script'); // self-save wiring
     expect(preview).toContain('@media print'); // toolbar hidden when printing
     expect(preview).toContain('"Sprint 13.pdf"'); // default filename embedded from the run name
+  });
+
+  it('emits hidden notes sections + an unchecked "Include notes" toggle only in preview mode', () => {
+    const plain = buildRunReportHtml(buildModel());
+    expect(plain).not.toContain('class="notes-block"');
+    expect(plain).not.toContain('id="cw-notes-toggle"');
+    expect(plain).not.toContain('button 500s'); // failure detail stays out of the plain report
+
+    const preview = buildRunReportHtml(buildModel(), { preview: true });
+    expect(preview).toContain('<input type="checkbox" id="cw-notes-toggle" />'); // no `checked` → default off
+    expect(preview).toContain('class="notes-block"');
+    expect(preview).toContain('Test run notes');
+    expect(preview).toContain('Environment was staging; payments gateway flaked twice.'); // run notes
+    expect(preview).toContain('button 500s'); // per-case failure detail with its note
+    expect(preview).toContain('flaky on retry'); // per-case recorded notes
+    expect(preview).toContain('.notes-block{display:none;}'); // hidden until the toggle flips the body class
+    expect(preview).toContain('body.cw-with-notes .notes-block{display:block;}');
+  });
+
+  it('omits the notes toggle and sections when the run has no notes or failure detail', () => {
+    const quiet: Run = { ...run, rows: [{ ...passRow, notes: '' }] };
+    const preview = buildRunReportHtml(
+      buildModel({ notes: '', summary: buildRunSummary(quiet, [kase]) }),
+      { preview: true },
+    );
+    expect(preview).not.toContain('id="cw-notes-toggle"');
+    expect(preview).not.toContain('class="notes-block"');
   });
 
   it('escapes case titles (no raw markup) and renders no per-case detail', () => {

@@ -4,10 +4,12 @@ import { serializeOrder } from '@/services/format/order';
 import { serializeRunCase, serializeRunDetails, type RunCaseFile, type RunCaseItem } from '@/services/format/run';
 import { schedulePersist } from '@/services/persist';
 import { deletePath, makeDir, orderFileRel, relJoin, writeFileAt } from '@/services/repo';
-import { previewRunReport } from '@/services/report/run-report';
+import { previewReportHtml, previewRunReport } from '@/services/report/run-report';
 import type { RunReportModel } from '@/services/report/run-report-html';
 import { groupRunBySuite } from '@/services/report/suite-grouping';
+import { buildWeeklyReportHtml, weekLabel } from '@/services/report/weekly-report-html';
 import type { Approval, Case, CheckState, Run, RunRow } from '@/types';
+import { buildWeeklyData } from '@/utils/run-dashboard';
 import { nowStamp } from '@/utils/ids';
 import { buildRunSummary, deriveItems, serializeRunSummary } from '@/utils/run-items';
 import { baseName } from '../tree-helpers';
@@ -41,6 +43,8 @@ type RunsSlice = Pick<
   | 'duplicateRun'
   | 'deleteRun'
   | 'exportRunToPdf'
+  | 'exportWeeklyReport'
+  | 'rewriteRunDetails'
 >;
 
 export function createRunsSlice(set: StoreSet, get: StoreGet, ctx: StoreCtx): RunsSlice {
@@ -502,6 +506,7 @@ export function createRunsSlice(set: StoreSet, get: StoreGet, ctx: StoreCtx): Ru
         generatedAt: nowStamp(),
         summary: buildRunSummary(run, cases),
         suites: groupRunBySuite(run, cases, tree),
+        notes: run.notes,
         testerApproval: run.testerApproval,
         reviewerApproval: run.reviewerApproval,
       };
@@ -517,6 +522,39 @@ export function createRunsSlice(set: StoreSet, get: StoreGet, ctx: StoreCtx): Ru
         }
       } catch (e) {
         console.error('[pdf] exportRunToPdf: unexpected error', { runId, error: e });
+        get().toast('Could not open report preview');
+      }
+    },
+
+    rewriteRunDetails: (runId) => writeRunDetailsNow(runId),
+
+    exportWeeklyReport: async () => {
+      const { runs, repoPath } = get();
+      if (!isNwjs()) {
+        get().toast('PDF export needs the desktop app');
+        return;
+      }
+      const data = buildWeeklyData(runs);
+      if (data.runs.length === 0) {
+        get().toast('No runs executed this week — nothing to report');
+        return;
+      }
+      const model = { ...data, repoName: baseName(repoPath), generatedAt: nowStamp() };
+      try {
+        const res = await previewReportHtml(
+          buildWeeklyReportHtml(model, { preview: true }),
+          `Week of ${weekLabel(data.weekStart, data.weekEnd)} — Report preview`,
+        );
+        if (res.ok) {
+          console.debug('[pdf] exportWeeklyReport: preview opened', { week: data.weekStart });
+        } else if (res.reason === 'not-nwjs') {
+          get().toast('PDF export needs the desktop app');
+        } else {
+          console.error('[pdf] exportWeeklyReport: preview failed', { reason: res.reason, error: res.error });
+          get().toast('Could not open report preview');
+        }
+      } catch (e) {
+        console.error('[pdf] exportWeeklyReport: unexpected error', { error: e });
         get().toast('Could not open report preview');
       }
     },

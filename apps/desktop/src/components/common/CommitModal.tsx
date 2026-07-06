@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { I } from '@/components/icons';
 import { Button, Field, Modal, ModalBody, ModalFooter, ModalHeader, Tag, Textarea } from '@/components/ui';
 import { cn } from '@/lib/utils';
 import { useApp } from '@/store/app-store';
+import { parsePatch, type FilePatch, type PatchLine } from '@/utils/patch';
 import type { Change } from '@/types';
 
 const keyOf = (c: Change) => c.kind + ':' + c.refId;
@@ -39,8 +40,76 @@ function suggestMessage(sel: Change[]): string {
   return `${verb} ${parts.join(' and ')}`;
 }
 
+type DiffState = FilePatch[] | 'loading' | 'error';
+
+const LINE_CLASS: Record<PatchLine['t'], string> = {
+  add: 'bg-add-bg text-[color:var(--add)]',
+  del: 'bg-del-bg text-[color:var(--del)]',
+  hunk: 'bg-sunken text-ink-faint',
+  ctx: 'text-ink-2',
+};
+
+/** The expandable diff panel under a change row — colored unified-diff lines per file. */
+function DiffView({ diff }: { diff: DiffState | undefined }) {
+  if (!diff || diff === 'loading')
+    return <div className="px-3 py-2 text-[11.5px] text-ink-faint">Loading diff…</div>;
+  if (diff === 'error')
+    return <div className="px-3 py-2 text-[11.5px] text-fail">Could not read the diff for this change.</div>;
+  if (diff.length === 0)
+    return <div className="px-3 py-2 text-[11.5px] text-ink-faint">No differences against the last commit.</div>;
+  return (
+    <div className="max-h-[260px] overflow-auto font-mono text-[11px] leading-[1.55]">
+      {diff.map((f) => (
+        <div key={f.path}>
+          <div className="sticky top-0 flex items-center gap-1.5 border-y border-border bg-sunken px-2.5 py-1 text-[10.5px] text-ink-3 first:border-t-0">
+            <span className="truncate">{f.path}</span>
+            {f.created && <span className="font-bold text-pass">new</span>}
+            {f.deleted && <span className="font-bold text-fail">deleted</span>}
+          </div>
+          {f.lines.map((l, i) => (
+            <div key={i} className={cn('whitespace-pre-wrap break-words px-2.5', LINE_CLASS[l.t])}>
+              {l.text || ' '}
+            </div>
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** A small per-row icon action (diff / stage / revert), quiet until hovered. */
+function RowAction({
+  title,
+  active,
+  onClick,
+  children,
+}: {
+  title: string;
+  active?: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      title={title}
+      className={cn(
+        'grid size-6 shrink-0 place-items-center rounded-md text-ink-3 opacity-0 transition hover:bg-sunken hover:text-ink focus-visible:opacity-100 group-hover/row:opacity-100',
+        active && 'bg-sunken text-accent opacity-100',
+      )}
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
 export function CommitModal() {
-  const { changes, branch, doCommit, setModal } = useApp();
+  const ctx = useApp();
+  const { changes, branch, doCommit, setModal, gitBusy } = ctx;
   const close = () => setModal(null);
   const [sel, setSel] = useState<Record<string, boolean>>(() =>
     changes.reduce<Record<string, boolean>>((a, c) => ((a[keyOf(c)] = true), a), {}),
@@ -48,14 +117,29 @@ export function CommitModal() {
   // null → show the auto-suggested message (and keep it in sync with the selection); once the user
   // types, `msg` holds their text and the suggestion no longer overrides it.
   const [msg, setMsg] = useState<string | null>(null);
+  const [openDiff, setOpenDiff] = useState<Record<string, boolean>>({});
+  const [diffs, setDiffs] = useState<Record<string, DiffState>>({});
+
   const toggle = (k: string) => setSel((s) => ({ ...s, [k]: !s[k] }));
+  const toggleDiff = (c: Change) => {
+    const k = keyOf(c);
+    setOpenDiff((s) => ({ ...s, [k]: !s[k] }));
+    if (!diffs[k]) {
+      setDiffs((s) => ({ ...s, [k]: 'loading' }));
+      ctx
+        .changeDiff(c)
+        .then((text) => setDiffs((s) => ({ ...s, [k]: parsePatch(text) })))
+        .catch(() => setDiffs((s) => ({ ...s, [k]: 'error' })));
+    }
+  };
+
   const selectedChanges = changes.filter((c) => sel[keyOf(c)]);
   const selectedKeys = selectedChanges.map(keyOf);
   const n = selectedKeys.length;
   const message = msg ?? suggestMessage(selectedChanges);
 
   return (
-    <Modal onClose={close}>
+    <Modal onClose={close} maxWidth={720}>
       <ModalHeader>
         <span className="grid place-items-center text-accent">{I.commit({ size: 18 })}</span>
         <h3>Commit changes</h3>
@@ -83,27 +167,43 @@ export function CommitModal() {
                     </div>
                     {items.map((c) => {
                       const k = keyOf(c);
+                      const staged = !!sel[k];
                       return (
-                        <div
-                          key={k}
-                          className="flex cursor-pointer items-center gap-2.5 border-b border-border px-[11px] py-2 last:border-b-0 hover:bg-panel-2"
-                          onClick={() => toggle(k)}
-                        >
-                          <span
-                            className={cn(
-                              'grid size-4 shrink-0 place-items-center rounded-sm border-[1.5px] border-border-2 text-transparent',
-                              sel[k] && 'border-accent bg-accent text-white',
-                            )}
+                        <div key={k} className="border-b border-border last:border-b-0">
+                          <div
+                            className="group/row flex cursor-pointer items-center gap-2.5 px-[11px] py-2 hover:bg-panel-2"
+                            onClick={() => toggle(k)}
                           >
-                            {I.check({ size: 12 })}
-                          </span>
-                          <span
-                            title={STAT_LABEL[c.status] ?? c.status}
-                            className={cn('w-[14px] shrink-0 cursor-help text-center font-mono text-[11px] font-bold', STAT_COLOR[c.status])}
-                          >
-                            {c.status}
-                          </span>
-                          <span className="truncate text-[13px] text-ink-2">{c.label}</span>
+                            <span
+                              className={cn(
+                                'grid size-4 shrink-0 place-items-center rounded-sm border-[1.5px] border-border-2 text-transparent',
+                                staged && 'border-accent bg-accent text-white',
+                              )}
+                            >
+                              {I.check({ size: 12 })}
+                            </span>
+                            <span
+                              title={STAT_LABEL[c.status] ?? c.status}
+                              className={cn('w-[14px] shrink-0 cursor-help text-center font-mono text-[11px] font-bold', STAT_COLOR[c.status])}
+                            >
+                              {c.status}
+                            </span>
+                            <span className="min-w-0 flex-1 truncate text-[13px] text-ink-2">{c.label}</span>
+                            <RowAction title={openDiff[k] ? 'Hide diff' : 'View diff'} active={openDiff[k]} onClick={() => toggleDiff(c)}>
+                              {I.eye({ size: 14 })}
+                            </RowAction>
+                            <RowAction title={staged ? 'Unstage — leave out of this commit' : 'Stage — include in this commit'} onClick={() => toggle(k)}>
+                              {staged ? I.minus({ size: 14 }) : I.plus({ size: 14 })}
+                            </RowAction>
+                            <RowAction title="Discard changes… (restore the last committed version)" onClick={() => void ctx.revertChange(c)}>
+                              {I.undo({ size: 14 })}
+                            </RowAction>
+                          </div>
+                          {openDiff[k] && (
+                            <div className="border-t border-border bg-panel-2">
+                              <DiffView diff={diffs[k]} />
+                            </div>
+                          )}
                         </div>
                       );
                     })}
@@ -128,7 +228,7 @@ export function CommitModal() {
         <Button variant="ghost" onClick={close}>
           Cancel
         </Button>
-        <Button variant="primary" disabled={n === 0 || !message.trim()} onClick={() => doCommit(selectedKeys, message)}>
+        <Button variant="primary" disabled={n === 0 || !message.trim() || gitBusy} onClick={() => doCommit(selectedKeys, message)}>
           {I.commit({ size: 14 })} Commit {n} change{n === 1 ? '' : 's'}
         </Button>
       </ModalFooter>
