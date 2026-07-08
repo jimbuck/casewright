@@ -2,6 +2,13 @@
 
 All notable changes to Casewright. Generated automatically from Conventional Commits — do not edit by hand.
 
+# [0.15.0](https://github.com/jimbuck/casewright/compare/v0.14.0...v0.15.0) (2026-07-08)
+
+
+### Features
+
+* **runs:** two-pane New test run modal with case detail preview ([b248d51](https://github.com/jimbuck/casewright/commit/b248d512d6e764382cbb8200b0866e6ef1b54d95))
+
 # [0.14.0](https://github.com/jimbuck/casewright/compare/v0.13.0...v0.14.0) (2026-07-06)
 
 
