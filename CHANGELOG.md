@@ -2,6 +2,13 @@
 
 All notable changes to Casewright. Generated automatically from Conventional Commits — do not edit by hand.
 
+# [0.16.0](https://github.com/jimbuck/casewright/compare/v0.15.0...v0.16.0) (2026-07-17)
+
+
+### Features
+
+* **runs:** add "In progress" test result; retire "skipped" from pickers ([58400bf](https://github.com/jimbuck/casewright/commit/58400bf6a4930b7c6b043c5715f06a399ddf3914))
+
 # [0.15.0](https://github.com/jimbuck/casewright/compare/v0.14.0...v0.15.0) (2026-07-08)
 
 
