@@ -1,5 +1,12 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { node } from '@/lib/node';
+
+// These are real-git integration tests: every case spawns git subprocesses (init, clone, fetch,
+// pull, merge) and the beforeAll builds an origin + two clones. Individual cases pass comfortably
+// in isolation but brush against vitest's default 5s timeout when the whole suite runs in parallel
+// and many git processes contend for the machine — the source of intermittent CI flakes. Give this
+// file generous headroom so a slow-but-correct run never trips the timeout.
+vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
 import {
   abortMerge,
   diffPath,
