@@ -7,6 +7,7 @@ const counts = (over: Partial<Record<Result, number>> = {}): Record<Result, numb
   pass: 0,
   fail: 0,
   blocked: 0,
+  in_progress: 0,
   skipped: 0,
   not_run: 0,
   ...over,

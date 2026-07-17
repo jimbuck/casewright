@@ -9,7 +9,7 @@ export type { SelectProps } from './select';
 export { Tag } from './tag';
 export type { TagProps } from './tag';
 export { StatusPill } from './status-pill';
-export { ResultSwatch, RESULTS, RES } from './result-swatch';
+export { ResultSwatch, RESULTS, SELECTABLE_RESULTS, RES } from './result-swatch';
 export type { ResultMeta } from './result-swatch';
 export { Field } from './field';
 export type { FieldProps } from './field';

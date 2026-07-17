@@ -14,11 +14,12 @@ export const RESULT_META: Record<Result, { label: string; color: string }> = {
   pass: { label: 'Pass', color: 'var(--pass)' },
   fail: { label: 'Fail', color: 'var(--fail)' },
   blocked: { label: 'Blocked', color: 'var(--blocked)' },
+  in_progress: { label: 'In progress', color: 'var(--inprogress)' },
   skipped: { label: 'Skipped', color: 'var(--skipped)' },
   not_run: { label: 'Not run', color: 'var(--notrun)' },
 };
 
-export const SEG_ORDER: Result[] = ['pass', 'fail', 'blocked', 'skipped', 'not_run'];
+export const SEG_ORDER: Result[] = ['pass', 'fail', 'blocked', 'in_progress', 'skipped', 'not_run'];
 
 /** HTML-escape a free-text value — run/case data can contain `<`, `&`, quotes. */
 export function esc(s: string): string {
@@ -89,7 +90,7 @@ export const REPORT_STYLE = `
   --ink:oklch(0.28 0.012 60);--ink-2:oklch(0.46 0.010 60);--ink-3:oklch(0.60 0.008 62);--ink-faint:oklch(0.72 0.006 64);
   --accent:oklch(0.55 0.13 283);--accent-soft:oklch(0.952 0.028 283);--accent-ink:oklch(0.46 0.12 283);
   --pass:oklch(0.58 0.12 152);--fail:oklch(0.56 0.19 27);--blocked:oklch(0.62 0.16 52);
-  --skipped:oklch(0.60 0.008 65);--notrun:oklch(0.90 0.003 80);
+  --inprogress:oklch(0.58 0.13 250);--skipped:oklch(0.60 0.008 65);--notrun:oklch(0.90 0.003 80);
   --font-ui:"IBM Plex Sans",system-ui,-apple-system,sans-serif;
   --font-mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,monospace;
 }

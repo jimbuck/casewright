@@ -42,6 +42,7 @@ const RESULT_LABEL: Record<Result, string> = {
   pass: 'Pass',
   fail: 'Fail',
   blocked: 'Blocked',
+  in_progress: 'In progress',
   skipped: 'Skipped',
   not_run: 'Not run',
 };
@@ -152,7 +153,7 @@ export interface RunSummary {
   passed: RunSummaryEntry[];
   /** fail | blocked — shown with extra detail. */
   attention: RunSummaryEntry[];
-  /** skipped | not_run. */
+  /** in_progress | skipped | not_run. */
   remaining: RunSummaryEntry[];
 }
 
@@ -163,7 +164,7 @@ export interface RunSummary {
  */
 export function buildRunSummary(run: Run, cases: Case[]): RunSummary {
   const byId = new Map(cases.map((c) => [c.id, c] as const));
-  const counts: Record<Result, number> = { pass: 0, fail: 0, blocked: 0, skipped: 0, not_run: 0 };
+  const counts: Record<Result, number> = { pass: 0, fail: 0, blocked: 0, in_progress: 0, skipped: 0, not_run: 0 };
   const passed: RunSummaryEntry[] = [];
   const attention: RunSummaryEntry[] = [];
   const remaining: RunSummaryEntry[] = [];
@@ -193,7 +194,7 @@ export function buildRunSummary(run: Run, cases: Case[]): RunSummary {
   return { total, executed, passRate, counts, passed, attention, remaining };
 }
 
-const SUMMARY_ORDER: Result[] = ['pass', 'fail', 'blocked', 'skipped', 'not_run'];
+const SUMMARY_ORDER: Result[] = ['pass', 'fail', 'blocked', 'in_progress', 'skipped', 'not_run'];
 
 /** Render a generated run summary as markdown for the `_run.md` `## Summary` section. */
 export function serializeRunSummary(s: RunSummary): string {

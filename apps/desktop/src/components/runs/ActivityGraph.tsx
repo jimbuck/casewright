@@ -12,7 +12,7 @@ const LEVEL_MIX = ['0%', '45%', '70%', '100%'];
 /** Statuses that carry their glyph inside the cell so a red/green-blind reader still sees them. */
 const GLYPHED: DayStatus[] = ['fail', 'blocked'];
 
-const LEGEND: Result[] = ['pass', 'fail', 'blocked', 'skipped'];
+const LEGEND: Result[] = ['pass', 'fail', 'blocked', 'in_progress', 'skipped'];
 
 function cellFill(day: ActivityDay): string {
   if (!day.status) return 'var(--sunken)';

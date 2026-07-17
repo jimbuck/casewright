@@ -48,7 +48,7 @@ function ApprovalCard({
   );
 }
 
-const SEGS: Result[] = ['pass', 'fail', 'blocked', 'skipped', 'not_run'];
+const SEGS: Result[] = ['pass', 'fail', 'blocked', 'in_progress', 'skipped', 'not_run'];
 
 /* resizable run-detail panel bounds (px); width persists in localStorage */
 const PANEL_MIN = 360;
