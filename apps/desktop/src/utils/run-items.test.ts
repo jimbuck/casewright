@@ -161,6 +161,21 @@ describe('buildRunSummary', () => {
     expect(s.remaining.map((e) => e.result)).toEqual(['skipped', 'not_run']);
   });
 
+  it('counts in_progress as executed and lists it under remaining', () => {
+    const r: Run = {
+      ...run,
+      rows: [
+        { ...baseRow, ...clear, case_id: 'c2', display_id: 'PAY-0001', title: 'Login', result: 'pass' },
+        { ...baseRow, ...clear, case_id: 'c7', display_id: 'PAY-0007', title: 'Import', result: 'in_progress' },
+      ],
+    };
+    const s = buildRunSummary(r, [kase]);
+    expect(s.counts.in_progress).toBe(1);
+    expect(s.executed).toBe(2); // in_progress counts as executed, unlike not_run
+    expect(s.remaining.map((e) => e.result)).toEqual(['in_progress']);
+    expect(serializeRunSummary(s)).toContain('1 in progress');
+  });
+
   it('surfaces resolved failed steps + notes on non-passing rows', () => {
     const s = buildRunSummary(multi, [kase]);
     expect(s.attention[0].failures).toEqual([

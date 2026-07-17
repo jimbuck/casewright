@@ -112,7 +112,7 @@ export function activityWeeks(runs: Run[], weeks: number, now: Date = new Date()
       date.setDate(date.getDate() + w * 7 + d);
       const key = isoDay(date);
       const counts = byDay.get(key) ?? zeroCounts();
-      const total = counts.pass + counts.fail + counts.blocked + counts.skipped;
+      const total = counts.pass + counts.fail + counts.blocked + counts.in_progress + counts.skipped;
       max = Math.max(max, total);
       week.push({ date: key, total, counts, status: dayStatus(counts), level: 0, future: key > today });
     }
@@ -166,7 +166,7 @@ export function dashboardStats(runs: Run[], now: Date = new Date()): DashboardSt
     }
     if (touched) runsThisWeek += 1;
   }
-  const executedThisWeek = counts.pass + counts.fail + counts.blocked + counts.skipped;
+  const executedThisWeek = counts.pass + counts.fail + counts.blocked + counts.in_progress + counts.skipped;
   return {
     openRuns: runs.filter((r) => r.status === 'open').length,
     runsThisWeek,
