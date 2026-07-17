@@ -1,5 +1,5 @@
 /* ============================================================
-   Casewright — shared design tokens
+   Casewright - shared design tokens
    Engineering workbench, warmed by editorial calm.
 
    Single source of truth for the brand. Consumed by both the
@@ -31,7 +31,7 @@
   --accent-soft:   oklch(0.952 0.028 283);
   --accent-line:   oklch(0.84 0.06 283);
   --accent-ink:    oklch(0.46 0.12 283);
-  /* text-selection highlight — distinctly brighter/more saturated than
+  /* text-selection highlight - distinctly brighter/more saturated than
      --accent-soft so it never blends into the pale tinted surfaces that
      reuse accent-soft (focus rings, badges, hover wells). Still light
      enough to keep dark ink readable. */
