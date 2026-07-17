@@ -50,6 +50,8 @@
   --color-fail-soft: var(--fail-soft);
   --color-blocked: var(--blocked);
   --color-blocked-soft: var(--blocked-soft);
+  --color-inprogress: var(--inprogress);
+  --color-inprogress-soft: var(--inprogress-soft);
   --color-skipped: var(--skipped);
   --color-skipped-soft: var(--skipped-soft);
   --color-notrun: var(--notrun);

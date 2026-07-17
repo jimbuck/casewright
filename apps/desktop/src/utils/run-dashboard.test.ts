@@ -101,6 +101,11 @@ describe('activityWeeks', () => {
     expect(byDate.get('2026-06-29')).toMatchObject({ status: null, total: 0, level: 0 });
   });
 
+  it('counts in_progress toward a day’s activity total and colors the day', () => {
+    const days = activityWeeks([mkRun({ rows: [row('in_progress', '2026-07-01 09:00')] })], 1, NOW)[0].days;
+    expect(days.find((d) => d.date === '2026-07-01')).toMatchObject({ status: 'in_progress', total: 1, level: 3 });
+  });
+
   it('labels the first week and each week that starts a new month', () => {
     const weeks = activityWeeks([], 4, NOW);
     // Mondays: Jun 8, Jun 15, Jun 22, Jun 29 — only the first carries a label.
@@ -132,6 +137,16 @@ describe('dashboardStats', () => {
     expect(s.counts).toMatchObject({ pass: 2, fail: 1, blocked: 1 });
     expect(s.passRate).toBe(50);
     expect(s.attention).toBe(2);
+  });
+
+  it('counts in_progress executions in the weekly total and pass-rate denominator', () => {
+    const s = dashboardStats(
+      [mkRun({ rows: [row('pass', '2026-07-01 09:00'), row('in_progress', '2026-07-02 09:00', 'c2')] })],
+      NOW,
+    );
+    expect(s.counts.in_progress).toBe(1);
+    expect(s.executedThisWeek).toBe(2); // in_progress counts as executed
+    expect(s.passRate).toBe(50); // 1 pass / 2 executed — denominator must include in_progress
   });
 
   it('reports zeros for an idle week', () => {

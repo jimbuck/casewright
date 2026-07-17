@@ -48,7 +48,7 @@ function ApprovalCard({
   );
 }
 
-const SEGS: Result[] = ['pass', 'fail', 'blocked', 'skipped', 'not_run'];
+const SEGS: Result[] = ['pass', 'fail', 'blocked', 'in_progress', 'skipped', 'not_run'];
 
 /* resizable run-detail panel bounds (px); width persists in localStorage */
 const PANEL_MIN = 360;
@@ -209,7 +209,7 @@ export function RunGrid() {
             // Drop the segmented bar on narrow windows so the action buttons never get clipped;
             // the pass-rate % beside it still conveys completion.
             className="hidden h-[30px] w-[220px] overflow-hidden rounded-md border border-border xl:flex"
-            title={`${t.pass} pass · ${t.fail} fail · ${t.blocked} blocked · ${t.skipped} skipped · ${t.not_run} not run`}
+            title={`${t.pass} pass · ${t.fail} fail · ${t.blocked} blocked · ${t.in_progress} in progress · ${t.skipped} skipped · ${t.not_run} not run`}
           >
             {SEGS.map((s) =>
               t[s] ? (

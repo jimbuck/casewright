@@ -3,7 +3,7 @@
    ============================================================ */
 
 export type Status = 'active' | 'draft' | 'deprecated';
-export type Result = 'pass' | 'fail' | 'blocked' | 'skipped' | 'not_run';
+export type Result = 'pass' | 'fail' | 'blocked' | 'in_progress' | 'skipped' | 'not_run';
 
 /** A single (optionally nested) step in a case. */
 export interface Step {

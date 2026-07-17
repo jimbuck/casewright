@@ -62,7 +62,7 @@ const suites: ReportSuiteRow[] = [
   {
     name: 'Authentication',
     total: 2,
-    counts: { pass: 1, fail: 1, blocked: 0, skipped: 0, not_run: 0 },
+    counts: { pass: 1, fail: 1, blocked: 0, in_progress: 0, skipped: 0, not_run: 0 },
     cases: [
       { display_id: 'PAY-0001', title: 'Login', result: 'pass' },
       { display_id: 'PAY-0042', title: 'Reset password', result: 'fail' },
@@ -71,7 +71,7 @@ const suites: ReportSuiteRow[] = [
   {
     name: 'Unknown / Deleted',
     total: 1,
-    counts: { pass: 0, fail: 0, blocked: 0, skipped: 0, not_run: 1 },
+    counts: { pass: 0, fail: 0, blocked: 0, in_progress: 0, skipped: 0, not_run: 1 },
     cases: [{ display_id: 'PAY-0099', title: 'Ghost case', result: 'not_run' }],
   },
 ];
@@ -232,7 +232,7 @@ describe('buildRunReportHtml', () => {
           {
             name: 'Auth',
             total: 1,
-            counts: { pass: 0, fail: 1, blocked: 0, skipped: 0, not_run: 0 },
+            counts: { pass: 0, fail: 1, blocked: 0, in_progress: 0, skipped: 0, not_run: 0 },
             cases: [{ display_id: 'X-1', title: 'Title <b>raw</b>', result: 'fail' }],
           },
         ],

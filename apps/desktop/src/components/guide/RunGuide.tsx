@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { I } from '@/components/icons';
-import { Button, Field, Input, RES, RESULTS, Textarea } from '@/components/ui';
+import { Button, Field, Input, RES, SELECTABLE_RESULTS, Textarea } from '@/components/ui';
 import { cn } from '@/lib/utils';
 import { useApp } from '@/store/app-store';
 import { renderInline, renderMarkdown } from '@/utils/markdown';
@@ -261,7 +261,7 @@ export function RunGuide() {
 
             <div className="flex flex-col gap-[14px] p-4">
               <div className="flex flex-wrap gap-2">
-                {RESULTS.filter((r) => r.key !== 'not_run').map((r) => (
+                {SELECTABLE_RESULTS.map((r) => (
                   <button
                     key={r.key}
                     className="inline-flex items-center gap-[7px] rounded-md border border-border-2 bg-panel px-4 py-2 text-[13.5px] font-semibold text-ink enabled:hover:bg-raise disabled:pointer-events-none disabled:opacity-40"
@@ -305,7 +305,7 @@ export function RunGuide() {
             <div className="flex items-center gap-2.5 border-t border-border bg-panel-2 px-4 py-3">
               {!complete && !forceRecord && (
                 <Button variant="ghost" size="sm" className="text-[oklch(0.55_0.1_66)] hover:bg-blocked-soft" onClick={() => setForceRecord(true)}>
-                  {I.warn({ size: 13 })} Can't complete — record fail / blocked / skipped
+                  {I.warn({ size: 13 })} Can't complete — record fail / blocked / in progress
                 </Button>
               )}
               <span className="flex-1" />

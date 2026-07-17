@@ -9,8 +9,8 @@ import type { Result, Run } from '@/types';
 import { ActivityGraph } from './ActivityGraph';
 
 type Tally = Record<Result, number>;
-const emptyTally = (): Tally => ({ pass: 0, fail: 0, blocked: 0, skipped: 0, not_run: 0 });
-const SEGS: Result[] = ['pass', 'fail', 'blocked', 'skipped', 'not_run'];
+const emptyTally = (): Tally => ({ pass: 0, fail: 0, blocked: 0, in_progress: 0, skipped: 0, not_run: 0 });
+const SEGS: Result[] = ['pass', 'fail', 'blocked', 'in_progress', 'skipped', 'not_run'];
 
 const RUN_STATUS: Record<string, string> = {
   open: 'text-accent-ink bg-accent-soft',

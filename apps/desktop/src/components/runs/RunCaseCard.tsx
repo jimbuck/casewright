@@ -23,7 +23,9 @@ function ResultPicker({ value, onChange }: { value: Result; onChange: (r: Result
         <>
           <div className="fixed inset-0 z-20" onClick={() => setOpen(false)} />
           <div className="absolute right-0 z-30 mt-1 flex min-w-[130px] flex-col gap-0.5 rounded-md border border-border-2 bg-panel p-[5px] shadow-[0_12px_30px_var(--shadow)]">
-            {RESULTS.map((r) => (
+            {/* Selectable results, plus `not_run` so a row can be reset. Retired states (skipped)
+                stay out of the picker but still render via the chip above for existing rows. */}
+            {RESULTS.filter((r) => r.selectable || r.key === 'not_run').map((r) => (
               <button
                 key={r.key}
                 className="flex items-center gap-2 rounded-sm border-0 bg-transparent px-[9px] py-1.5 text-left text-[12.5px] hover:bg-raise"

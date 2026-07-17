@@ -30,7 +30,7 @@ export const RunCaseFrontSchema = z.object({
   case_id: z.coerce.string().default(''),
   display_id: z.coerce.string().default(''),
   title: z.coerce.string().default(''),
-  result: z.enum(['not_run', 'pass', 'fail', 'blocked', 'skipped']).catch('not_run'),
+  result: z.enum(['not_run', 'pass', 'fail', 'blocked', 'in_progress', 'skipped']).catch('not_run'),
   tester: z.coerce.string().default(''),
   executed_at: z.coerce.string().default(''),
   /** Per-case test-date override (ISO); absent/null = inherit the run's. */

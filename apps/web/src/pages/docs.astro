@@ -39,16 +39,16 @@ const results = [
 const checks = [
   { mark: '[ ]', label: 'Unchecked', body: 'Not yet evaluated.' },
   { mark: '[x]', label: 'Pass', body: 'The item behaved as expected.' },
-  { mark: '[-]', label: 'Fail', body: 'The item failed — add a note describing what happened.' },
+  { mark: '[-]', label: 'Fail', body: 'The item failed - add a note describing what happened.' },
 ];
 
 const variables = [
   { token: '{{today}}', body: 'The run’s test date, formatted as ISO YYYY-MM-DD.' },
-  { token: '{{today+7}}', body: 'Seven days after — a bare number means days.' },
+  { token: '{{today+7}}', body: 'Seven days after - a bare number means days.' },
   { token: '{{today-30}}', body: 'Thirty days before the test date.' },
   { token: '{{today+2w}}', body: 'Two weeks after (units: d, w, m, y).' },
   { token: '{{today+1m}}', body: 'One month after, clamped to the month’s last day.' },
-  { token: '{{{today}}}', body: 'Escaped — renders the literal {{today}}, never resolved.' },
+  { token: '{{{today}}}', body: 'Escaped - renders the literal {{today}}, never resolved.' },
 ];
 
 const menus = [
@@ -61,7 +61,7 @@ const menus = [
 ---
 
 <Base
-  title="Documentation — Casewright"
+  title="Documentation - Casewright"
   description="Basic usage for Casewright: open a repository, author cases, organize suites, run tests, and sync with Git."
 >
   <Header />
@@ -72,7 +72,7 @@ const menus = [
         <p class="eyebrow">Documentation</p>
         <h1>Using Casewright</h1>
         <p class="lead">
-          Casewright is a git-backed desktop editor for manual test cases — cases are Markdown
+          Casewright is a git-backed desktop editor for manual test cases - cases are Markdown
           files, suites are folders, and runs are plain files in your repository. This guide walks
           the everyday loop: open a repo, author cases, run them, and sync.
         </p>
@@ -93,7 +93,7 @@ const menus = [
         <section id="open">
           <h2>Open a repository</h2>
           <p>
-            Casewright uses a Git repository as its data store — there's no separate database to
+            Casewright uses a Git repository as its data store - there's no separate database to
             set up. On the launcher, pick a <strong>recent repository</strong> or choose a folder to
             open.
           </p>
@@ -110,13 +110,13 @@ const menus = [
           <h2>The workbench</h2>
           <p>The main window has three parts:</p>
           <ul class="doc-list">
-            <li><strong>Title-bar menus</strong> — File, Edit, View, Git, and Help (see the reference below).</li>
+            <li><strong>Title-bar menus</strong> - File, Edit, View, Git, and Help (see the reference below).</li>
             <li>
-              <strong>The sidebar</strong> — a tree of suites (folders) and cases. Drag the right
+              <strong>The sidebar</strong> - a tree of suites (folders) and cases. Drag the right
               edge to resize it; double-click the edge to reset.
             </li>
             <li>
-              <strong>The main panel</strong> — the case editor, or the runs view, depending on what
+              <strong>The main panel</strong> - the case editor, or the runs view, depending on what
               you select. Switch between them from the <strong>View</strong> menu.
             </li>
           </ul>
@@ -147,14 +147,14 @@ const menus = [
             ))}
           </div>
           <p class="muted">
-            Draft is amber, Active reads green, and Deprecated is muted — the same colors the editor
+            Draft is amber, Active reads green, and Deprecated is muted - the same colors the editor
             uses.
           </p>
 
           <h3>Date variables</h3>
           <p>
             Any case text can use the <span class="mono">{'{{today}}'}</span> variable, which resolves
-            to a real date <em>when the case is run</em> — so a case stays accurate without edits. Date
+            to a real date <em>when the case is run</em> - so a case stays accurate without edits. Date
             math is supported:
           </p>
           <dl class="doc-defs">
@@ -168,7 +168,7 @@ const menus = [
           <p>
             Tokens are stored verbatim on disk and resolve in the guided runner, the generated run
             summary, and the defect report. Each run has a <strong>test date</strong> (defaulting to
-            the day it was created) that the tester can change — per run, and per case — so you can
+            the day it was created) that the tester can change - per run, and per case - so you can
             exercise date-sensitive behavior without touching the system clock. The editor’s
             <strong>Resolve variables</strong> toggle previews resolution against any date.
           </p>
@@ -179,7 +179,7 @@ const menus = [
           <h2>Organize suites</h2>
           <p>
             Suites are just folders, so the hierarchy <em>is</em> your filesystem. Drag cases and
-            suites in the tree to reorganize — rename a suite and every case moves with it.
+            suites in the tree to reorganize - rename a suite and every case moves with it.
           </p>
           <p>
             Create a <strong>New Case</strong> or <strong>New Suite</strong> from the
@@ -194,7 +194,7 @@ const menus = [
           <p>
             Open the runs view from <strong>View → Runs</strong> and choose <strong>New run</strong>,
             then select the cases to include. A run is a folder under
-            <span class="mono">.casewright/runs</span> — a snapshot you execute and commit alongside
+            <span class="mono">.casewright/runs</span> - a snapshot you execute and commit alongside
             your cases.
           </p>
           <p>
@@ -232,14 +232,14 @@ const menus = [
         <section id="sync">
           <h2>Sync with Git</h2>
           <p>
-            The <strong>Git</strong> menu drives the whole loop — <strong>Commit…</strong>,
+            The <strong>Git</strong> menu drives the whole loop - <strong>Commit…</strong>,
             <strong>Pull</strong>, and <strong>Push</strong>. The status indicator shows your branch
             and how far ahead or behind you are, and the commit dialog lists exactly which cases and
             runs changed.
           </p>
           <p>
             Because everything is plain Markdown and CSV on disk, you can diff it, grep it, and
-            review it in a pull request — no proprietary format, no lock-in.
+            review it in a pull request - no proprietary format, no lock-in.
           </p>
         </section>
 

@@ -154,11 +154,26 @@ describe('buildRunSummary', () => {
     const s = buildRunSummary(multi, [kase]);
     expect(s.total).toBe(5);
     expect(s.executed).toBe(4); // not_run excluded
-    expect(s.counts).toEqual({ pass: 1, fail: 1, blocked: 1, skipped: 1, not_run: 1 });
+    expect(s.counts).toEqual({ pass: 1, fail: 1, blocked: 1, in_progress: 0, skipped: 1, not_run: 1 });
     expect(s.passRate).toBe(25); // 1 pass / 4 executed
     expect(s.passed.map((e) => e.display_id)).toEqual(['PAY-0001']);
     expect(s.attention.map((e) => e.result)).toEqual(['fail', 'blocked']);
     expect(s.remaining.map((e) => e.result)).toEqual(['skipped', 'not_run']);
+  });
+
+  it('counts in_progress as executed and lists it under remaining', () => {
+    const r: Run = {
+      ...run,
+      rows: [
+        { ...baseRow, ...clear, case_id: 'c2', display_id: 'PAY-0001', title: 'Login', result: 'pass' },
+        { ...baseRow, ...clear, case_id: 'c7', display_id: 'PAY-0007', title: 'Import', result: 'in_progress' },
+      ],
+    };
+    const s = buildRunSummary(r, [kase]);
+    expect(s.counts.in_progress).toBe(1);
+    expect(s.executed).toBe(2); // in_progress counts as executed, unlike not_run
+    expect(s.remaining.map((e) => e.result)).toEqual(['in_progress']);
+    expect(serializeRunSummary(s)).toContain('1 in progress');
   });
 
   it('surfaces resolved failed steps + notes on non-passing rows', () => {

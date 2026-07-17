@@ -38,7 +38,7 @@ export function weekRange(now: Date = new Date()): { start: string; end: string 
 }
 
 export type DayCounts = Record<Result, number>;
-const zeroCounts = (): DayCounts => ({ pass: 0, fail: 0, blocked: 0, skipped: 0, not_run: 0 });
+const zeroCounts = (): DayCounts => ({ pass: 0, fail: 0, blocked: 0, in_progress: 0, skipped: 0, not_run: 0 });
 
 /** Tally every recorded execution by its local `executed_at` day. */
 export function executionsByDay(runs: Run[]): Map<string, DayCounts> {
@@ -60,7 +60,7 @@ export function executionsByDay(runs: Run[]): Map<string, DayCounts> {
 }
 
 /** The color a day's cell takes: the most attention-worthy result recorded that day. */
-export type DayStatus = 'fail' | 'blocked' | 'pass' | 'skipped';
+export type DayStatus = 'fail' | 'blocked' | 'pass' | 'in_progress' | 'skipped';
 
 export interface ActivityDay {
   /** ISO `YYYY-MM-DD`. */
@@ -68,7 +68,7 @@ export interface ActivityDay {
   /** Executions recorded on this day. */
   total: number;
   counts: DayCounts;
-  /** Dominant status for the cell color (fail > blocked > pass > skipped); null = no activity. */
+  /** Dominant status for the cell color (fail > blocked > pass > in_progress > skipped); null = no activity. */
   status: DayStatus | null;
   /** Intensity 0–3 relative to the busiest day in the window (0 = no activity). */
   level: 0 | 1 | 2 | 3;
@@ -87,6 +87,7 @@ function dayStatus(t: DayCounts): DayStatus | null {
   if (t.fail > 0) return 'fail';
   if (t.blocked > 0) return 'blocked';
   if (t.pass > 0) return 'pass';
+  if (t.in_progress > 0) return 'in_progress';
   if (t.skipped > 0) return 'skipped';
   return null;
 }
@@ -111,7 +112,7 @@ export function activityWeeks(runs: Run[], weeks: number, now: Date = new Date()
       date.setDate(date.getDate() + w * 7 + d);
       const key = isoDay(date);
       const counts = byDay.get(key) ?? zeroCounts();
-      const total = counts.pass + counts.fail + counts.blocked + counts.skipped;
+      const total = counts.pass + counts.fail + counts.blocked + counts.in_progress + counts.skipped;
       max = Math.max(max, total);
       week.push({ date: key, total, counts, status: dayStatus(counts), level: 0, future: key > today });
     }
@@ -165,7 +166,7 @@ export function dashboardStats(runs: Run[], now: Date = new Date()): DashboardSt
     }
     if (touched) runsThisWeek += 1;
   }
-  const executedThisWeek = counts.pass + counts.fail + counts.blocked + counts.skipped;
+  const executedThisWeek = counts.pass + counts.fail + counts.blocked + counts.in_progress + counts.skipped;
   return {
     openRuns: runs.filter((r) => r.status === 'open').length,
     runsThisWeek,
